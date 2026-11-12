@@ -2,7 +2,7 @@
 // (GitHub search + the usagemeter store), then shape everything into the one DATA object the dashboard draws.
 // Everything read, run, fetched or written is recorded in AUDIT.
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'; import crypto from 'node:crypto';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process'; import { DatabaseSync } from 'node:sqlite';
 import { C } from './draw.mjs';
 
 export const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
@@ -184,7 +184,7 @@ export function buildData(report, g, cfg, scanInfo) {
     const past = Object.keys(byWeek).sort().slice(-5).map(k => byWeek[k]), pl = (report.pooled || {})[key], v = pl ? pl.usd_per_full_week : w.usd_per_full_week, resets = events.filter(e => e.provider === key && e.type === 'reset' && e.confidence === 'high').length, from = Math.round(w.meter_start_pct), to = Math.round(w.meter_end_pct), per = report.prices.plan_usd_per_week[key];
     plans.push({ key, ...PLAN[key], usd_per_full_week: v, times_plan_price: Math.round(v / per), proof: key === 'claude' && allMachines ? 'measured' : 'floor', plan_usd_per_week: Math.round(per), meter_from: from, meter_to: to,
       meter: pl ? `${pl.stretches} stretches · ${pl.meter_points} points` : key === 'google' ? `no meter · cap after ${w.hours} h` : `meter ${from}% → ${to}% in ${w.hours} h`, priced_usd: pl ? pl.api_usd : w.measured.api_usd, fraction_of_week: pl ? +(pl.meter_points / 100).toFixed(2) : +((to - from) / 100).toFixed(2),
-      stretches: pl ? pl.stretches : 1, range_usd: report.this_week[key + '_range'] || null, resets_this_week: resets, week_allowance_usd: v * (1 + resets),
+      stretches: pl ? pl.stretches : 1, range_usd: report.this_week[key + '_range'] || null, resets_this_week: resets,
       tokens: pl ? `${ft(pl.output_tokens)} out ${ft(pl.cached_input_tokens)} cached` : `${ft(w.measured.output_tokens)} out ${ft(w.measured.cached_input_tokens)} cached`, models: models(w.measured.model_mix_by_usd), history: [...past, v], change_vs_last_week_pct: past.length ? pctChange(v, past[past.length - 1]) : null });
   }
 
@@ -202,7 +202,7 @@ export function buildData(report, g, cfg, scanInfo) {
 
   const tools = ['claude', 'codex', 'antigravity'].map(p => { const r = cur.filter(a => a.provider === p); return { tool: TOOL[p], key: p, found: (scanInfo.counts[p] || 0) > 0, files: scanInfo.counts[p] || 0, sessions: (report.sessions_by_provider || {})[p] || 0, requests: sum(r, 'requests'), output: sum(r, 'output'), cached: sum(r, 'cache_read'), fresh: sum(r, 'input_uncached'), usd: Math.round(sum(r, 'usd')) }; });
   const D = { generated_at: new Date(now).toISOString(), week: { from: new Date(w1).toISOString().slice(0, 10), to: new Date(now).toISOString().slice(0, 10) }, machines: 1 + (scanInfo.hosts || []).filter(x => x.ok).length, days_scanned: cfg.days,
-    plans, events, tools, waste, waste_hidden: hidden, totals: { output_tokens: sum(cur, 'output'), output_tokens_change_pct: pctChange(sum(cur, 'output'), sum(prev, 'output')), api_value_usd: Math.round(sum(cur, 'usd')), api_value_change_pct: pctChange(sum(cur, 'usd'), sum(prev, 'usd')),
+    plans, events, months: [], tools, waste, waste_hidden: hidden, totals: { output_tokens: sum(cur, 'output'), output_tokens_change_pct: pctChange(sum(cur, 'output'), sum(prev, 'output')), api_value_usd: Math.round(sum(cur, 'usd')), api_value_change_pct: pctChange(sum(cur, 'usd'), sum(prev, 'usd')),
       tokens_per_day: perDay(act, 'output'), value_per_day: perDay(act, 'usd').map(Math.round) },
     heat: { days: names, rows: heat, note: pk[2] ? `peak ${names[pk[0]]} ${String(pk[1]).padStart(2, '0')}:00 · quiet ${names[quiet]}` : 'no activity' } };
   if (g) {
@@ -218,6 +218,33 @@ export function buildData(report, g, cfg, scanInfo) {
   if (g) { for (const t of g.prs) (agg[dayKey(t)] = agg[dayKey(t)] || { out: 0, usd: 0, prs: 0, commits: 0 }).prs++; for (const t of g.commits) (agg[dayKey(t)] = agg[dayKey(t)] || { out: 0, usd: 0, prs: 0, commits: 0 }).commits++; }
   for (const [k, o] of Object.entries(agg)) hist.days[k] = { out: Math.round(o.out), usd: Math.round(o.usd), prs: g ? o.prs : (hist.days[k] || {}).prs || 0, commits: g ? o.commits : (hist.days[k] || {}).commits || 0 };
   fs.mkdirSync(HOME, { recursive: true }); fs.writeFileSync(hf, JSON.stringify(hist)); audit('write', tilde(hf) + `  (${Object.keys(hist.days).length} daily rows)`);
+
+  // the player's own store, ~/.worthit/worthit.db (SQLite): small daily rows per provider, each run's measured plan value, months on top
+  let months = [];
+  try {
+    const dbf = path.join(HOME, 'worthit.db'), db = new DatabaseSync(dbf);
+    db.exec(`CREATE TABLE IF NOT EXISTS day_provider (day TEXT, provider TEXT, api_usd REAL, output_tokens INTEGER, requests INTEGER, PRIMARY KEY (day, provider));
+      CREATE TABLE IF NOT EXISTS day (day TEXT PRIMARY KEY, prs INTEGER, commits INTEGER);
+      CREATE TABLE IF NOT EXISTS plan_value (day TEXT, provider TEXT, plan TEXT, usd_per_full_week INTEGER, times_plan_price INTEGER, stretches INTEGER, proof TEXT, PRIMARY KEY (day, provider));
+      CREATE VIEW IF NOT EXISTS month AS SELECT substr(day, 1, 7) AS month, provider, ROUND(SUM(api_usd)) AS api_usd, SUM(output_tokens) AS output_tokens, SUM(requests) AS requests, COUNT(DISTINCT day) AS days FROM day_provider GROUP BY 1, 2;`);
+    const dp = {}; for (const a of act) { const k = dayKey(a.t) + '|' + (a.provider === 'antigravity' ? 'google' : a.provider), o = dp[k] = dp[k] || { usd: 0, out: 0, req: 0 }; o.usd += a.usd || 0; o.out += a.output || 0; o.req += a.requests || 0; }
+    // a day only grows: the first scanned day is partial, and a later run may include fewer machines
+    const upP = db.prepare('INSERT INTO day_provider VALUES (?, ?, ?, ?, ?) ON CONFLICT (day, provider) DO UPDATE SET api_usd = MAX(api_usd, excluded.api_usd), output_tokens = MAX(output_tokens, excluded.output_tokens), requests = MAX(requests, excluded.requests)');
+    const upD = db.prepare('INSERT INTO day VALUES (?, ?, ?) ON CONFLICT (day) DO UPDATE SET prs = MAX(prs, excluded.prs), commits = MAX(commits, excluded.commits)');
+    const upV = db.prepare('INSERT OR REPLACE INTO plan_value VALUES (?, ?, ?, ?, ?, ?, ?)');
+    db.exec('BEGIN');
+    for (const [k, o] of Object.entries(dp)) { const [day, provider] = k.split('|'); upP.run(day, provider, +o.usd.toFixed(2), Math.round(o.out), o.req); }
+    for (const [k, o] of Object.entries(hist.days)) upD.run(k, o.prs || 0, o.commits || 0);
+    for (const p of plans) upV.run(dayKey(now), p.key, p.plan, p.usd_per_full_week, p.times_plan_price, p.stretches || 1, p.proof);
+    db.exec('COMMIT');
+    const lim = {}; for (const r of db.prepare('SELECT substr(day, 1, 7) AS month, provider, ROUND(AVG(usd_per_full_week)) AS v, COUNT(*) AS n FROM plan_value GROUP BY 1, 2').all()) lim[r.month + '|' + r.provider] = r;
+    const prd = {}; for (const r of db.prepare('SELECT substr(day, 1, 7) AS month, SUM(prs) AS prs, SUM(commits) AS commits FROM day GROUP BY 1').all()) prd[r.month] = r;
+    months = db.prepare('SELECT * FROM month ORDER BY month DESC, api_usd DESC').all().filter(r => PLAN[r.provider]).map(r => { const perMonth = report.prices.plan_usd_per_week[r.provider] * 52 / 12, l = lim[r.month + '|' + r.provider];
+      return { month: r.month, key: r.provider, plan: PLAN[r.provider].plan, color: PLAN[r.provider].color, days_tracked: r.days, api_usd_used: r.api_usd, output_tokens: r.output_tokens, plan_usd_per_month: Math.round(perMonth), used_times_plan_price: +(r.api_usd / perMonth).toFixed(1),
+        weekly_limit_usd: l ? l.v : null, weekly_limit_readings: l ? l.n : 0, merged_prs: (prd[r.month] || {}).prs || 0, commits: (prd[r.month] || {}).commits || 0 }; });
+    db.close(); audit('write', tilde(dbf) + `  (SQLite: ${Object.keys(dp).length} day rows updated, ${months.length} month rows)`);
+  } catch (e) { audit('note', 'worthit.db not updated: ' + e.message); }
+  D.months = months;
   const keys = Object.keys(hist.days).sort(), xp = keys.reduce((s, k) => s + Math.round(hist.days[k].out / 1e5) + 25 * hist.days[k].prs + 2 * hist.days[k].commits, 0), level = Math.floor(Math.sqrt(xp / 2500)) + 1;
   let streak = 0; for (let t = d0.getTime(); (hist.days[dayKey(t)] || {}).out > 0; t -= DAY) streak++;
   const old = keys.filter(k => k < dayKey(days[0])).reverse(), blocks = []; for (let i = 0; i + 7 <= old.length; i += 7) { const b = old.slice(i, i + 7).map(k => hist.days[k]); blocks.push({ out: b.reduce((s, x) => s + x.out, 0), prs: b.reduce((s, x) => s + x.prs, 0), usd: b.reduce((s, x) => s + x.usd, 0) }); }

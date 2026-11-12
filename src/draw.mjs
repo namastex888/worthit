@@ -78,8 +78,7 @@ export const blocks = {
       return { title: p.plan, color: p.color, right: p.proof, w: i === k - 1 ? W - (wd + 1) * (k - 1) : wd, lines: [
         fg(C.track, '█'.repeat(pre)) + bar(1, 1, mid, dark(p.color), p.color) + fg(C.track, '█'.repeat(Math.max(0, n - pre - mid))),
         m(p.meter), d('tokens ') + m(p.tokens), d('priced ') + w(usd(p.priced_usd)), d('scaled ') + m('÷ ' + p.fraction_of_week + ' weekly limits'),
-        d('     = ') + bold(fg(p.color, usd(p.usd_per_full_week))) + d(' per week'), d('price  ') + m('÷ $' + p.plan_usd_per_week + ' plan') + d(' = ') + bold(w(p.times_plan_price + '×')),
-        d('resets ') + m((p.resets_this_week || 0) + ' this week') + (p.resets_this_week ? d(' → ') + w(usd(p.week_allowance_usd)) : '')] }; }));
+        d('     = ') + bold(fg(p.color, usd(p.usd_per_full_week))) + d(' per week'), d('price  ') + m('÷ $' + p.plan_usd_per_week + ' plan') + d(' = ') + bold(w(p.times_plan_price + '×'))] }; }));
   },
 
   Heatmap(D) {
@@ -105,7 +104,16 @@ export const blocks = {
     const l = [d(pad('Date', 12) + pad('Provider', 10) + pad('Type', 14) + 'What happened')];
     for (const e of ev) { const c = (D.plans.find(p => p.key === e.provider) || {}).color || C.ink2;
       l.push(m(pad(e.date, 12)) + fg(c, pad(e.provider, 10)) + (e.type === 'reset' ? bold(w(pad(e.type, 14))) : d(pad(e.type.replace('_', ' '), 14))) + w(e.title.slice(0, W - 42)) + (e.confidence !== 'high' ? d(' (' + e.confidence + ')') : '')); }
-    return box('EVENTS THIS WEEK', l, W, C.gold, 'resets add allowance');
+    return box('EVENTS THIS WEEK', l, W, C.gold, 'listed for context · not assumed used');
+  },
+  Months(D) {
+    const ms = D.months || []; if (!ms.length) return [];
+    const l = [d(pad('Month', 9) + pad('Plan', 17) + lpad('Days', 5) + lpad('API value used', 16) + lpad('× plan price', 14) + lpad('Weekly limit', 15) + lpad('PRs', 8) + lpad('Commits', 9))];
+    let prev = '';
+    for (const x of ms.slice(0, 12)) { const first = x.month !== prev; prev = x.month;
+      l.push((first ? w(pad(x.month, 9)) : pad('', 9)) + fg(x.color, pad(x.plan, 17)) + m(lpad(String(x.days_tracked), 5)) + bold(w(lpad(usd(x.api_usd_used), 16))) + bold(fg(x.color, lpad(x.used_times_plan_price + '×', 14)))
+        + m(lpad(x.weekly_limit_usd ? usd(x.weekly_limit_usd) : '·', 15)) + (first ? m(lpad(x.merged_prs.toLocaleString('en-US'), 8) + lpad(x.commits.toLocaleString('en-US'), 9)) : '')); }
+    return box('MONTH BY MONTH', l, W, C.cx, 'what one $' + ms[0].plan_usd_per_month + ' plan returned');
   },
   WasteTable(D) {
     const l = [d(pad('Plan', 18) + lpad('Limit', 7) + '   ' + pad('You used', 31) + '   ' + lpad('Unused', 6) + '   Why')];
@@ -135,4 +143,4 @@ export const blocks = {
   },
   Note: (D, p) => wrap(p.text || '', W - 2).map(x => ' ' + m(x)),
 };
-export const widths = { Verdict: W, Tiles: W, LevelCard: 41, PlanRanking: 56, Receipts: W, Heatmap: 58, LimitTrend: 39, WasteTable: W, Events: W, Summary: W, Chart: W, Facts: W, Note: W };
+export const widths = { Verdict: W, Tiles: W, LevelCard: 41, PlanRanking: 56, Receipts: W, Heatmap: 58, LimitTrend: 39, WasteTable: W, Events: W, Months: W, Summary: W, Chart: W, Facts: W, Note: W };
