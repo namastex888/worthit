@@ -14,6 +14,36 @@ export const has = c => spawnSync('which', [c], { stdio: 'ignore' }).status === 
 const H = 3600e3, DAY = 24 * H;
 const LANE = 'https://github.com/automagik-dev/automagik/releases/download/meter-lane/meter.json';
 
+// ---------------------------------------------------------------- other machines: the ssh hosts already saved on this computer
+export function sshHosts() {             // aliases from ~/.ssh/config and its Include files; nothing is contacted here
+  const dir = path.join(os.homedir(), '.ssh'), seen = new Set(), out = [];
+  const read = (file, depth) => {
+    if (depth > 4 || seen.has(file)) return; seen.add(file);
+    let text; try { text = fs.readFileSync(file, 'utf8'); } catch { return; }
+    let cur = null; const flush = () => { if (cur) out.push(cur); cur = null; };
+    for (const raw of text.split('\n')) {
+      const l = raw.trim(); if (!l || l.startsWith('#')) continue;
+      const sp = l.search(/[\s=]/), k = (sp < 0 ? l : l.slice(0, sp)).toLowerCase(), v = sp < 0 ? '' : l.slice(sp + 1).replace(/^[\s=]+/, '').trim();
+      if (k === 'include') { for (const pat of v.split(/\s+/)) { const p = pat.replace(/^~/, os.homedir()), abs = path.isAbsolute(p) ? p : path.join(dir, p);
+        if (!abs.includes('*')) { read(abs, depth + 1); continue; }
+        const d = path.dirname(abs), re = new RegExp('^' + path.basename(abs).replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+        let names = []; try { names = fs.readdirSync(d); } catch {} names.filter(n => re.test(n)).sort().forEach(n => read(path.join(d, n), depth + 1)); } }
+      else if (k === 'host') { flush(); cur = { names: v.split(/\s+/).filter(Boolean), hostname: '', user: '' }; }
+      else if (k === 'match') flush();
+      else if (cur && k === 'hostname') cur.hostname = v; else if (cur && k === 'user') cur.user = v;
+    }
+    flush();
+  };
+  read(path.join(dir, 'config'), 0);
+  const forge = /(github|gitlab|bitbucket|gitea|codeberg|sourcehut|dev\.azure)/i, res = [];
+  for (const b of out) { if (b.user === 'git' || forge.test(b.hostname)) continue;
+    for (const n of b.names) if (!/[*?!]/.test(n) && !forge.test(n) && !res.some(x => x.alias === n)) res.push({ alias: n, hostname: b.hostname || n }); }
+  return res;
+}
+const HOSTS_FILE = path.join(HOME, 'hosts.json');
+export const savedHosts = () => { try { const known = new Set(sshHosts().map(x => x.alias)); return JSON.parse(fs.readFileSync(HOSTS_FILE, 'utf8')).selected.filter(a => known.has(a)); } catch { return null; } };
+export const saveHosts = sel => { fs.mkdirSync(HOME, { recursive: true }); fs.writeFileSync(HOSTS_FILE, JSON.stringify({ selected: sel })); audit('write', tilde(HOSTS_FILE) + `  (${sel.length} machines remembered)`); };
+
 // ---------------------------------------------------------------- step 1: scan
 const SPAN = { claude: [0, .68], codex: [.68, .97], antigravity: [.97, 1] }, TOOL = { claude: 'Claude Code', codex: 'Codex', antigravity: 'Antigravity' };
 export async function scan(cfg, on) {
@@ -23,6 +53,8 @@ export async function scan(cfg, on) {
   const script = path.join(ROOT, 'core', 'extract_usage.py'), counts = { claude: 0, codex: 0, antigravity: 0 };
   const cache = path.join(HOME, 'run-counts.json'), keepDir = path.join(HOME, 'run-keep');
   if (process.env.WORTHIT_REUSE && fs.existsSync(path.join(keepDir, 'local.json'))) { fs.cpSync(keepDir, runDir, { recursive: true }); audit('note', 'WORTHIT_REUSE: using the previous scan'); return { runDir, counts: JSON.parse(fs.readFileSync(cache, 'utf8')), hosts: [] }; }
+  const names = cfg.hosts || [], pcts = { local: 0 }; names.forEach(a => { pcts[a] = 0; });
+  const emit = detail => { const v = Object.values(pcts); on({ pct: v.reduce((a, b) => a + b, 0) / v.length, detail, counts }); };
   audit('run', `${py} core/extract_usage.py ${cfg.days}   (reads local session logs, read-only)`);
   const local = new Promise((res, rej) => {
     const p = spawn(py, [script, String(cfg.days)], { env: { ...process.env, WORTHIT_PROGRESS: '1', PYTHONDONTWRITEBYTECODE: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -31,16 +63,26 @@ export async function scan(cfg, on) {
     p.stderr.on('data', c => { buf += c; let i; while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i); buf = buf.slice(i + 1);
       if (!l.startsWith('@f\t')) { errs += l + '\n'; continue; }
       const [, tool, a, b, file] = l.split('\t'); counts[tool] = (counts[tool] || 0) + 1; audit('read', tilde(file));
-      const [lo, hi] = SPAN[tool] || [0, 1]; on({ pct: +b > 0 ? lo + (hi - lo) * (+a / +b) : lo, detail: `${TOOL[tool] || tool} · ${tilde(file)}`, counts }); } });
-    p.on('error', rej); p.on('close', code => code ? rej(new Error('scanner failed: ' + (errs.trim().split('\n').pop() || 'exit ' + code))) : res());
+      const [lo, hi] = SPAN[tool] || [0, 1]; pcts.local = +b > 0 ? lo + (hi - lo) * (+a / +b) : lo; emit(`${names.length ? 'this machine · ' : ''}${TOOL[tool] || tool} · ${tilde(file)}`); } });
+    p.on('error', rej); p.on('close', code => { pcts.local = 1; code ? rej(new Error('scanner failed: ' + (errs.trim().split('\n').pop() || 'exit ' + code))) : res(); });
   });
   const remote = (cfg.hosts || []).map(alias => new Promise(res => {      // other machines over ssh: the same script, piped in, nothing installed there
-    audit('run', `ssh ${alias} "nice python3 - ${cfg.days}" < core/extract_usage.py`);
-    const p = spawn('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', alias, `nice python3 - ${cfg.days}`], { stdio: ['pipe', 'pipe', 'pipe'] });
+    audit('run', `ssh ${alias} "nice python3 - ${cfg.days}" < core/extract_usage.py   (same read-only scanner, piped in; nothing is installed there)`);
+    const p = spawn('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', alias, `env WORTHIT_PROGRESS=1 PYTHONDONTWRITEBYTECODE=1 nice python3 - ${cfg.days}`], { stdio: ['pipe', 'pipe', 'pipe'] });
+    let buf = '', files = 0;
+    p.stderr.on('data', c => { buf += c; let i; while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i); buf = buf.slice(i + 1); if (!l.startsWith('@f\t')) continue;
+      const [, tool, a, b, file] = l.split('\t'); files++; audit('read', alias + ':' + file);
+      const [lo, hi] = SPAN[tool] || [0, 1]; pcts[alias] = +b > 0 ? lo + (hi - lo) * (+a / +b) : lo; emit(`${alias} · ${TOOL[tool] || tool} · ${file}`); } });
     const f = path.join(runDir, alias + '.json'); p.stdout.pipe(fs.createWriteStream(f)); fs.createReadStream(script).pipe(p.stdin);
-    p.on('error', () => res({ alias, ok: false })); p.on('close', code => { const ok = !code && fs.existsSync(f) && fs.statSync(f).size > 2; if (!ok) fs.rmSync(f, { force: true }); audit('run', `ssh ${alias} finished: ${ok ? 'ok' : 'no data (exit ' + code + ')'}`); res({ alias, ok }); });
+    p.stdin.on('error', () => {}); p.on('error', () => { pcts[alias] = 1; res({ alias, ok: false, files: 0 }); });
+    p.on('close', code => { const ok = !code && fs.existsSync(f) && fs.statSync(f).size > 2; if (!ok) fs.rmSync(f, { force: true }); pcts[alias] = 1; audit('run', `ssh ${alias} finished: ${ok ? files + ' files read' : 'no data (exit ' + code + ')'}`); emit(`${alias} · ${ok ? 'done' : 'no answer'}`); res({ alias, ok, files }); });
   }));
   await local; const hosts = await Promise.all(remote);
+  // two ssh aliases can point at one machine: keep the first answer, drop the repeat so nothing is counted twice
+  const hostOf = f => { try { const fd = fs.openSync(f, 'r'), b = Buffer.alloc(400); fs.readSync(fd, b, 0, 400, 0); fs.closeSync(fd); return (/"host"\s*:\s*"([^"]*)"/.exec(b.toString()) || [])[1] || null; } catch { return null; } };
+  const seenHost = new Map([[hostOf(path.join(runDir, 'local.json')), 'this machine']]);
+  for (const x of hosts) { if (!x.ok) continue; const f = path.join(runDir, x.alias + '.json'), hn = hostOf(f);
+    if (hn && seenHost.has(hn)) { x.same_as = seenHost.get(hn); x.ok = false; fs.rmSync(f, { force: true }); audit('note', `${x.alias} is the same machine as ${x.same_as} (${hn}): its copy is dropped`); } else if (hn) seenHost.set(hn, x.alias); }
   on({ pct: 1, detail: 'done', counts });
   fs.writeFileSync(cache, JSON.stringify(counts)); fs.cpSync(runDir, keepDir, { recursive: true, force: true });
   return { runDir, counts, hosts };
@@ -120,6 +162,7 @@ export function buildData(report, g, cfg, scanInfo) {
   let pk = [0, 0, 0]; heat.forEach((r, i) => r.forEach((v, hh) => { if (v > pk[2]) pk = [i, hh, v]; })); const dsum = heat.map(r => r.reduce((s, v) => s + v, 0)), quiet = dsum.indexOf(Math.min(...dsum));
 
   // plans: this week's measured value of one full weekly limit
+  const hs = scanInfo.hosts || [], allMachines = hs.length ? hs.every(x => x.ok || x.same_as) : !sshHosts().length;   // saved ssh machines left out = use elsewhere may be missing
   let ledger = []; try { ledger = fs.readFileSync(path.join(HOME, 'weeks', 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch { /* first run */ }
   const plans = [];
   for (const key of ['claude', 'google', 'codex']) {
@@ -127,7 +170,7 @@ export function buildData(report, g, cfg, scanInfo) {
     const byWeek = {}; for (const r of ledger) if (r.provider === key && r.quality === 'clean' && r.usd_per_full_week) { const k = isoWeek(Date.parse(String(r.end).slice(0, 13).padEnd(13, '0') + ':00:00Z') || now); byWeek[k] = Math.max(byWeek[k] || 0, r.usd_per_full_week); }
     const thisWk = isoWeek(Date.parse(String(w.end || w.meter_end_hour || '').slice(0, 13) + ':00:00Z') || now); delete byWeek[thisWk];
     const past = Object.keys(byWeek).sort().slice(-5).map(k => byWeek[k]), v = w.usd_per_full_week, from = Math.round(w.meter_start_pct), to = Math.round(w.meter_end_pct), per = report.prices.plan_usd_per_week[key];
-    plans.push({ key, ...PLAN[key], usd_per_full_week: v, times_plan_price: Math.round(v / per), proof: key === 'claude' ? 'measured' : 'floor', plan_usd_per_week: Math.round(per), meter_from: from, meter_to: to,
+    plans.push({ key, ...PLAN[key], usd_per_full_week: v, times_plan_price: Math.round(v / per), proof: key === 'claude' && allMachines ? 'measured' : 'floor', plan_usd_per_week: Math.round(per), meter_from: from, meter_to: to,
       meter: key === 'google' ? `no meter · cap after ${w.hours} h` : `meter ${from}% → ${to}% in ${w.hours} h`, priced_usd: w.measured.api_usd, fraction_of_week: +((to - from) / 100).toFixed(2),
       tokens: `${ft(w.measured.output_tokens)} out ${ft(w.measured.cached_input_tokens)} cached`, models: models(w.measured.model_mix_by_usd), history: [...past, v], change_vs_last_week_pct: past.length ? pctChange(v, past[past.length - 1]) : null });
   }

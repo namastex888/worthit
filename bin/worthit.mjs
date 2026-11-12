@@ -2,7 +2,7 @@
 // worthit — what your AI coding subscription is really worth. One command, everything local.
 //   npx worthit                 three questions, live scan, dashboard, then a question bar (ctrl+c exits)
 //   npx worthit --json          no UI: prints the week's data as JSON (for agents and scripts)
-//   --git yes|no   --ai claude|codex|no   --days 21   --hosts a,b (ssh aliases to include)   --ask "question"   --no-files
+//   --git yes|no   --ai claude|codex|no   --days 21   --hosts all|none|a,b (saved ssh machines to include)   --ask "question"   --no-files
 // Writes ./<date>-worthit.md, ./<date>-worthit.png (when Chrome is installed) and ./<date>-worthit-audit.log.
 process.removeAllListeners('warning'); process.on('warning', () => {});
 import React, { useState, useEffect, useRef } from 'react';
@@ -15,18 +15,20 @@ import { createRenderer } from '@json-render/ink';
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import { blocks, C, W, bar, fg, bold, d, m, w, pad, lpad, len, strip, grad, fmtTok, usd } from '../src/draw.mjs';
-import { scan, analyse, git, buildData, audit, AUDIT, has, tilde, ROOT } from '../src/collect.mjs';
+import { scan, analyse, git, buildData, audit, AUDIT, has, tilde, ROOT, sshHosts, savedHosts, saveHosts } from '../src/collect.mjs';
 
 const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
 const h = React.createElement, argv = process.argv.slice(2);
 const flag = k => argv.includes(k), arg = (k, dflt) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : dflt; };
 if (flag('--version') || flag('-v')) { console.log(VERSION); process.exit(0); }
 if (flag('--help') || flag('-h')) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 7).map(l => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
-const JSON_MODE = flag('--json'), ASK = arg('--ask'), F_GIT = arg('--git'), F_AI = arg('--ai'), DAYS = +arg('--days', 21), HOSTS = (arg('--hosts', '') || '').split(',').filter(Boolean), NO_FILES = flag('--no-files');
+const JSON_MODE = flag('--json'), ASK = arg('--ask'), F_GIT = arg('--git'), F_AI = arg('--ai'), DAYS = +arg('--days', 21), F_HOSTS = arg('--hosts'), NO_FILES = flag('--no-files');
 const TTY = !!process.stdin.isTTY && !JSON_MODE;
 const AGENTS = [{ id: 'claude', cli: 'claude', label: 'Claude Haiku 5.5', model: 'claude-haiku-5-5' }, { id: 'codex', cli: 'codex', label: 'GPT-6 Luna', model: 'gpt-6-luna' }].filter(a => has(a.cli));
 const STAMP = (() => { const t = new Date(); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); })();
 let DATA = null;
+const DETECTED = sshHosts(), SAVED = savedHosts();      // other machines: --hosts all | none | a,b; without the flag, the remembered choice (or the question)
+let HOSTS = F_HOSTS == null ? (SAVED || []) : F_HOSTS === 'all' ? DETECTED.map(x => x.alias) : F_HOSTS === 'none' ? [] : F_HOSTS.split(',').filter(Boolean);
 const forModel = () => { const { heat, ...rest } = DATA; return JSON.stringify({ ...rest, busiest: heat.note }); };   // the hourly grid is drawn by the harness
 
 // ---------------------------------------------------------------- headless: --json
@@ -203,7 +205,19 @@ function Choice({ q, options, onPick }) {       // arrows move, enter picks; the
   return h(Box, { flexDirection: 'column', marginTop: 1 }, h(Box, { gap: 1 }, h(Text, { color: GOLD, bold: true }, '?'), h(Text, { bold: true }, q), h(Text, { dimColor: true }, '↑↓ to move · enter to confirm')),
     ...options.map((o, k) => h(Box, { key: o.label, gap: 1 }, h(Text, { color: GOLD }, k === i ? '  ❯' : '   '), h(Text, { bold: k === i, color: k === i ? GOLD : undefined }, o.label), h(Text, { dimColor: true }, o.hint || ''))));
 }
+function MultiChoice({ q, options, initial, onDone }) {   // ↑↓ move, space ticks, a = all, n = none, enter confirms
+  const [i, setI] = useState(0); const [sel, setSel] = useState(() => new Set(initial));
+  useInput((input, key) => { if (key.upArrow) setI(x => (x + options.length - 1) % options.length); else if (key.downArrow || key.tab) setI(x => (x + 1) % options.length);
+    else if (input === ' ') setSel(s => { const n = new Set(s), a = options[i].alias; n.has(a) ? n.delete(a) : n.add(a); return n; });
+    else if (input === 'a') setSel(new Set(options.map(o => o.alias))); else if (input === 'n') setSel(new Set());
+    else if (key.return) onDone(options.map(o => o.alias).filter(a => sel.has(a))); });
+  return h(Box, { flexDirection: 'column', marginTop: 1 }, h(Box, { gap: 1 }, h(Text, { color: GOLD, bold: true }, '?'), h(Text, { bold: true }, q), h(Text, { dimColor: true }, '↑↓ move · space tick · a all · n none · enter confirm')),
+    h(Text, { dimColor: true }, '    from your saved ssh hosts · scanned in parallel with the same read-only script · your choice is remembered'),
+    ...options.map((o, k) => h(Box, { key: o.alias, gap: 1 }, h(Text, { color: GOLD }, k === i ? '  ❯' : '   '), h(Text, { color: sel.has(o.alias) ? 'green' : undefined }, sel.has(o.alias) ? '◉' : '○'),
+      h(Text, { bold: k === i, color: k === i ? GOLD : undefined }, o.alias), h(Text, { dimColor: true }, o.hostname !== o.alias ? o.hostname : ''))));
+}
 function Setup({ onDone }) {
+  const [hostsAsked, setHostsAsked] = useState(!(F_HOSTS == null && DETECTED.length));
   const [ans, setAns] = useState([]); const [step, setStep] = useState(0); const [cfg, setCfg] = useState({});
   const pick = (label, patch, next) => o => { setAns(a => [...a, label + ': ' + o.label]); const c = { ...cfg, ...patch(o) }; setCfg(c); if (next === null || (next === 2 && !c.ai)) onDone(c); else setStep(next); };
   const qs = [
@@ -214,7 +228,9 @@ function Setup({ onDone }) {
     h(Choice, { key: 'w', q: 'Which agent?', onPick: pick('Agent', o => ({ agent: o.v }), null),
       options: AGENTS.map((a, k) => ({ label: a.label, v: a, hint: (k === 0 ? 'recommended · ' : '') + 'medium reasoning, via ' + a.cli })) })];
   return h(Box, { flexDirection: 'column' }, ...ans.map(a => h(Box, { key: a, gap: 1 }, h(Text, { color: 'green' }, '✓'), h(Text, {}, a))),
-    AGENTS.length === 0 && step === 0 ? h(Text, { dimColor: true }, '  no claude or codex CLI found: the dashboard will be built without AI') : null, qs[step]);
+    AGENTS.length === 0 && step === 0 && hostsAsked ? h(Text, { dimColor: true }, '  no claude or codex CLI found: the dashboard will be built without AI') : null,
+    hostsAsked ? qs[step] : h(MultiChoice, { q: 'Include your other machines?', options: DETECTED, initial: SAVED || [],
+      onDone: sel => { HOSTS = sel; saveHosts(sel); setAns(a => [...a, 'Machines: this one' + (sel.length ? ' + ' + sel.join(', ') : ' only')]); setHostsAsked(true); } }));
 }
 const blank = () => ({ spec: null, n: 0, status: 'starting', trace: '', done: null });
 
@@ -232,8 +248,9 @@ function Main({ cfg }) {
     const fin = (i, t0, lines) => S(i, { state: 'done', secs: ((Date.now() - t0) / 1000).toFixed(0), lines });
     (async () => { try {
       let t0 = Date.now(); S(0, { state: 'run', t0 }); const info = await scan({ days: DAYS, hosts: HOSTS }, live(0));
-      const scanned = `${Object.values(info.counts).reduce((a, b) => a + b, 0).toLocaleString('en-US')} files read on this machine` + (info.hosts.length ? ` · ${info.hosts.filter(x => x.ok).length} of ${info.hosts.length} other machines answered` : '') + ` · last ${DAYS} days`;
-      const scanSecs = ((Date.now() - t0) / 1000).toFixed(0); fin(0, t0, [m(scanned)]);
+      const scanned = `${Object.values(info.counts).reduce((a, b) => a + b, 0).toLocaleString('en-US')} files read on this machine` + (info.hosts.length ? ` · ${info.hosts.filter(x => x.ok).length} other machine${info.hosts.filter(x => x.ok).length === 1 ? '' : 's'} read in parallel` : '') + ` · last ${DAYS} days`;
+      const hl = info.hosts.map(x => x.ok ? fg(C.cx, '✓ ') + w(x.alias) + d(' ' + x.files.toLocaleString('en-US') + ' files') : x.same_as ? d('= ' + x.alias + ' same as ' + x.same_as) : fg(C.bad || C.go, '✗ ') + m(x.alias) + d(' no answer')), hrows = []; for (let k = 0; k < hl.length; k += 4) hrows.push('  ' + hl.slice(k, k + 4).join(d('  ·  ')));
+      const scanSecs = ((Date.now() - t0) / 1000).toFixed(0); fin(0, t0, [m(scanned), ...hrows]);
       t0 = Date.now(); S(1, { state: 'run', t0, pct: null, detail: 'each request = its tokens × that model\'s API list price' }); const report = await analyse(info.runDir); const t1 = t0;
       let g = null; if (cfg.git) { t0 = Date.now(); S(2, { state: 'run', t0 }); g = await git(cfg, live(2)); }
       DATA = buildData(report, g, { days: DAYS, hosts: HOSTS }, info);

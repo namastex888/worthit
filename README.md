@@ -25,7 +25,7 @@ Works with Claude Code, Codex and Antigravity. Needs Node 22.5+ and Python 3.
 | `--ai no\|claude\|codex` | Who composes the dashboard. `no` = data tables only. `claude` = Haiku 5.5, `codex` = GPT-6 Luna, both medium reasoning, through your own CLI login. |
 | `--ask "question"` | Answer one question about your usage, drawn as blocks. |
 | `--days N` | Days of logs to scan (default 21). |
-| `--hosts a,b` | Also scan other machines over ssh (same script piped in, nothing installed). |
+| `--hosts all\|none\|a,b` | Other machines to include, from your saved ssh hosts. Scanned in parallel with the same read-only script piped in; nothing is installed there. Without the flag, a checklist asks once and the choice is remembered. |
 | `--no-files` | Do not write the three files. |
 
 Without flags, three arrow-key questions ask the same things, with the recommended answer preselected.
