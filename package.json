@@ -12,6 +12,7 @@
     "src",
     "core/*.py",
     "core/*.json",
+    "core/*.csv",
     "README.md"
   ],
   "engines": {

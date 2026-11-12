@@ -144,6 +144,17 @@ export async function git(cfg, on) {
 
 // ---------------------------------------------------------------- shape the data the dashboard draws
 const PLAN = { claude: { plan: 'Claude Ultra', tool: 'Claude Code', color: C.cl }, google: { plan: 'Google AI Ultra', tool: 'Antigravity', color: C.go }, codex: { plan: 'ChatGPT Pro', tool: 'Codex', color: C.cx } };
+// unusual events (provider resets, limit changes, launches): a plain list kept in the repo, core/events.csv
+function loadEvents() {
+  let text; try { text = fs.readFileSync(path.join(ROOT, 'core', 'events.csv'), 'utf8'); } catch { return []; }
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) { const ch = text[i];
+    if (q) { if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; } else if (ch === '"') q = false; else cell += ch; }
+    else if (ch === '"') q = true; else if (ch === ',') { row.push(cell); cell = ''; } else if (ch === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; } else if (ch !== '\r') cell += ch; }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  const head = rows.shift() || [];
+  return rows.filter(r => r.length >= 5).map(r => Object.fromEntries(head.map((k, i) => [k, r[i] || ''])));
+}
 const isoWeek = t => { const d = new Date(t); d.setUTCHours(0, 0, 0, 0); d.setUTCDate(d.getUTCDate() + 3 - (d.getUTCDay() + 6) % 7); const y = d.getUTCFullYear(), w1 = new Date(Date.UTC(y, 0, 4)); return y + '-W' + String(1 + Math.round(((d - w1) / DAY - 3 + (w1.getUTCDay() + 6) % 7) / 7)).padStart(2, '0'); };
 const pctChange = (a, b) => b > 0 ? Math.round(100 * (a - b) / b) : null;
 const dayKey = t => { const d = new Date(t); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
@@ -164,15 +175,17 @@ export function buildData(report, g, cfg, scanInfo) {
   // plans: this week's measured value of one full weekly limit
   const hs = scanInfo.hosts || [], allMachines = hs.length ? hs.every(x => x.ok || x.same_as) : !sshHosts().length;   // saved ssh machines left out = use elsewhere may be missing
   let ledger = []; try { ledger = fs.readFileSync(path.join(HOME, 'weeks', 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch { /* first run */ }
+  const day0 = new Date(w1).toISOString().slice(0, 10), events = loadEvents().filter(e => e.date_utc >= day0).map(e => ({ date: e.date_utc, provider: e.provider, type: e.type, title: e.title, confidence: e.confidence, source: e.source_url }));
   const plans = [];
   for (const key of ['claude', 'google', 'codex']) {
     const w = report.this_week && report.this_week[key]; if (!w || !w.usd_per_full_week) continue;
     const byWeek = {}; for (const r of ledger) if (r.provider === key && r.quality === 'clean' && r.usd_per_full_week) { const k = isoWeek(Date.parse(String(r.end).slice(0, 13).padEnd(13, '0') + ':00:00Z') || now); byWeek[k] = Math.max(byWeek[k] || 0, r.usd_per_full_week); }
     const thisWk = isoWeek(Date.parse(String(w.end || w.meter_end_hour || '').slice(0, 13) + ':00:00Z') || now); delete byWeek[thisWk];
-    const past = Object.keys(byWeek).sort().slice(-5).map(k => byWeek[k]), v = w.usd_per_full_week, from = Math.round(w.meter_start_pct), to = Math.round(w.meter_end_pct), per = report.prices.plan_usd_per_week[key];
+    const past = Object.keys(byWeek).sort().slice(-5).map(k => byWeek[k]), pl = (report.pooled || {})[key], v = pl ? pl.usd_per_full_week : w.usd_per_full_week, resets = events.filter(e => e.provider === key && e.type === 'reset' && e.confidence === 'high').length, from = Math.round(w.meter_start_pct), to = Math.round(w.meter_end_pct), per = report.prices.plan_usd_per_week[key];
     plans.push({ key, ...PLAN[key], usd_per_full_week: v, times_plan_price: Math.round(v / per), proof: key === 'claude' && allMachines ? 'measured' : 'floor', plan_usd_per_week: Math.round(per), meter_from: from, meter_to: to,
-      meter: key === 'google' ? `no meter · cap after ${w.hours} h` : `meter ${from}% → ${to}% in ${w.hours} h`, priced_usd: w.measured.api_usd, fraction_of_week: +((to - from) / 100).toFixed(2),
-      tokens: `${ft(w.measured.output_tokens)} out ${ft(w.measured.cached_input_tokens)} cached`, models: models(w.measured.model_mix_by_usd), history: [...past, v], change_vs_last_week_pct: past.length ? pctChange(v, past[past.length - 1]) : null });
+      meter: pl ? `${pl.stretches} stretches · ${pl.meter_points} points` : key === 'google' ? `no meter · cap after ${w.hours} h` : `meter ${from}% → ${to}% in ${w.hours} h`, priced_usd: pl ? pl.api_usd : w.measured.api_usd, fraction_of_week: pl ? +(pl.meter_points / 100).toFixed(2) : +((to - from) / 100).toFixed(2),
+      stretches: pl ? pl.stretches : 1, range_usd: report.this_week[key + '_range'] || null, resets_this_week: resets, week_allowance_usd: v * (1 + resets),
+      tokens: pl ? `${ft(pl.output_tokens)} out ${ft(pl.cached_input_tokens)} cached` : `${ft(w.measured.output_tokens)} out ${ft(w.measured.cached_input_tokens)} cached`, models: models(w.measured.model_mix_by_usd), history: [...past, v], change_vs_last_week_pct: past.length ? pctChange(v, past[past.length - 1]) : null });
   }
 
   // waste: account-weeks that closed in the last 7 days (and ones still open, shown as at risk, never as waste)
@@ -189,7 +202,7 @@ export function buildData(report, g, cfg, scanInfo) {
 
   const tools = ['claude', 'codex', 'antigravity'].map(p => { const r = cur.filter(a => a.provider === p); return { tool: TOOL[p], key: p, found: (scanInfo.counts[p] || 0) > 0, files: scanInfo.counts[p] || 0, sessions: (report.sessions_by_provider || {})[p] || 0, requests: sum(r, 'requests'), output: sum(r, 'output'), cached: sum(r, 'cache_read'), fresh: sum(r, 'input_uncached'), usd: Math.round(sum(r, 'usd')) }; });
   const D = { generated_at: new Date(now).toISOString(), week: { from: new Date(w1).toISOString().slice(0, 10), to: new Date(now).toISOString().slice(0, 10) }, machines: 1 + (scanInfo.hosts || []).filter(x => x.ok).length, days_scanned: cfg.days,
-    plans, tools, waste, waste_hidden: hidden, totals: { output_tokens: sum(cur, 'output'), output_tokens_change_pct: pctChange(sum(cur, 'output'), sum(prev, 'output')), api_value_usd: Math.round(sum(cur, 'usd')), api_value_change_pct: pctChange(sum(cur, 'usd'), sum(prev, 'usd')),
+    plans, events, tools, waste, waste_hidden: hidden, totals: { output_tokens: sum(cur, 'output'), output_tokens_change_pct: pctChange(sum(cur, 'output'), sum(prev, 'output')), api_value_usd: Math.round(sum(cur, 'usd')), api_value_change_pct: pctChange(sum(cur, 'usd'), sum(prev, 'usd')),
       tokens_per_day: perDay(act, 'output'), value_per_day: perDay(act, 'usd').map(Math.round) },
     heat: { days: names, rows: heat, note: pk[2] ? `peak ${names[pk[0]]} ${String(pk[1]).padStart(2, '0')}:00 · quiet ${names[quiet]}` : 'no activity' } };
   if (g) {

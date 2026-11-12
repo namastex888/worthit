@@ -77,8 +77,9 @@ export const blocks = {
     return row(D.plans.map((p, i) => { const a = p.meter_from ?? 0, b = p.meter_to ?? 100, pre = Math.round(a / 100 * n), mid = Math.round((b - a) / 100 * n);
       return { title: p.plan, color: p.color, right: p.proof, w: i === k - 1 ? W - (wd + 1) * (k - 1) : wd, lines: [
         fg(C.track, '█'.repeat(pre)) + bar(1, 1, mid, dark(p.color), p.color) + fg(C.track, '█'.repeat(Math.max(0, n - pre - mid))),
-        m(p.meter), d('tokens ') + m(p.tokens), d('priced ') + w(usd(p.priced_usd)), d('scaled ') + m('÷ ' + p.fraction_of_week + ' of the week'),
-        d('     = ') + bold(fg(p.color, usd(p.usd_per_full_week))) + d(' per week'), d('price  ') + m('÷ $' + p.plan_usd_per_week + ' plan') + d(' = ') + bold(w(p.times_plan_price + '×'))] }; }));
+        m(p.meter), d('tokens ') + m(p.tokens), d('priced ') + w(usd(p.priced_usd)), d('scaled ') + m('÷ ' + p.fraction_of_week + ' weekly limits'),
+        d('     = ') + bold(fg(p.color, usd(p.usd_per_full_week))) + d(' per week'), d('price  ') + m('÷ $' + p.plan_usd_per_week + ' plan') + d(' = ') + bold(w(p.times_plan_price + '×')),
+        d('resets ') + m((p.resets_this_week || 0) + ' this week') + (p.resets_this_week ? d(' → ') + w(usd(p.week_allowance_usd)) : '')] }; }));
   },
 
   Heatmap(D) {
@@ -99,6 +100,13 @@ export const blocks = {
     return box('DID THE LIMIT MOVE', l, 39, C.cx, cv.length + ' weeks');
   },
 
+  Events(D) {
+    const ev = D.events || []; if (!ev.length) return box('EVENTS THIS WEEK', [d('No reset, limit change or launch on record for these 7 days.')], W, C.gold, 'core/events.csv');
+    const l = [d(pad('Date', 12) + pad('Provider', 10) + pad('Type', 14) + 'What happened')];
+    for (const e of ev) { const c = (D.plans.find(p => p.key === e.provider) || {}).color || C.ink2;
+      l.push(m(pad(e.date, 12)) + fg(c, pad(e.provider, 10)) + (e.type === 'reset' ? bold(w(pad(e.type, 14))) : d(pad(e.type.replace('_', ' '), 14))) + w(e.title.slice(0, W - 42)) + (e.confidence !== 'high' ? d(' (' + e.confidence + ')') : '')); }
+    return box('EVENTS THIS WEEK', l, W, C.gold, 'resets add allowance');
+  },
   WasteTable(D) {
     const l = [d(pad('Plan', 18) + lpad('Limit', 7) + '   ' + pad('You used', 31) + '   ' + lpad('Unused', 6) + '   Why')];
     if (!D.waste.length) return box('SUBSCRIPTION WASTE', [d('No account week closed in the last 7 days.')], W, C.red);
@@ -127,4 +135,4 @@ export const blocks = {
   },
   Note: (D, p) => wrap(p.text || '', W - 2).map(x => ' ' + m(x)),
 };
-export const widths = { Verdict: W, Tiles: W, LevelCard: 41, PlanRanking: 56, Receipts: W, Heatmap: 58, LimitTrend: 39, WasteTable: W, Summary: W, Chart: W, Facts: W, Note: W };
+export const widths = { Verdict: W, Tiles: W, LevelCard: 41, PlanRanking: 56, Receipts: W, Heatmap: 58, LimitTrend: 39, WasteTable: W, Events: W, Summary: W, Chart: W, Facts: W, Note: W };

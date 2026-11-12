@@ -309,6 +309,13 @@ def pick(ws):
 cx_pick, cx_cands = pick(codex_weeks)
 cl_pick, cl_cands = pick(claude_stints)
 go_pick, go_cands = pick([g for g in google_weeks if g['quality'] == 'clean'])
+def pooled(cands):
+    # one number from every clean finished stretch of the week: all priced dollars / all meter points they consumed
+    xs = [w for w in cands if w.get('meter_start_pct') is not None and w.get('meter_end_pct') is not None and w['meter_end_pct'] > w['meter_start_pct']]
+    if len(xs) < 2: return None
+    pts = sum(w['meter_end_pct'] - w['meter_start_pct'] for w in xs); usd = sum(w['measured']['api_usd'] for w in xs)
+    return {'stretches': len(xs), 'meter_points': round(pts), 'api_usd': round(usd, 2), 'usd_per_full_week': round(usd / (pts / 100.0)),
+            'output_tokens': sum(w['measured'].get('output_tokens', 0) for w in xs), 'cached_input_tokens': sum(w['measured'].get('cached_input_tokens', 0) for w in xs)}
 
 stamp = time.strftime('%Y-%m-%d', time.gmtime(NOW))
 outdir = os.path.join(OUT, 'weeks', stamp); os.makedirs(outdir, exist_ok=True)
@@ -317,6 +324,7 @@ report = {'generated_at': iso(NOW), 'run_dir': RUN, 'history_since': since, 'hos
           'conservation': {'claude_total_usd': round(tot_cl), 'claude_attributed_to_stints_usd': round(att_cl),
                            'codex_total_usd': round(tot_cx), 'codex_in_metered_windows_usd': round(att_cx)},
           'codex_account_overlaps': overlaps,
+          'pooled': {'claude': pooled(cl_cands), 'google': pooled(go_cands), 'codex': pooled(cx_cands)},
           'this_week': {'claude': cl_pick, 'claude_candidates': len(cl_cands), 'claude_range': [min(w['usd_per_full_week'] for w in cl_cands), max(w['usd_per_full_week'] for w in cl_cands)] if cl_cands else None,
                         'google': go_pick, 'google_candidates': len(go_cands), 'google_range': [min(w['usd_per_full_week'] for w in go_cands), max(w['usd_per_full_week'] for w in go_cands)] if go_cands else None,
                         'codex': cx_pick, 'codex_candidates': len(cx_cands), 'codex_range': [min(w['usd_per_full_week'] for w in cx_cands), max(w['usd_per_full_week'] for w in cx_cands)] if cx_cands else None},
