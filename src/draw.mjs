@@ -106,14 +106,31 @@ export const blocks = {
       l.push(m(pad(e.date, 12)) + fg(c, pad(e.provider, 10)) + (e.type === 'reset' ? bold(w(pad(e.type, 14))) : d(pad(e.type.replace('_', ' '), 14))) + w(e.title.slice(0, W - 42)) + (e.confidence !== 'high' ? d(' (' + e.confidence + ')') : '')); }
     return box('EVENTS THIS WEEK', l, W, C.gold, 'listed for context · not assumed used');
   },
-  Months(D) {
+  Months(D) {                       // grouped bars: one group per month, one bar per plan, height = API value used
     const ms = D.months || []; if (!ms.length) return [];
-    const l = [d(pad('Month', 9) + pad('Plan', 17) + lpad('Days', 5) + lpad('API value used', 16) + lpad('× plan price', 14) + lpad('Weekly limit', 15) + lpad('PRs', 8) + lpad('Commits', 9))];
-    let prev = '';
-    for (const x of ms.slice(0, 12)) { const first = x.month !== prev; prev = x.month;
-      l.push((first ? w(pad(x.month, 9)) : pad('', 9)) + fg(x.color, pad(x.plan, 17)) + m(lpad(String(x.days_tracked), 5)) + bold(w(lpad(usd(x.api_usd_used), 16))) + bold(fg(x.color, lpad(x.used_times_plan_price + '×', 14)))
-        + m(lpad(x.weekly_limit_usd ? usd(x.weekly_limit_usd) : '·', 15)) + (first ? m(lpad(x.merged_prs.toLocaleString('en-US'), 8) + lpad(x.commits.toLocaleString('en-US'), 9)) : '')); }
-    return box('MONTH BY MONTH', l, W, C.cx, 'what one $' + ms[0].plan_usd_per_month + ' plan returned');
+    const order = ['claude', 'codex', 'google'], keys = order.filter(k => ms.some(x => x.key === k)), all = [...new Set(ms.map(x => x.month))].sort();
+    const inner = W - 4, axis = 7, n = Math.min(all.length, Math.max(1, Math.floor((inner - axis) / (keys.length * 6 + 3)))), months = all.slice(-n);
+    const g = Math.floor((inner - axis) / n), slot = Math.min(9, Math.floor((g - 2) / keys.length)), bw = slot - 1, H = 8;
+    const at = (mo, k) => ms.find(x => x.month === mo && x.key === k), max = Math.max(1, ...months.flatMap(mo => keys.map(k => (at(mo, k) || {}).api_usd_used || 0)));
+    const short = v => v >= 9950 ? '$' + Math.round(v / 1000) + 'K' : v >= 1000 ? '$' + (v / 1000).toFixed(1) + 'K' : '$' + Math.round(v);
+    const mid = (t, wd) => { const a = Math.max(0, Math.floor((wd - t.length) / 2)); return ' '.repeat(a) + t + ' '.repeat(Math.max(0, wd - a - t.length)); };
+    const part = ' ▁▂▃▄▅▆▇█', lines = [];
+    const color = k => (ms.find(x => x.key === k) || {}).color || C.ink2;
+    lines.push(keys.map(k => fg(color(k), '■ ') + m((ms.find(x => x.key === k) || {}).plan)).join('   '));
+    for (let r = H; r >= 0; r--) {             // row H is headroom for the tallest bar's label
+      let line = d(lpad(r === H - 1 ? short(max) : r === 0 ? '$0' : '', axis - 1)) + ' ';
+      for (const mo of months) { let cell = '';
+        for (const k of keys) { const x = at(mo, k), v = x ? x.api_usd_used : 0, e = Math.max(x ? 1 : 0, Math.round(v / max * H * 8)), full = Math.floor(e / 8), rem = e % 8, top = full + (rem ? 1 : 0);
+          if (r < full) cell += fg(color(k), '█'.repeat(bw)) + ' ';
+          else if (r === full && rem) cell += fg(color(k), part[rem].repeat(bw)) + ' ';
+          else if (r === top && x) cell += bold(w(mid(short(v), slot)));
+          else cell += ' '.repeat(slot); }
+        line += cell + ' '.repeat(g - slot * keys.length); }
+      lines.push(line);
+    }
+    lines.push(' '.repeat(axis) + months.map(mo => keys.map(k => { const x = at(mo, k); return x ? bold(fg(color(k), mid((x.used_times_plan_price >= 100 ? Math.round(x.used_times_plan_price) : x.used_times_plan_price) + '×', slot))) : ' '.repeat(slot); }).join('') + ' '.repeat(g - slot * keys.length)).join(''));
+    lines.push(' '.repeat(axis) + months.map(mo => { const days = Math.max(...keys.map(k => (at(mo, k) || {}).days_tracked || 0)); return w(mo) + d(' · ' + days + ' days') + ' '.repeat(Math.max(0, g - mo.length - (' · ' + days + ' days').length)); }).join(''));
+    return box('MONTH BY MONTH', lines, W, C.cx, 'API value used · under each bar: × one $' + ms[0].plan_usd_per_month + ' plan');
   },
   WasteTable(D) {
     const l = [d(pad('Plan', 18) + lpad('Limit', 7) + '   ' + pad('You used', 31) + '   ' + lpad('Unused', 6) + '   Why')];
