@@ -473,7 +473,7 @@ def meter_log():
                 sd, fh5 = r.get('seven_day') or {}, r.get('five_hour') or {}
                 out.append([r.get('ts'), r.get('session'), r.get('account'), r.get('model'), sd.get('used_percentage'), sd.get('resets_at'),
                             fh5.get('used_percentage'), fh5.get('resets_at')])
-        break
+    seen = set(); out = [r for r in sorted(out, key=lambda r: r[0] or '') if not (tuple(r) in seen or seen.add(tuple(r)))]
     stats['meter_readings'] = len(out)
     return out
 
