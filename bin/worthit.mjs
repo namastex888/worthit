@@ -6,7 +6,7 @@
 // Writes ./<date>-worthit.md, ./<date>-worthit.png (when Chrome is installed) and ./<date>-worthit-audit.log.
 process.removeAllListeners('warning'); process.on('warning', () => {});
 import React, { useState, useEffect, useRef } from 'react';
-import { render, Box, Text, Static, useApp, useInput } from 'ink';
+import { render, Box, Text, Static, useApp, useInput, useStdin } from 'ink';
 import { PassThrough } from 'node:stream';
 import { z } from 'zod';
 import { defineCatalog, createSpecStreamCompiler } from '@json-render/core';
@@ -198,23 +198,43 @@ function AskBar({ onSubmit, f }) {
   return h(Box, { borderStyle: 'round', borderColor: GOLD, paddingX: 1, marginTop: 1, width: W }, h(Text, { color: GOLD, bold: true }, '› '), h(Text, {}, v), h(Text, { color: GOLD }, Math.floor(f / 5) % 2 ? '█' : ' '),
     v ? null : h(Text, { dimColor: true }, 'Would you like to know anything else about your usage?'), h(Box, { flexGrow: 1 }), h(Text, { dimColor: true }, 'enter to ask · ctrl+c to exit'));
 }
+// Mouse: the questions are clickable. The terminal reports a click as a screen row; the cursor position report tells where
+// the live area ends, so a click is turned into "N lines up from the last line". Mouse reporting is on only while a question
+// is on screen, so text selection works normally on the dashboard.
+const TEST_INPUT = process.env.WORTHIT_TEST_INPUT, MOUSE = TTY || !!TEST_INPUT;
+const mouseOff = () => { if (MOUSE && !JSON_MODE) process.stdout.write('\x1b[?1000l\x1b[?1006l'); };
+process.on('exit', mouseOff);
+function useClick(onClick) {
+  const { internal_eventEmitter: ee } = useStdin(); const pend = useRef(null), cb = useRef(onClick); cb.current = onClick;
+  useEffect(() => { if (!MOUSE || !ee) return;
+    process.stdout.write('\x1b[?1000h\x1b[?1006h');
+    const on = data => { const s = String(data), re = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g; let mm;
+      while ((mm = re.exec(s))) if (mm[4] === 'M' && (+mm[1] & 3) === 0 && !(+mm[1] & 96)) { pend.current = { x: +mm[2], y: +mm[3] }; process.stdout.write('\x1b[6n'); }   // left button down, not a drag or wheel
+      const r = /\x1b\[(\d+);(\d+)R/.exec(s); if (r && pend.current) { const p = pend.current; pend.current = null; cb.current(+r[1] - 1 - p.y, p.x); } };
+    ee.on('input', on); return () => { ee.removeListener('input', on); mouseOff(); }; }, [ee]);
+}
 function Choice({ q, options, onPick }) {       // arrows move, enter picks; the recommended answer is already selected
   const [i, setI] = useState(0);
+  useClick(up => { const k = options.length - 1 - up; if (k >= 0 && k < options.length) { setI(k); onPick(options[k]); } });
   useInput((input, key) => { if (key.upArrow || key.leftArrow) setI(x => (x + options.length - 1) % options.length); else if (key.downArrow || key.rightArrow || key.tab) setI(x => (x + 1) % options.length);
     else if (key.return) onPick(options[i]); else { const k = options.findIndex(o => o.key === input.toLowerCase()); if (k >= 0) onPick(options[k]); } });
-  return h(Box, { flexDirection: 'column', marginTop: 1 }, h(Box, { gap: 1 }, h(Text, { color: GOLD, bold: true }, '?'), h(Text, { bold: true }, q), h(Text, { dimColor: true }, '↑↓ to move · enter to confirm')),
+  return h(Box, { flexDirection: 'column', marginTop: 1 }, h(Box, { gap: 1 }, h(Text, { color: GOLD, bold: true }, '?'), h(Text, { bold: true }, q), h(Text, { dimColor: true }, '↑↓ to move · enter to confirm · or click')),
     ...options.map((o, k) => h(Box, { key: o.label, gap: 1 }, h(Text, { color: GOLD }, k === i ? '  ❯' : '   '), h(Text, { bold: k === i, color: k === i ? GOLD : undefined }, o.label), h(Text, { dimColor: true }, o.hint || ''))));
 }
 function MultiChoice({ q, options, initial, onDone }) {   // ↑↓ move, space ticks, a = all, n = none, enter confirms
-  const [i, setI] = useState(0); const [sel, setSel] = useState(() => new Set(initial));
+  const [i, setI] = useState(0); const [sel, setSel] = useState(() => new Set(initial)); const selRef = useRef(sel); selRef.current = sel;
+  const finish = () => onDone(options.map(o => o.alias).filter(a => selRef.current.has(a)));
+  useClick(up => { if (up === 0) return finish(); const k = options.length - up; if (k < 0 || k >= options.length) return; setI(k);
+    setSel(s => { const n = new Set(s), a = options[k].alias; n.has(a) ? n.delete(a) : n.add(a); return n; }); });
   useInput((input, key) => { if (key.upArrow) setI(x => (x + options.length - 1) % options.length); else if (key.downArrow || key.tab) setI(x => (x + 1) % options.length);
     else if (input === ' ') setSel(s => { const n = new Set(s), a = options[i].alias; n.has(a) ? n.delete(a) : n.add(a); return n; });
     else if (input === 'a') setSel(new Set(options.map(o => o.alias))); else if (input === 'n') setSel(new Set());
-    else if (key.return) onDone(options.map(o => o.alias).filter(a => sel.has(a))); });
-  return h(Box, { flexDirection: 'column', marginTop: 1 }, h(Box, { gap: 1 }, h(Text, { color: GOLD, bold: true }, '?'), h(Text, { bold: true }, q), h(Text, { dimColor: true }, '↑↓ move · space tick · a all · n none · enter confirm')),
+    else if (key.return) finish(); });
+  return h(Box, { flexDirection: 'column', marginTop: 1 }, h(Box, { gap: 1 }, h(Text, { color: GOLD, bold: true }, '?'), h(Text, { bold: true }, q), h(Text, { dimColor: true }, '↑↓ move · space or click to tick · a all · n none · enter confirm')),
     h(Text, { dimColor: true }, '    from your saved ssh hosts · scanned in parallel with the same read-only script · your choice is remembered'),
     ...options.map((o, k) => h(Box, { key: o.alias, gap: 1 }, h(Text, { color: GOLD }, k === i ? '  ❯' : '   '), h(Text, { color: sel.has(o.alias) ? 'green' : undefined }, sel.has(o.alias) ? '◉' : '○'),
-      h(Text, { bold: k === i, color: k === i ? GOLD : undefined }, o.alias), h(Text, { dimColor: true }, o.hostname !== o.alias ? o.hostname : ''))));
+      h(Text, { bold: k === i, color: k === i ? GOLD : undefined }, o.alias), h(Text, { dimColor: true }, o.hostname !== o.alias ? o.hostname : ''))),
+    h(Text, { color: GOLD, bold: true }, `   [ Confirm · this machine${sel.size ? ' + ' + sel.size + ' more' : ' only'} ]`));
 }
 function Setup({ onDone }) {
   const [hostsAsked, setHostsAsked] = useState(!(F_HOSTS == null && DETECTED.length));
@@ -282,9 +302,11 @@ function Main({ cfg }) {
 }
 function App() {
   const preset = () => { const ai = F_AI ? F_AI !== 'no' : AGENTS.length > 0; return { git: F_GIT ? F_GIT !== 'no' : true, ai: ai && AGENTS.length > 0, agent: AGENTS.find(a => a.id === F_AI) || AGENTS[0] }; };
-  const [cfg, setCfg] = useState(!TTY || (F_GIT && F_AI) ? preset() : null);
+  const [cfg, setCfg] = useState((!TTY && !TEST_INPUT) || (F_GIT && F_AI) ? preset() : null);
   return cfg ? h(Main, { cfg }) : h(Setup, { onDone: c => setCfg({ agent: AGENTS[0], ...c }) });
 }
 console.log('\n' + LOGO.join('\n') + '\n ' + m('what your AI coding subscription is really worth') + d(`  ·  v${VERSION}  ·  reads your local logs`));
 const fake = () => { const s = new PassThrough(); s.isTTY = true; s.setRawMode = () => s; s.ref = () => s; s.unref = () => s; return s; };   // no keyboard (pipes, tests): a stand-in input
-render(h(App), process.stdin.isTTY ? {} : { stdin: fake() });
+const stdin = process.stdin.isTTY ? null : fake();
+render(h(App), stdin ? { stdin } : {});
+if (stdin && TEST_INPUT) { let t = 0; for (const [ms, text] of JSON.parse(TEST_INPUT)) { t += ms; setTimeout(() => stdin.write(text), t); } }   // scripted keys and clicks, for tests
