@@ -1,0 +1,39 @@
+{
+  "name": "worthit",
+  "version": "0.1.0",
+  "description": "What your AI coding subscription is really worth: a local, one-command AI coding productivity meter for Claude Code, Codex and Antigravity.",
+  "type": "module",
+  "bin": {
+    "worthit": "bin/worthit.mjs",
+    "usagemeter": "bin/worthit.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "core/*.py",
+    "core/*.json",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.5"
+  },
+  "keywords": [
+    "ai",
+    "coding",
+    "usage",
+    "tokens",
+    "claude-code",
+    "codex",
+    "antigravity",
+    "productivity",
+    "quota"
+  ],
+  "dependencies": {
+    "@json-render/core": "0.22.0",
+    "@json-render/ink": "0.22.0",
+    "ink": "^6.0.0",
+    "react": "^19.0.0",
+    "zod": "^4.0.0"
+  },
+  "license": "MIT"
+}

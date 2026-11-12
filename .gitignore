@@ -1,0 +1,6 @@
+node_modules/
+__pycache__/
+*.tgz
+*-worthit.md
+*-worthit.png
+*-worthit-audit.log

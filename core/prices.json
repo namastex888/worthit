@@ -1,0 +1,133 @@
+{
+ "_sources": {
+  "openai": "https://developers.openai.com/api/docs/pricing, read 2026-11-12. Standard tier. Long context = request input over 272K tokens.",
+  "anthropic": "https://platform.claude.com/docs/en/about-claude/pricing, read 2026-11-12. Haiku 5.5 long context = prompt over 100K tokens; other models flat to 1M.",
+  "google": "Gemini 4 Argon/Carbon: $2 in, $0.10 cached, $10 out per 1M (introductory, through 30 Nov 2026; $4/$20 from 1 Dec). Third-party trackers, Google page not confirmed for Carbon. The series stays pinned to this table so a Dec price change does not look like a quota change.",
+  "plans": "Claude Ultra $200/mo (Max 20x renamed 30 Oct 2026, price unchanged; web billing; App Store is $249.99), ChatGPT Pro $200/mo, Google AI Ultra $249.99/mo (check current price); per week = monthly x 12 / 52."
+ },
+ "plan_usd_per_week": {
+  "claude": 46.15,
+  "codex": 46.15,
+  "google": 57.69
+ },
+ "claude": {
+  "claude-opus-5-5": {
+   "in": 4,
+   "cache_read": 0.2,
+   "cache_write_5m": 5,
+   "cache_write_1h": 8,
+   "out": 20
+  },
+  "claude-opus-5": {
+   "in": 5,
+   "cache_read": 0.5,
+   "cache_write_5m": 6.25,
+   "cache_write_1h": 10,
+   "out": 25
+  },
+  "claude-fable-5-2": {
+   "in": 8,
+   "cache_read": 0.2,
+   "cache_write_5m": 10,
+   "cache_write_1h": 16,
+   "out": 40
+  },
+  "claude-fable-5-1": {
+   "in": 10,
+   "cache_read": 0.25,
+   "cache_write_5m": 12.5,
+   "cache_write_1h": 20,
+   "out": 50
+  },
+  "claude-sonnet-5-5": {
+   "in": 2,
+   "cache_read": 0.1,
+   "cache_write_5m": 2.5,
+   "cache_write_1h": 4,
+   "out": 10
+  },
+  "claude-sonnet-5": {
+   "in": 2,
+   "cache_read": 0.2,
+   "cache_write_5m": 2.5,
+   "cache_write_1h": 4,
+   "out": 10
+  },
+  "claude-haiku-5-5": {
+   "in": 0.1,
+   "cache_read": 0.01,
+   "cache_write_5m": 0.125,
+   "cache_write_1h": 0.2,
+   "out": 0.5,
+   "lc_in": 0.5,
+   "lc_cache_read": 0.05,
+   "lc_cache_write_5m": 0.625,
+   "lc_cache_write_1h": 1,
+   "lc_out": 2.5
+  }
+ },
+ "codex": {
+  "gpt-6.1-sol": {
+   "in": 2,
+   "cache_read": 0.1,
+   "cache_write": 2.5,
+   "out": 10,
+   "lc_in": 4,
+   "lc_cache_read": 0.2,
+   "lc_cache_write": 5,
+   "lc_out": 15
+  },
+  "gpt-6-sol": {
+   "in": 2,
+   "cache_read": 0.2,
+   "cache_write": 2.5,
+   "out": 10,
+   "lc_in": 4,
+   "lc_cache_read": 0.4,
+   "lc_cache_write": 5,
+   "lc_out": 15
+  },
+  "gpt-6-astra": {
+   "in": 10,
+   "cache_read": 1.0,
+   "cache_write": 12.5,
+   "out": 50,
+   "lc_in": 20,
+   "lc_cache_read": 2.0,
+   "lc_cache_write": 25,
+   "lc_out": 75
+  },
+  "gpt-6.1-terra": {
+   "in": 1,
+   "cache_read": 0.05,
+   "cache_write": 1.25,
+   "out": 5,
+   "lc_in": 2,
+   "lc_cache_read": 0.1,
+   "lc_cache_write": 2.5,
+   "lc_out": 7.5
+  }
+ },
+ "google": {
+  "gemini-4-carbon": {
+   "in": 2,
+   "cache_read": 0.1,
+   "out": 10
+  },
+  "gemini-4-argon": {
+   "in": 2,
+   "cache_read": 0.1,
+   "out": 10
+  },
+  "gemini-4-hydrogen": {
+   "in": 2,
+   "cache_read": 0.1,
+   "out": 10
+  },
+  "gemini-3.8-flash": {
+   "in": 2,
+   "cache_read": 0.1,
+   "out": 10
+  }
+ }
+}
