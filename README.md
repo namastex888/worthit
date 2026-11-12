@@ -25,10 +25,16 @@ Works with Claude Code, Codex and Antigravity. Needs Node 22.5+ and Python 3.
 | `--ai no\|claude\|codex` | Who composes the dashboard. `no` = data tables only. `claude` = Haiku 5.5, `codex` = GPT-6 Luna, both medium reasoning, through your own CLI login. |
 | `--ask "question"` | Answer one question about your usage, drawn as blocks. |
 | `--days N` | Days of logs to scan (default 21). |
-| `--hosts all\|none\|a,b` | Other machines to include, from your saved ssh hosts. Scanned in parallel with the same read-only script piped in; nothing is installed there. Without the flag, a checklist asks once and the choice is remembered. |
+| `--hosts all\|none\|a,b` | Other machines to include, from your saved ssh hosts. Scanned in parallel with the same read-only script piped in; nothing is installed there (it leaves only its scan cache in `~/.worthit`). Without the flag, a checklist asks once and the choice is remembered. |
 | `--no-files` | Do not write the three files. |
+| `--fresh` | Ask the model for a new report even when the data has not changed. |
 
 Without flags, three arrow-key questions ask the same things, with the recommended answer preselected.
+
+## Caching
+
+- **Logs:** a log file that has not changed since the last run is not read again, and a file that only grew is read from where it stopped. The cache (`~/.worthit/scan-cache.db`, on each scanned machine) keeps only the token counts, model names and timestamps the scanner uses: no prompts, no code. `WORTHIT_NO_CACHE=1` turns it off.
+- **Report:** when the data the report is built from is the same as last time, the saved report is shown and the model is not called.
 
 ## How it is measured
 

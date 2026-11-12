@@ -6,6 +6,7 @@
 // Writes ./<date>-worthit.md, ./<date>-worthit.png (when Chrome is installed) and ./<date>-worthit-audit.log.
 process.removeAllListeners('warning'); process.on('warning', () => {});
 import React, { useState, useEffect, useRef } from 'react';
+import crypto from 'node:crypto';
 import { render, Box, Text, Static, useApp, useInput, useStdin } from 'ink';
 import { PassThrough } from 'node:stream';
 import { z } from 'zod';
@@ -15,20 +16,29 @@ import { createRenderer } from '@json-render/ink';
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import { blocks, C, W, bar, fg, bold, d, m, w, pad, lpad, len, strip, grad, fmtTok, usd } from '../src/draw.mjs';
-import { scan, analyse, git, buildData, audit, AUDIT, has, tilde, ROOT, sshHosts, savedHosts, saveHosts } from '../src/collect.mjs';
+import { scan, analyse, git, buildData, audit, AUDIT, has, tilde, ROOT, HOME, sshHosts, savedHosts, saveHosts } from '../src/collect.mjs';
 
 const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
 const h = React.createElement, argv = process.argv.slice(2);
 const flag = k => argv.includes(k), arg = (k, dflt) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : dflt; };
 if (flag('--version') || flag('-v')) { console.log(VERSION); process.exit(0); }
 if (flag('--help') || flag('-h')) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 7).map(l => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
-const JSON_MODE = flag('--json'), ASK = arg('--ask'), F_GIT = arg('--git'), F_AI = arg('--ai'), DAYS = +arg('--days', 21), F_HOSTS = arg('--hosts'), NO_FILES = flag('--no-files');
+const JSON_MODE = flag('--json'), ASK = arg('--ask'), F_GIT = arg('--git'), F_AI = arg('--ai'), DAYS = +arg('--days', 21), F_HOSTS = arg('--hosts'), NO_FILES = flag('--no-files'), FRESH = flag('--fresh');
 const TTY = !!process.stdin.isTTY && !JSON_MODE;
 const AGENTS = [{ id: 'claude', cli: 'claude', label: 'Claude Haiku 5.5', model: 'claude-haiku-5-5' }, { id: 'codex', cli: 'codex', label: 'GPT-6 Luna', model: 'gpt-6-luna' }].filter(a => has(a.cli));
 const STAMP = (() => { const t = new Date(); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); })();
 let DATA = null;
 const DETECTED = sshHosts(), SAVED = savedHosts();      // other machines: --hosts all | none | a,b; without the flag, the remembered choice (or the question)
 let HOSTS = F_HOSTS == null ? (SAVED || []) : F_HOSTS === 'all' ? DETECTED.map(x => x.alias) : F_HOSTS === 'none' ? [] : F_HOSTS.split(',').filter(Boolean);
+// Saved report: when nothing the report is built from has changed, the model is not asked again.
+const REPORT_FILE = path.join(HOME, 'report-cache.json');
+const reportKey = agent => { const D = DATA, pick = (o, ks) => Object.fromEntries(ks.map(k => [k, o == null ? null : o[k]]));
+  const stable = { week: D.week, machines: D.machines, plans: D.plans.map(p => pick(p, ['key', 'usd_per_full_week', 'priced_usd', 'stretches', 'proof'])), tools: D.tools, totals: D.totals,
+    waste: D.waste.map(x => pick(x, ['account', 'limit_usd', 'used_pct', 'unused_usd'])), git: D.git && pick(D.git, ['merged_prs', 'commits', 'repos']), months: D.months, events: D.events,
+    game: D.game && pick(D.game, ['level', 'xp', 'streak_days']) };
+  return crypto.createHash('sha256').update(JSON.stringify(stable) + '|' + agent.id + '|' + agent.model + '|' + SYSTEM).digest('hex'); };
+const readReport = () => { try { return JSON.parse(fs.readFileSync(REPORT_FILE, 'utf8')); } catch { return null; } };
+const saveReport = (key, agent, spec, n) => { try { fs.mkdirSync(HOME, { recursive: true }); fs.writeFileSync(REPORT_FILE, JSON.stringify({ key, at: new Date().toISOString(), agent: agent.model, n, spec })); audit('write', tilde(REPORT_FILE) + '  (this report, reused while the data stays the same)'); } catch { /* not fatal */ } };
 const forModel = () => { const { heat, ...rest } = DATA; return JSON.stringify({ ...rest, busiest: heat.note }); };   // the hourly grid is drawn by the harness
 
 // ---------------------------------------------------------------- headless: --json
@@ -194,7 +204,7 @@ function StepLine({ s, i, total, f }) {
 }
 const Title = ({ label, live, f, who }) => h(Box, { flexDirection: 'column' },
   h(Box, { gap: 1 }, h(Text, { bold: true, color: GOLD }, live.done ? '✓' : FR[f % 10]), h(Text, { bold: true }, label),
-    h(Text, { dimColor: true }, live.done ? (live.done.err ? 'failed: ' + live.done.err : `${who}${live.done.secs == null ? '' : ' · ' + live.done.secs + 's'}`) : `${who} · ${live.status}`)),
+    h(Text, { dimColor: true }, live.done ? (live.done.err ? 'failed: ' + live.done.err : live.done.cached ? `${who} · no new data: saved report from ${live.done.cached}` : `${who}${live.done.secs == null ? '' : ' · ' + live.done.secs + 's'}`) : `${who} · ${live.status}`)),
   live.done || !live.trace ? null : h(Text, { dimColor: true, italic: true, wrap: 'truncate-end' }, '  ⎿ ' + live.trace));
 function AskBar({ onSubmit, f }) {
   const [v, setV] = useState('');
@@ -272,8 +282,8 @@ function Main({ cfg }) {
     const fin = (i, t0, lines) => S(i, { state: 'done', secs: ((Date.now() - t0) / 1000).toFixed(0), lines });
     (async () => { try {
       let t0 = Date.now(); S(0, { state: 'run', t0 }); const info = await scan({ days: DAYS, hosts: HOSTS }, live(0));
-      const scanned = `${Object.values(info.counts).reduce((a, b) => a + b, 0).toLocaleString('en-US')} files read on this machine` + (info.hosts.length ? ` · ${info.hosts.filter(x => x.ok).length} other machine${info.hosts.filter(x => x.ok).length === 1 ? '' : 's'} read in parallel` : '') + ` · last ${DAYS} days`;
-      const hl = info.hosts.map(x => x.ok ? fg(C.cx, '✓ ') + w(x.alias) + d(' ' + x.files.toLocaleString('en-US') + ' files') : x.same_as ? d('= ' + x.alias + ' same as ' + x.same_as) : fg(C.bad || C.go, '✗ ') + m(x.alias) + d(' no answer')), hrows = []; for (let k = 0; k < hl.length; k += 4) hrows.push('  ' + hl.slice(k, k + 4).join(d('  ·  ')));
+      const scanned = `${Object.values(info.counts).reduce((a, b) => a + b, 0).toLocaleString('en-US')} files on this machine` + (info.cached ? ` (${info.cached.toLocaleString('en-US')} unchanged, from cache)` : '') + (info.hosts.length ? ` · ${info.hosts.filter(x => x.ok).length} other machine${info.hosts.filter(x => x.ok).length === 1 ? '' : 's'} read in parallel` : '') + ` · last ${DAYS} days`;
+      const hl = info.hosts.map(x => x.ok ? fg(C.cx, '✓ ') + w(x.alias) + d(' ' + x.files.toLocaleString('en-US') + ' files' + (x.cached ? ', ' + x.cached.toLocaleString('en-US') + ' cached' : '')) : x.same_as ? d('= ' + x.alias + ' same as ' + x.same_as) : fg(C.bad || C.go, '✗ ') + m(x.alias) + d(' no answer')), hrows = []; for (let k = 0; k < hl.length; k += 4) hrows.push('  ' + hl.slice(k, k + 4).join(d('  ·  ')));
       const scanSecs = ((Date.now() - t0) / 1000).toFixed(0); fin(0, t0, [m(scanned), ...hrows]);
       t0 = Date.now(); S(1, { state: 'run', t0, pct: null, detail: 'each request = its tokens × that model\'s API list price' }); const report = await analyse(info.runDir); const t1 = t0;
       let g = null; if (cfg.git) { t0 = Date.now(); S(2, { state: 'run', t0 }); g = await git(cfg, live(2)); }
@@ -287,9 +297,13 @@ function Main({ cfg }) {
       if (cfg.git) fin(2, t0, [fg(C.cx, '✓') + ' ' + w(DATA.git.merged_prs) + m(' merged PRs · ') + w(DATA.git.commits.toLocaleString('en-US')) + m(' commits · ') + w(DATA.git.repos) + m(' repos') + d('  in the last 7 days'), d(`  sources, 14 days: GitHub ${g.src.github} PRs · usagemeter ${g.src.meter} PRs` + (g.meter ? ` (usagemeter ${g.meter.version}${g.meter.downloaded ? ', downloaded' : ''})` : ''))]);
       setSteps(s => { setPast(p => [{ kind: 'steps', id: 'steps', steps: s }, ...p]); return s; });
       const finish = (x, done) => { let files = []; try { files = writeFiles(x.spec); } catch (e) { audit('note', 'files not written: ' + e.message); } setSaved(files); setPast(p => [...p, { kind: 'panel', ...x, done, id: 'dash' }]); return { ...x, done, moved: true }; };
-      if (!agent) { setDash(finish({ ...blank(), spec: builtin() }, { secs: null })); setTimeout(exit, 300); }
-      else { setDash(blank()); feed({ system: SYSTEM, user: 'Here is this week\'s data as JSON. Compose the dashboard now.\n\n' + forModel(), agent }, (spec, n) => setDash(x => ({ ...x, spec, n })), st(setDash),
-        done => { setDash(x => finish(done.err || !ready(x.spec) ? { ...x, spec: builtin() } : x, done)); if (ASK) ask(ASK); else if (!TTY) setTimeout(exit, 300); }); }
+      if (!agent) setTimeout(() => { setDash(finish({ ...blank(), spec: builtin() }, { secs: null })); setTimeout(exit, 300); }, 120);
+      else { const key = reportKey(agent), rc = FRESH ? null : readReport();
+        if (rc && rc.key === key && ready(rc.spec)) {        // nothing new since the saved report: show it, do not call the model
+          audit('agent', `no new data since ${rc.at}: the saved report is shown, ${agent.cli} is not called (--fresh forces a new one)`);
+          setTimeout(() => { setDash(finish({ ...blank(), spec: rc.spec, n: rc.n }, { secs: null, cached: rc.at.slice(0, 16).replace('T', ' ') })); if (ASK) ask(ASK); else if (!TTY) setTimeout(exit, 300); }, 120); }   // let the step lines paint first
+        else { setDash(blank()); feed({ system: SYSTEM, user: 'Here is this week\'s data as JSON. Compose the dashboard now.\n\n' + forModel(), agent }, (spec, n) => setDash(x => ({ ...x, spec, n })), st(setDash),
+          done => { setDash(x => { const ok = !(done.err || !ready(x.spec)); if (ok) saveReport(key, agent, x.spec, x.n); return finish(ok ? x : { ...x, spec: builtin() }, done); }); if (ASK) ask(ASK); else if (!TTY) setTimeout(exit, 300); }); } }
     } catch (e) { setFail(e.message); setTimeout(exit, 200); } })();
     return () => clearInterval(t); }, []);
   const collected = past.some(p => p.kind === 'steps');

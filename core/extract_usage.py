@@ -11,6 +11,7 @@ Set USAGE_ACCT_SALT to the same value on every host so tags match across machine
 import sys, os, json, glob, time, socket, hashlib, re
 from collections import defaultdict, Counter
 
+import zlib
 DAYS = int(sys.argv[1]) if len(sys.argv) > 1 else 45
 H = os.path.expanduser('~')
 NOW = time.time()
@@ -18,9 +19,9 @@ CUT_M = NOW - DAYS * 86400
 CUT_TS = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(CUT_M))
 HOST = socket.gethostname()
 PROG = os.environ.get('WORTHIT_PROGRESS')
-def prog(tool, i, n, f):
-    """One line per file read, on stderr, so the caller can show a live bar and keep an audit log."""
-    if PROG: sys.stderr.write('@f\t%s\t%d\t%d\t%s\n' % (tool, i, n, f))
+def prog(tool, i, n, f, how='read'):
+    """One line per file, on stderr, so the caller can show a live bar and keep an audit log. @f = read now, @c = unchanged, taken from the cache."""
+    if PROG: sys.stderr.write('%s\t%s\t%d\t%d\t%s\n' % ('@c' if how == 'cache' else '@f', tool, i, n, f))
 
 def h64(s):
     return int.from_bytes(hashlib.blake2b(s.encode('utf-8', 'replace'), digest_size=8).digest(), 'big')
@@ -104,6 +105,137 @@ def walk(root, suffix):
             if f.endswith(suffix) or (suffix == '.jsonl' and f.endswith('.jsonl.zst')):
                 yield os.path.join(d, f)
 
+# ---------------- per-file cache: a log file that has not changed is not read again ----------------
+# ~/.worthit/scan-cache.db keeps, per log file, only the few fields the scanner uses from each relevant line (no prompts, no code).
+# Unchanged file (same size and time) -> replayed from the cache. File that only grew -> only the new lines are read.
+CACHE_VER = 1
+_cdb = None
+_cput = 0
+def cache_db():
+    global _cdb
+    if _cdb is not None: return _cdb or None
+    _cdb = False
+    if os.environ.get('WORTHIT_NO_CACHE'): return None
+    try:
+        import sqlite3
+        d = os.path.join(H, '.worthit'); os.makedirs(d, exist_ok=True)
+        c = sqlite3.connect(os.path.join(d, 'scan-cache.db'), timeout=5)
+        c.execute('CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, tool TEXT, ver INTEGER, size INTEGER, mtime REAL, tail BLOB, data BLOB)')
+        _cdb = c
+    except Exception as e:
+        errors.append('cache off: %s' % e)
+    return _cdb or None
+
+def cache_put(f, tool, size, mtime, tail, objs):
+    global _cput
+    db = cache_db()
+    if not db: return
+    try:
+        db.execute('INSERT OR REPLACE INTO files VALUES (?,?,?,?,?,?,?)', (f, tool, CACHE_VER, size, mtime, tail, zlib.compress(json.dumps(objs, separators=(',', ':')).encode(), 3)))
+        _cput += 1
+        if _cput % 200 == 0: db.commit()
+    except Exception as e:
+        errors.append('cache write %s: %s' % (f, e))
+
+def cache_close():
+    db = cache_db()
+    if not db: return
+    try:
+        db.execute('DELETE FROM files WHERE mtime >= 0 AND mtime < ?', (NOW - 200 * 86400,))
+        db.commit(); db.close()
+    except Exception:
+        pass
+
+def slim_claude(l):
+    is_err = '"rate_limit' in l or '"apiError"' in l
+    if '"usage"' not in l and not is_err: return None
+    try: o = json.loads(l)
+    except ValueError: return None
+    if not isinstance(o, dict): return None
+    m = o.get('message') if isinstance(o.get('message'), dict) else {}
+    err = o.get('isApiErrorMessage') or o.get('apiError')
+    u = m.get('usage')
+    if not err and not isinstance(u, dict): return None
+    s = {k: o[k] for k in ('timestamp', 'sessionId', 'session_id', 'uuid', 'requestId', 'effort', 'perTurnEffort', 'isSidechain', 'cwd', 'gitBranch',
+                           'isApiErrorMessage', 'apiError', 'error', 'quotaLimits') if o.get(k) is not None}
+    if err:
+        p = o.get('apiErrorParams')
+        if isinstance(p, dict) and p.get('rate_limit_info') is not None: s['apiErrorParams'] = {'rate_limit_info': p['rate_limit_info']}
+    if isinstance(u, dict):
+        s['message'] = {'id': m.get('id'), 'model': m.get('model'),
+                        'usage': {k: u[k] for k in ('input_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens', 'output_tokens', 'cache_creation', 'output_tokens_details') if u.get(k) is not None}}
+    return s
+
+def slim_codex(l):
+    if '"token_count"' in l: pass
+    elif l.startswith('{"timestamp"') and '"type":"session_meta"' in l[:120]: pass
+    elif l.startswith('{"timestamp"') and '"type":"turn_context"' in l[:120]: pass
+    elif '"session_meta"' in l[:200]: pass
+    elif '"turn_context"' in l[:200]: pass
+    else: return None
+    try: o = json.loads(l)
+    except ValueError: return None
+    if not isinstance(o, dict): return None
+    p = o.get('payload') if isinstance(o.get('payload'), dict) else {}
+    t = o.get('type'); ts = o.get('timestamp')
+    if t == 'session_meta':
+        g = p.get('git') if isinstance(p.get('git'), dict) else {}
+        return {'timestamp': ts, 'type': t, 'payload': {'creator_user_id': p.get('creator_user_id'), 'creator_account_id': p.get('creator_account_id'), 'session_id': p.get('session_id'),
+                                                        'id': p.get('id'), 'cwd': p.get('cwd'), 'git': {'branch': g.get('branch'), 'repository_url': g.get('repository_url')}}}
+    if t == 'turn_context':
+        cm = p.get('collaboration_mode') if isinstance(p.get('collaboration_mode'), dict) else {}
+        st = cm.get('settings') if isinstance(cm.get('settings'), dict) else {}
+        return {'timestamp': ts, 'type': t, 'payload': {'model': p.get('model'), 'effort': p.get('effort'), 'collaboration_mode': {'settings': {'reasoning_effort': st.get('reasoning_effort')}}}}
+    if p.get('type') != 'token_count': return None
+    info = p.get('info') if isinstance(p.get('info'), dict) else {}
+    return {'timestamp': ts, 'type': t, 'payload': {'type': 'token_count', 'info': {'total_token_usage': info.get('total_token_usage'), 'last_token_usage': info.get('last_token_usage')},
+                                                    'rate_limits': p.get('rate_limits')}}
+
+SLIM = {'claude': slim_claude, 'codex': slim_codex}
+
+def file_objs(tool, f):
+    """The relevant lines of one log file, reduced to the fields the scanner uses. Returns (objects, 'cache' | 'tail' | 'read')."""
+    slim = SLIM[tool]; db = cache_db(); zst = f.endswith('.zst')
+    st = os.stat(f); row = None
+    if db:
+        try: row = db.execute('SELECT ver, size, mtime, tail, data FROM files WHERE path = ?', (f,)).fetchone()
+        except Exception: row = None
+    if row and row[0] == CACHE_VER:
+        if row[1] == st.st_size and row[2] == st.st_mtime:
+            stats['cache_hits'] += 1
+            return json.loads(zlib.decompress(row[4])), 'cache'
+        if not zst and st.st_size > row[1] > 0:
+            with open(f, 'rb') as fh:
+                fh.seek(max(0, row[1] - 64)); tail = fh.read(min(64, row[1]))
+                if tail == row[3]:                       # same file, only longer: read just the new lines
+                    new = fh.read(); cut = new.rfind(b'\n') + 1
+                    objs = json.loads(zlib.decompress(row[4]))
+                    for l in new[:cut].decode('utf-8', 'replace').split('\n'):
+                        o = slim(l)
+                        if o is not None: objs.append(o)
+                    end = row[1] + cut; whole = new[:cut]
+                    ntail = (tail + whole)[-64:] if cut else tail
+                    cache_put(f, tool, end, st.st_mtime if end == st.st_size else -1, ntail, objs)
+                    stats['cache_tail'] += 1
+                    return objs, 'tail'
+    objs = []; stats['cache_miss'] += 1
+    if zst:
+        with zopen(f) as fh:
+            for l in fh:
+                o = slim(l)
+                if o is not None: objs.append(o)
+        cache_put(f, tool, st.st_size, st.st_mtime, b'', objs)
+        return objs, 'read'
+    end = 0; last = b''
+    with open(f, 'rb') as fh:
+        for raw in fh:
+            if not raw.endswith(b'\n'): break            # a line still being written: left for the next run
+            end += len(raw); last = (last + raw)[-64:]
+            o = slim(raw.decode('utf-8', 'replace'))
+            if o is not None: objs.append(o)
+    cache_put(f, tool, end, st.st_mtime if end == st.st_size else -1, last, objs)
+    return objs, 'read'
+
 buckets = defaultdict(lambda: defaultdict(int))   # (provider, account, model, effort, hour) -> counters
 sessions = {}                                     # (provider, sid) -> info
 events = []                                       # cap hits
@@ -132,21 +264,14 @@ def claude():
     seen, seen_ev = {}, set()
     _fl = list(recent(files))
     for _i, f in enumerate(_fl):
-        prog('claude', _i + 1, len(_fl), f)
         acct = files[f]
         try:
-            fh = open(f, errors='replace')
-        except OSError as e:
+            objs, how = file_objs('claude', f)
+        except Exception as e:
             errors.append('claude %s: %s' % (f, e)); continue
-        with fh:
-            for l in fh:
-                is_err = '"rate_limit' in l or '"apiError"' in l
-                if '"usage"' not in l and not is_err:
-                    continue
-                try:
-                    o = json.loads(l)
-                except ValueError:
-                    continue
+        prog('claude', _i + 1, len(_fl), f, how)
+        if True:
+            for o in objs:
                 ts = o.get('timestamp') or ''
                 if ts < CUT_TS:
                     continue
@@ -208,27 +333,17 @@ def codex():
     seen = set()
     _fl = list(files)
     for _i, f in enumerate(_fl):
-        prog('codex', _i + 1, len(_fl), f)
         acct = sid = cwd = branch = repo = None
         login = login_of.get(f, 'unknown')
         model = effort = ''
         prev = None; last_reset = None
         try:
-            fh = zopen(f)
+            objs, how = file_objs('codex', f)
         except Exception as e:
             errors.append('codex %s: %s' % (f, e)); continue
-        with fh:
-            for l in fh:
-                if '"token_count"' in l: kind = 'tc'
-                elif l.startswith('{"timestamp"') and '"type":"session_meta"' in l[:120]: kind = 'sm'
-                elif l.startswith('{"timestamp"') and '"type":"turn_context"' in l[:120]: kind = 'tx'
-                elif '"session_meta"' in l[:200]: kind = 'sm'
-                elif '"turn_context"' in l[:200]: kind = 'tx'
-                else: continue
-                try:
-                    o = json.loads(l)
-                except ValueError:
-                    continue
+        prog('codex', _i + 1, len(_fl), f, how)
+        if True:
+            for o in objs:
                 p = o.get('payload') if isinstance(o.get('payload'), dict) else {}
                 t = o.get('type')
                 ts = o.get('timestamp') or ''
@@ -501,6 +616,7 @@ res['events'] = sorted(events, key=lambda e: str(e.get('ts')))
 res['sessions'] = sorted(sessions.values(), key=lambda s: s['first'])
 res['meter_readings'] = meter_log()
 res['meter_fields'] = ['ts', 'session', 'label', 'model', 'week_pct', 'week_reset', 'five_h_pct', 'five_h_reset']
+cache_close()
 res['stats'] = dict(stats)
 res['errors'] = errors[:50]
 json.dump(res, sys.stdout, separators=(',', ':'))
