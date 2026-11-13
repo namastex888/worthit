@@ -28,7 +28,7 @@ def iso(e): return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(e))
 def hr(e): return time.strftime('%Y-%m-%dT%H', time.gmtime(e))
 
 # ---------------------------------------------------------------- load, dedupe across hosts
-hosts, B, M, E, S, R, ACC = {}, [], [], [], [], [], {}
+hosts, B, M, E, S, R, ACC, MU = {}, [], [], [], [], [], {}, {}
 for p in sorted(glob.glob(os.path.join(RUN, '*.json'))):
     try:
         r = json.load(open(p))
@@ -43,6 +43,7 @@ for p in sorted(glob.glob(os.path.join(RUN, '*.json'))):
     for m in r['meters']: m['host'] = h; M.append(m)
     for e in r['events']: e['host'] = h; E.append(e)
     for s in r['sessions']: s['host'] = h; S.append(s)
+    for x in r.get('meter_usage') or []: MU.setdefault(x[0], x)      # the same row can come from two machines' stores: keep one
     for x in r.get('meter_readings') or []:
         R.append(dict(zip(r['meter_fields'], x), host=h))
 
@@ -342,8 +343,67 @@ if _acc:
                                      'resets': _acc.get('resets', {}).get(w, 0), 'allowances': _acc['accounts'] + _acc.get('resets', {}).get(w, 0),
                                      'usd_per_allowance': round(_tot[w] / (_acc['accounts'] + _acc.get('resets', {}).get(w, 0))),
                                      'complete_week': w < _now and len(_days[w]) >= 6} for w in sorted(_tot)]
+# ---------------------------------------------------------------- omp and dsh (from each machine's usagemeter store)
+# omp reports a dollar cost per hour row. Rows without one (dsh) are priced with the rates those reported costs imply for the same model:
+# a least-squares fit of cost = a*fresh input + b*cached input + c*output. A model with no reported cost anywhere stays unpriced.
+def _fit(rows):
+    n = [[0.0] * 3 for _ in range(3)]; y = [0.0] * 3
+    for r in rows:
+        x = (r[4] / 1e6, r[5] / 1e6, r[7] / 1e6)
+        for i in range(3):
+            y[i] += x[i] * r[10]
+            for j in range(3): n[i][j] += x[i] * x[j]
+    def det(m): return (m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]))
+    d = det(n)
+    if abs(d) < 1e-12: return None
+    k = []
+    for i in range(3):
+        m = [row[:] for row in n]
+        for j in range(3): m[j][i] = y[j]
+        k.append(det(m) / d)
+    tot = sum(r[10] for r in rows); err = sum(abs(k[0] * r[4] / 1e6 + k[1] * r[5] / 1e6 + k[2] * r[7] / 1e6 - r[10]) for r in rows)
+    if min(k) < -1e-6 or tot <= 0 or err / tot > 0.05: return None
+    return {'input_per_m': round(max(k[0], 0), 4), 'cached_input_per_m': round(max(k[1], 0), 4), 'output_per_m': round(max(k[2], 0), 4), 'rows': len(rows), 'fit_error_pct': round(100 * err / tot, 2)}
+_by_model = defaultdict(list)
+for r in MU.values():
+    if r[10]: _by_model[r[3]].append(r)
+# Some providers charge by time of day (seen: DeepSeek, exact base rate 16-24 UTC, higher in other hours), so the fit is done per 3-hour UTC band.
+# A band the fit cannot explain within 5% takes the model's best band scaled by that band's reported / base-priced ratio.
+def _price(f_, r): return (f_['input_per_m'] * r[4] + f_['cached_input_per_m'] * r[5] + f_['output_per_m'] * r[7]) / 1e6
+def _bands(rs):
+    by = defaultdict(list)
+    for r in rs: by[time.gmtime(r[1] / 1000.0).tm_hour // 3].append(r)
+    good = {b: f for b, f in ((b, _fit(x)) for b, x in by.items() if len(x) >= 8) if f}
+    if not good:
+        whole = _fit(rs)
+        return {b: dict(whole, how='fit, all hours') for b in range(8)} if whole else None
+    base = max(good.values(), key=lambda f: f['rows'])
+    out = {}
+    for b in range(8):
+        if b in good: out[b] = dict(good[b], how='fit')
+        elif by.get(b):
+            bp = sum(_price(base, r) for r in by[b]); mult = sum(r[10] for r in by[b]) / bp if bp > 0 else 1.0
+            out[b] = {'input_per_m': round(base['input_per_m'] * mult, 4), 'cached_input_per_m': round(base['cached_input_per_m'] * mult, 4), 'output_per_m': round(base['output_per_m'] * mult, 4),
+                      'rows': len(by[b]), 'how': 'base rate x %.2f' % mult}
+        else: out[b] = dict(base, how='base rate, no reported cost in these hours')
+    return out
+fitted = {m_: f_ for m_, f_ in ((m_, _bands(rs_)) for m_, rs_ in _by_model.items() if len(rs_) >= 8) if f_}
+other = defaultdict(lambda: {'rows': 0, 'usd_reported': 0.0, 'usd_fitted': 0.0, 'unpriced_output_tokens': 0, 'models': Counter()})
+_OT = {'omp': 'omp', 'dsh-tui': 'dsh'}
 # hourly activity per tool (priced), and session counts: what the dashboard's totals, sparklines and heatmap are drawn from
 _act = defaultdict(lambda: defaultdict(float))
+for r in MU.values():
+    p_ = _OT.get(r[2]); o_ = other[p_]; o_['rows'] += 1; o_['models'][r[3]] += r[7]
+    usd_ = r[10]
+    if usd_ is not None: o_['usd_reported'] += usd_
+    elif r[3] in fitted:
+        usd_ = _price(fitted[r[3]][time.gmtime(r[1] / 1000.0).tm_hour // 3], r); o_['usd_fitted'] += usd_
+    else:
+        usd_ = 0.0; o_['unpriced_output_tokens'] += r[7]
+    a_ = _act[(time.strftime('%Y-%m-%dT%H', time.gmtime(r[1] / 1000.0)), p_)]
+    a_['output'] += r[7]; a_['input_uncached'] += r[4]; a_['cache_read'] += r[5]; a_['requests'] += r[9]; a_['usd'] += usd_
+report['other_tools'] = {k_: dict(v_, usd_reported=round(v_['usd_reported'], 2), usd_fitted=round(v_['usd_fitted'], 2), models=dict(v_['models'].most_common(6))) for k_, v_ in other.items()}
+report['fitted_prices'] = {m_: {'utc_%02d_%02d' % (b * 3, b * 3 + 3): f_ for b, f_ in bs_.items()} for m_, bs_ in fitted.items()}
 for b in B:
     a_ = _act[(b['hour'], b['provider'])]
     for f_ in ('output', 'input_uncached', 'cache_read', 'requests'): a_[f_] += b.get(f_, 0) + b.get('lc_' + f_, 0)

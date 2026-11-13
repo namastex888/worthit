@@ -6,7 +6,7 @@ Is your AI coding subscription worth it? One command scans the session logs alre
 npx worthit        # same tool: npx usagemeter
 ```
 
-Works with Claude Code, Codex and Antigravity. Needs Node 22.5+ and Python 3.
+Works with Claude Code, Codex and Antigravity. omp and dsh usage is included when the Automagik usagemeter store is present on a scanned machine: omp's own reported cost is used, and dsh is priced at the rates those costs imply for the same model and time of day. Needs Node 22.5+ and Python 3.
 
 ## What you get
 

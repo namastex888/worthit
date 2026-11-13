@@ -293,8 +293,8 @@ function Main({ cfg }) {
       const g = gP ? await gP : null;
       DATA = buildData(report, g, { days: DAYS, hosts: HOSTS }, info);
       const hd = d(pad('  Tool', 17) + lpad('Sessions', 9) + lpad('Requests', 10) + lpad('Output', 9) + lpad('Cached in', 11) + lpad('Fresh in', 10) + lpad('API value', 11));
-      const col = { claude: C.cl, codex: C.cx, antigravity: C.go }, T = DATA.tools, tot = k => T.reduce((s, x) => s + x[k], 0);
-      fin(0, 0, [m(scanned), hd, ...T.map(x => x.found ? fg(C.cx, '✓') + ' ' + pad(fg(col[x.key], x.tool), 15) + lpad(w(x.sessions.toLocaleString('en-US')), 9) + lpad(w(x.requests.toLocaleString('en-US')), 10) + lpad(w(fmtTok(x.output)), 9) + lpad(w(fmtTok(x.cached)), 11) + lpad(w(fmtTok(x.fresh)), 10) + lpad(w(usd(x.usd)), 11) : d('– ' + pad(x.tool, 15) + 'no logs found')),
+      const col = { claude: C.cl, codex: C.cx, antigravity: C.go, omp: C.pink, dsh: C.gold }, T = DATA.tools, tot = k => T.reduce((s, x) => s + x[k], 0);
+      fin(0, 0, [m(scanned), hd, ...T.map(x => x.found ? fg(C.cx, '✓') + ' ' + pad(fg(col[x.key], x.tool), 15) + lpad(x.sessions ? w(x.sessions.toLocaleString('en-US')) : d('·'), 9) + lpad(w(x.requests.toLocaleString('en-US')), 10) + lpad(w(fmtTok(x.output)), 9) + lpad(w(fmtTok(x.cached)), 11) + lpad(w(fmtTok(x.fresh)), 10) + lpad(w(usd(x.usd)), 11) : d('– ' + pad(x.tool, 15) + 'no logs found')),
         '  ' + pad(bold(w('Last 7 days')), 15) + lpad('', 9) + lpad(bold(w(tot('requests').toLocaleString('en-US'))), 10) + lpad(bold(fg(GOLD, fmtTok(tot('output')))), 9) + lpad(bold(w(fmtTok(tot('cached')))), 11) + lpad(bold(w(fmtTok(tot('fresh')))), 10) + lpad(bold(w(usd(tot('usd')))), 11)]);
       S(0, { secs: scanSecs });
       fin(1, t1, DATA.plans.length ? DATA.plans.map(p => fg(C.cx, '✓') + ' ' + pad(fg(p.color, p.plan), 17) + m(pad(p.meter, 34)) + d('→ ') + bold(w(usd(p.usd_per_full_week))) + d(' per full week')) : [m('No weekly limit ran to its cap inside the scanned days: plans are ranked once one does.')]);

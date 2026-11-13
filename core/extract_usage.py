@@ -592,6 +592,25 @@ def meter_log():
     stats['meter_readings'] = len(out)
     return out
 
+def meter_usage():
+    """omp and dsh usage, hourly rows, from the Automagik usagemeter store on this machine (opened read-only)."""
+    out = []
+    for d in (os.environ.get('METER_STATE_DIR', ''), os.path.join(H, '.automagik', 'meter'), os.path.join(H, 'Library/Application Support/automagik'),
+              os.path.join(os.environ.get('XDG_STATE_HOME', os.path.join(H, '.local/state')), 'automagik')):
+        f = os.path.join(d, 'meter.db')
+        if not d or not os.path.exists(f): continue
+        prog('meter', 0, 0, f)
+        try:
+            import sqlite3
+            c = sqlite3.connect('file:' + f + '?mode=ro', uri=True, timeout=3)
+            for r in c.execute("SELECT id, hour_ms, harness, model, input_uncached, cache_read, cache_write_5m + cache_write_1h, output, reasoning, events, reported_usd "
+                               "FROM usage WHERE harness IN ('omp', 'dsh-tui') AND hour_ms >= ?", (int(CUT_M * 1000),)):
+                out.append(list(r))
+            c.close()
+        except Exception as e:
+            errors.append('meter store %s: %s' % (f, e))
+    return out
+
 res = {'host': HOST, 'generated_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(NOW)), 'days': DAYS, 'since': CUT_TS}
 agy_info = {}
 for name, fn in (('claude', claude), ('codex', codex), ('antigravity', antigravity)):
@@ -615,6 +634,8 @@ res['meters'] = sorted(meters.values(), key=lambda m: (str(m['resets_at']), m['s
 res['events'] = sorted(events, key=lambda e: str(e.get('ts')))
 res['sessions'] = sorted(sessions.values(), key=lambda s: s['first'])
 res['meter_readings'] = meter_log()
+res['meter_usage'] = meter_usage()
+res['meter_usage_fields'] = ['id', 'hour_ms', 'harness', 'model', 'input_uncached', 'cache_read', 'cache_write', 'output', 'reasoning', 'events', 'reported_usd']
 res['meter_fields'] = ['ts', 'session', 'label', 'model', 'week_pct', 'week_reset', 'five_h_pct', 'five_h_reset']
 cache_close()
 res['stats'] = dict(stats)
