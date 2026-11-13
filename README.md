@@ -11,7 +11,7 @@
 
 </div>
 
-**What it answers:** what a weekly limit is worth in dollars · which plan gives more for its price · tokens and cost per model, per tool, per day · cost per merged PR · allowance you paid for and did not use · how much of your work runs on open models · whether a provider moved your limit.
+**What it answers:** what a weekly limit is worth in dollars · which plan gives more for its price · tokens and cost per model, per tool, per day · cost per merged PR · what a shipped feature costs, week by week · allowance you paid for and did not use · how much of your work runs on open models · whether a provider moved your limit.
 
 ## For humans
 
@@ -32,6 +32,7 @@ The numbers are only useful if they change what you do next week. Each part of t
 | **Unused allowance** with dollars still open | You paid for capacity that resets soon | Spend it before the reset: queue the refactor, the test backfill, the long review |
 | **A plan at 100% days before its reset** | You are rationing your best model | Move bulk work (search, summaries, boilerplate) to a cheaper or open model and keep the limit for the hard parts |
 | **Model mix** with dollars per million tokens | Which models do your volume and what each costs | If an expensive model writes most of your tokens, try the cheap one on the easy half and compare next week |
+| **Cost per feature** going up while features stay flat | More usage is not turning into more delivery | Check the Delivery block: which kind of PR grew (fixes, tests, docs) and on which day the cost jumped |
 | **Cost per merged PR** going up | You are spending more for each change that ships | Look at the day it jumped: a stuck agent, a retry loop, or one very large PR |
 | **The hour grid** | When your agents work and when they sit idle | Idle nights are free capacity: start long jobs before you leave |
 | **Plan ranking** | What each plan gives back for its price | Keep the one that pays, question the one that does not |
@@ -51,7 +52,7 @@ npx worthit share
 
 It draws a card like this from your last run, writes the post, copies the image and opens X with the text filled in. You paste the image and press Post; worthit never posts for you. You can also just type "share my open model stats" in the question bar.
 
-Topics: `allowance` (did your weekly limits move), `open` (open vs closed models), `models`, `value`, `ranking`, `waste`, or anything in quotes: `npx worthit share "what each merged PR cost me"`.
+Topics: `allowance` (did your weekly limits move), `delivery` (what a shipped feature costs, week by week), `open` (open vs closed models), `models`, `value`, `ranking`, `waste`, or anything in quotes: `npx worthit share "what each merged PR cost me"`.
 
 ## For agents
 
@@ -81,7 +82,7 @@ Flags for a scan (`worthit` or `worthit --json`):
 
 | Flag | What it does |
 |---|---|
-| `--git yes\|no` | count commits and merged PRs (GitHub, plus Gitea and GitLab when `tea` and `glab` are logged in) |
+| `--git yes\|no` | count commits and merged PRs (GitHub, Gitea when `tea` is logged in, and every GitLab host `glab` is logged in to), and read what each PR was from its title prefix |
 | `--ai claude\|codex\|omp\|dsh\|no` | which agent writes the summary; `no` = tables only |
 | `--ask "question"` | answer one question about the data, then exit |
 | `--hosts all\|none\|a,b` | also read your saved ssh machines, in parallel |
