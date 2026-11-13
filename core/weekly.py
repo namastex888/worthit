@@ -167,7 +167,7 @@ for x in R:
     if x['fresh']: fresh.append(x)
 stints, pending = [], []
 def add(s, x):
-    s['hi'] = max(s['hi'], x['week_pct']); s['last'] = x['ts']; s['t_last'] = ep(x['ts']); s['n'] += 1
+    s['hi'] = max(s['hi'], x['week_pct']); s['last'] = x['ts']; s['t_last'] = ep(x['ts']); s['n'] += 1; s['pts'].append((ep(x['ts']), x['week_pct']))
     s['sessions'].add(x['session']); s['hosts'].add(x['host']); s['labels'][x.get('label')] += 1
     if x['week_pct'] >= 99 and not s['cap_ts']: s['cap_ts'] = x['ts']
     x['stint'] = s['id']
@@ -183,16 +183,48 @@ for x in fresh:
     grp = sorted((q for q in pending if q['week_reset'] == x['week_reset'] and abs(q['week_pct'] - pct) <= 4), key=lambda q: q['ts'])
     if len({q['session'] for q in grp}) >= 3:
         main = mains[key] = {'id': len(stints), 'reset': x['week_reset'], 'lo': min(q['week_pct'] for q in grp), 'hi': 0, 'first': grp[0]['ts'],
-                'last': grp[0]['ts'], 't_last': ep(grp[0]['ts']), 'n': 0, 'sessions': set(), 'hosts': set(), 'labels': Counter(), 'cap_ts': None}
+                'last': grp[0]['ts'], 't_last': ep(grp[0]['ts']), 'n': 0, 'sessions': set(), 'hosts': set(), 'labels': Counter(), 'cap_ts': None, 'pts': []}
         stints.append(main)
         for q in grp: add(main, q); pending.remove(q)
 valid = {s['id'] for s in stints if s['n'] >= 5 and len(s['sessions']) >= 2}
+# One account used from two machines draws the same meter line on both. Counted as two stretches, each would hold only its own machine's
+# requests but the full meter movement, which halves the value. Lines on different machines with the same reset that agree within 3 points
+# while they overlap are one stretch. (Lines on the same machine are never merged: two accounts can share a reset time.)
+canon = {}
+def _at(s, t):
+    v = None
+    for tt, pc in s['pts']:
+        if tt <= t: v = pc
+        else: break
+    return v
+def _same_line(a, b):
+    if a['reset'] != b['reset'] or (a['hosts'] & b['hosts']) or not a['pts'] or not b['pts']: return False
+    lo, hi = max(a['pts'][0][0], b['pts'][0][0]), min(a['pts'][-1][0], b['pts'][-1][0])
+    if hi - lo < 600: return False
+    ds = [abs(pc - _at(b, t)) for t, pc in a['pts'] if lo <= t <= hi and _at(b, t) is not None]
+    return len(ds) >= 3 and statistics.median(ds) <= 3
+for s in stints: s['pts'].sort()
+_live = sorted((s for s in stints if s['id'] in valid), key=lambda s: s['first'])
+_merged = True
+while _merged:
+    _merged = False
+    for i, a in enumerate(_live):
+        for b in _live[i + 1:]:
+            if _same_line(a, b):
+                a['pts'] = sorted(a['pts'] + b['pts']); a['hi'] = max(a['hi'], b['hi']); a['lo'] = min(a['lo'], b['lo']) if b['first'] < a['first'] else a['lo']
+                a['first'] = min(a['first'], b['first']); a['last'] = max(a['last'], b['last']); a['t_last'] = max(a['t_last'], b['t_last']); a['n'] += b['n']
+                a['sessions'] |= b['sessions']; a['hosts'] |= b['hosts']; a['labels'] += b['labels']; a['cap_ts'] = min([c for c in (a['cap_ts'], b['cap_ts']) if c], default=None)
+                canon[b['id']] = a['id']; valid.discard(b['id']); _live.remove(b); _merged = True; break
+        if _merged: break
+def _canon(i):
+    while i in canon: i = canon[i]
+    return i
 # lines are never merged: two accounts can share a reset time (seen 12 Nov: 89% -> 39% -> 100% -> 0%, all resetting Sun 12:00)
 # session timeline: (t, stint) from every reading (repeats inherit the stint of their fresh reading)
 tl = defaultdict(list); cur = {}
 for x in R:
     if x.get('week_pct') is None: continue
-    if x.get('fresh'): cur[x['session']] = x.get('stint')
+    if x.get('fresh'): cur[x['session']] = _canon(x.get('stint'))
     sid = cur.get(x['session'])
     if sid in valid: tl[x['session']].append((ep(x['ts']), sid))
 CL = [b for b in B if b['provider'] == 'claude']
@@ -316,7 +348,11 @@ def pooled(cands):
     xs = [w for w in cands if w.get('meter_start_pct') is not None and w.get('meter_end_pct') is not None and w['meter_end_pct'] > w['meter_start_pct']]
     if len(xs) < 2: return None
     pts = sum(w['meter_end_pct'] - w['meter_start_pct'] for w in xs); usd = sum(w['measured']['api_usd'] for w in xs)
+    # use on machines that kept no meter log in the same hours cannot be tied to this account, so it stays out of the measured number;
+    # counted in full it gives an upper figure: true if every one of those machines was on this account the whole time
+    other = sum(w.get('unlogged_usage_same_period_usd') or 0 for w in xs)
     return {'stretches': len(xs), 'meter_points': round(pts), 'api_usd': round(usd, 2), 'usd_per_full_week': round(usd / (pts / 100.0)),
+            'other_machines_usd': round(other, 2), 'usd_per_full_week_all_machines': round((usd + other) / (pts / 100.0)),
             'output_tokens': sum(w['measured'].get('output_tokens', 0) for w in xs), 'cached_input_tokens': sum(w['measured'].get('cached_input_tokens', 0) for w in xs)}
 
 stamp = time.strftime('%Y-%m-%d', time.gmtime(NOW))

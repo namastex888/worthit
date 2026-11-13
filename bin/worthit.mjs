@@ -350,32 +350,38 @@ function Main({ cfg }) {
         '  ' + pad(bold(w('Last 7 days')), 15) + lpad('', 9) + lpad(bold(w(tot('requests').toLocaleString('en-US'))), 10) + lpad(bold(fg(GOLD, fmtTok(tot('output')))), 9) + lpad(bold(w(fmtTok(tot('cached')))), 11) + lpad(bold(w(fmtTok(tot('fresh')))), 10) + lpad(bold(w(usd(tot('usd')))), 11)]);
       S(0, { secs: scanSecs });
       fin(1, t1, DATA.plans.length ? DATA.plans.map(p => fg(C.cx, '✓') + ' ' + pad(fg(p.color, p.plan), 17) + m(pad(p.meter, 34)) + d('→ ') + bold(w(usd(p.usd_per_full_week))) + d(' per full week')) : [m('No weekly limit ran to its cap inside the scanned days: plans are ranked once one does.')]);
-      if (cfg.git) { fin(2, gT, [fg(C.cx, '✓') + ' ' + w(DATA.git.merged_prs) + m(' merged PRs · ') + w(DATA.git.commits.toLocaleString('en-US')) + m(' commits · ') + w(DATA.git.repos) + m(' repos') + d('  in the last 7 days'), d(`  sources, 14 days: GitHub ${g.src.github} PRs · usagemeter ${g.src.meter} PRs` + (g.meter ? ` (usagemeter ${g.meter.version}${g.meter.downloaded ? ', downloaded' : ''})` : ''))]); S(2, { secs: gSecs }); }
+      if (cfg.git) { fin(2, gT, [fg(C.cx, '✓') + ' ' + w(DATA.git.merged_prs) + m(' merged PRs · ') + w(DATA.git.commits.toLocaleString('en-US')) + m(' commits · ') + w(DATA.git.repos) + m(' repos') + d('  in the last 7 days'), d(`  sources, 14 days: GitHub ${g.src.github} PRs · usagemeter ${g.src.meter} PRs` + (g.src.gitea ? ` · Gitea ${g.src.gitea}` : '') + (g.src.gitlab ? ` · GitLab ${g.src.gitlab}` : '') + (g.meter ? ` (usagemeter ${g.meter.version}${g.meter.downloaded ? ', downloaded' : ''})` : ''))]); S(2, { secs: gSecs }); }
       setSteps(s => { setPast(p => [{ kind: 'steps', id: 'steps', steps: s }, ...p]); return s; });
       const finish = (x, done) => { endPet(); if (!DEMO) saveSettings({ last: { hosts: HOSTS, git: !!cfg.git, ai: !!cfg.ai, agent: cfg.agent ? cfg.agent.id : null } }); let files = []; try { files = writeFiles(x.spec); } catch (e) { audit('note', 'files not written: ' + e.message); } setSaved(files); setPast(p => [...p, { kind: 'panel', ...x, done, id: 'dash' }]); return { ...x, done, moved: true }; };
-      if (DEMO) { setDash(blank()); st(setDash)('drawing', 'placing Verdict'); setTimeout(() => st(setDash)('drawing', 'placing Summary'), 900);
-        setTimeout(() => { setDash(finish({ ...blank(), spec: demoSpec(builtin(), DATA), n: 15 }, { secs: '6.2' })); if (!TTY) setTimeout(exit, 300); }, 1900); }
+      // Tables first: the tables need no model, so they are shown at once; the agent's Verdict and Summary are added below when they arrive.
+      // The files keep the agent's full layout (headline on top).
+      const textOnly = spec => { const r = ready(spec); if (!r) return false; const E = r.elements, ids = Object.keys(E).filter(k => E[k].type === 'Verdict').concat(Object.keys(E).filter(k => E[k].type === 'Summary')); if (!ids.length) return false;
+        const el = { r: { ...E[r.root], children: ids } }; for (const k of ids) el[k] = E[k]; return { root: 'r', elements: el }; };
+      const tablesNow = () => setPast(p => [...p, { kind: 'panel', id: 'tables', label: 'YOUR WEEK', who: 'your data', spec: builtin(), done: { secs: null } }]);
+      const writing = () => ({ ...blank(), textOnly: true, label: 'SUMMARY' });
+      if (DEMO) { tablesNow(); setDash(writing()); st(setDash)('drawing', 'placing Verdict'); setTimeout(() => st(setDash)('drawing', 'placing Summary'), 900);
+        setTimeout(() => { const sp = demoSpec(builtin(), DATA); setDash(finish({ ...writing(), spec: sp, show: textOnly(sp), n: 15 }, { secs: '6.2' })); if (!TTY) setTimeout(exit, 300); }, 1900); }
       else if (!agent) setTimeout(() => { setDash(finish({ ...blank(), spec: builtin() }, { secs: null })); setTimeout(exit, 300); }, 120);
       else { const key = reportKey(agent), rc = FRESH ? null : readReport();
         if (rc && sameReport(rc.key, key) && ready(rc.spec)) {        // nothing material changed since the saved report: show it, do not call the model
           audit('agent', `no headline number moved more than 2% since ${rc.at}: the saved report is shown, ${agent.cli} is not called (--fresh forces a new one)`);
           setTimeout(() => { setDash(finish({ ...blank(), spec: rc.spec, n: rc.n }, { secs: null, cached: rc.at.slice(0, 16).replace('T', ' ') })); if (ASK) ask(ASK); else if (!TTY) setTimeout(exit, 300); }, 120); }   // let the step lines paint first
-        else { setDash(blank());
+        else { tablesNow(); setDash(writing());
           // the chosen agent writes the report; if it cannot (not logged in, no credit, model missing), the next installed one tries, and the built-in tables are the last resort
           const order = [agent, ...AGENTS.filter(a => a.id !== agent.id)];
           const compose = k => feed({ system: SYSTEM, user: 'Here is this week\'s data as JSON. Compose the dashboard now.\n\n' + forModel(), agent: order[k] }, (spec, n) => setDash(x => ({ ...x, spec, n })), st(setDash),
-            done => { if (done.err && order[k + 1]) { audit('note', `${order[k].cli} could not write the report (${done.err}): trying ${order[k + 1].cli}`); setWho(order[k + 1].model); setDash({ ...blank(), status: `${order[k].cli} failed, trying ${order[k + 1].cli}`, trace: String(done.err).slice(0, 80) }); return compose(k + 1); }
-              setDash(x => { const ok = !(done.err || !ready(x.spec)); if (ok) saveReport(key, order[k], x.spec, x.n); return finish(ok ? x : { ...x, spec: builtin() }, done); }); if (ASK) ask(ASK); else if (!TTY) setTimeout(exit, 300); });
+            done => { if (done.err && order[k + 1]) { audit('note', `${order[k].cli} could not write the report (${done.err}): trying ${order[k + 1].cli}`); setWho(order[k + 1].model); setDash({ ...writing(), status: `${order[k].cli} failed, trying ${order[k + 1].cli}`, trace: String(done.err).slice(0, 80) }); return compose(k + 1); }
+              setDash(x => { const ok = !(done.err || !ready(x.spec)); if (ok) saveReport(key, order[k], x.spec, x.n); return finish(ok ? { ...x, show: textOnly(x.spec) } : { ...x, spec: builtin(), show: false }, done); }); if (ASK) ask(ASK); else if (!TTY) setTimeout(exit, 300); });
           compose(0); } }
     } catch (e) { endPet(); setFail(e.message); setTimeout(exit, 200); } })();
     return () => clearInterval(t); }, []);
   const collected = past.some(p => p.kind === 'steps');
   return h(Box, { flexDirection: 'column', marginTop: 1 },
     h(Static, { items: past }, it => it.kind === 'steps' ? h(Box, { key: it.id, flexDirection: 'column' }, ...it.steps.map((s, i) => h(StepLine, { key: i, s, i, total: it.steps.length, f: 0 })))
-      : h(Box, { key: it.id, flexDirection: 'column', marginBottom: 1 }, h(Title, { label: it.id === 'dash' ? 'YOUR WEEK' : '› ' + it.q, live: it, f: 0, who }), h(View, { spec: it.spec, k: it.id }))),
+      : h(Box, { key: it.id, flexDirection: 'column', marginBottom: 1 }, h(Title, { label: it.label || (it.id === 'dash' ? 'YOUR WEEK' : '› ' + it.q), live: it, f: 0, who: it.who || who }), it.show === false ? null : h(View, { spec: it.show || it.spec, k: it.id }))),
     collected ? null : h(Box, { flexDirection: 'row' }, h(Box, { flexDirection: 'column', width: showPet ? cols - PETW - 1 : undefined, flexShrink: 1 }, ...steps.map((s, i) => h(StepLine, { key: i, s, i, total: steps.length, f, wd: showPet ? Math.min(W, cols - PETW - 1) : W }))), showPet && !fail ? petBox() : null),
     fail ? h(Text, { color: 'red' }, '✖ ' + fail) : null,
-    dash && !dash.moved ? h(Box, { flexDirection: 'column' }, collected && showPet && !hw ? h(Box, { flexDirection: 'row' }, h(Box, { flexDirection: 'column', width: cols - PETW - 1 }, h(Title, { label: 'YOUR WEEK', live: dash, f, who })), petBox()) : h(Title, { label: 'YOUR WEEK', live: dash, f, who }), h(View, { spec: dash.spec, k: dash.n })) : null,
+    dash && !dash.moved ? h(Box, { flexDirection: 'column' }, collected && showPet && !hw ? h(Box, { flexDirection: 'row' }, h(Box, { flexDirection: 'column', width: cols - PETW - 1 }, h(Title, { label: dash.label || 'YOUR WEEK', live: dash, f, who })), petBox()) : h(Title, { label: dash.label || 'YOUR WEEK', live: dash, f, who }), dash.textOnly ? null : h(View, { spec: dash.spec, k: dash.n })) : null,
     cur ? h(Box, { flexDirection: 'column' }, h(Title, { label: '› ' + cur.q, live: cur, f, who }), h(View, { spec: cur.spec, k: cur.n })) : null,
     saved && saved.length && !cur ? h(Text, {}, fg(C.cx, '✓') + m(' Saved to ./  ') + saved.map(x => w(x)).join(d('  ·  '))) : null,
     hw && hw.seconds && dash && dash.moved && !cur ? h(Text, { wrap: 'truncate-end' }, fg(C.pink, '◆') + m(' This run cost your machine  ') + d(petSummary(hw))) : null,
