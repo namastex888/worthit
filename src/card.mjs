@@ -35,7 +35,7 @@ export const CARD_TOPICS = {
 
 export const cardSpec = (key, D) => ({ foot: '', ...CARD_TOPICS[key](D), date: '7 days to ' + day(D.week.to) });
 // a card the person's agent described: one number, what it is, and up to four facts (no bars)
-export const customSpec = (D, title, j) => ({ eyebrow: title.slice(0, 46), hero: String(j.headline).slice(0, 9), color: C.pink, cap: String(j.caption || '').slice(0, 64), sub: '', subColor: C.ink3, foot: '',
+export const customSpec = (D, title, j) => ({ eyebrow: title.slice(0, 46), hero: String(j.headline).slice(0, 9), color: C.pink, cap: String(j.caption || '').slice(0, 64), sub: '', subColor: C.ink3, foot: '', plain: true,
   rows: (j.facts || []).slice(0, 4).map(f => ({ label: String(f.label).slice(0, 26), pct: null, color: C.ink2, value: String(f.value).slice(0, 16), note: '' })), date: '7 days to ' + day(D.week.to) });
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -74,5 +74,5 @@ body{display:flex;flex-direction:column;padding:60px 76px 56px}
 <div class="eyebrow">${esc(s.eyebrow)}</div>
 <div class="hero"><div class="num">${esc(s.hero)}</div><div><div class="cap">${esc(s.cap)}</div>${s.sub ? `<div class="sub">${esc(s.sub)}</div>` : ''}</div></div>
 <div class="rows">${rows}</div>
-<div class="foot"><div class="src">priced at API list rates, from my own local logs${s.foot ? '<br>' + esc(s.foot) : ''}</div><div class="cmd">measure yours<b>npx worthit</b></div></div>`;
+<div class="foot"><div class="src">${s.plain ? 'measured from my own local logs' : 'priced at API list rates, from my own local logs'}${s.foot ? '<br>' + esc(s.foot) : ''}</div><div class="cmd">measure yours<b>npx worthit</b></div></div>`;
 }
