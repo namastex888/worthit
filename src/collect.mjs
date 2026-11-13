@@ -59,13 +59,13 @@ export async function scan(cfg, on) {
   audit('run', `${py} core/extract_usage.py ${cfg.days}   (reads local session logs, read-only)`);
   const local = new Promise((res, rej) => {
     const p = spawn(py, [script, String(cfg.days)], { env: { ...process.env, WORTHIT_PROGRESS: '1', PYTHONDONTWRITEBYTECODE: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
-    p.stdout.pipe(fs.createWriteStream(path.join(runDir, 'local.json')));
+    const out = fs.createWriteStream(path.join(runDir, 'local.json')), written = new Promise(r => { out.on('finish', r); out.on('error', r); }); p.stdout.pipe(out);
     let buf = '', errs = '';
     p.stderr.on('data', c => { buf += c; let i; while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i); buf = buf.slice(i + 1);
       if (!l.startsWith('@f\t') && !l.startsWith('@c\t')) { errs += l + '\n'; continue; }
       const [mark, tool, a, b, file] = l.split('\t'), hit = mark === '@c'; counts[tool] = (counts[tool] || 0) + 1; if (hit) cached++; audit(hit ? 'cache' : 'read', tilde(file) + (hit ? '  (unchanged since the last run: not read again)' : ''));
       const [lo, hi] = SPAN[tool] || [0, 1]; pcts.local = +b > 0 ? lo + (hi - lo) * (+a / +b) : lo; emit(`${names.length ? 'this machine · ' : ''}${TOOL[tool] || tool} · ${hit ? 'unchanged, from cache · ' : ''}${tilde(file)}`); } });
-    p.on('error', rej); p.on('close', code => { pcts.local = 1; code ? rej(new Error('scanner failed: ' + (errs.trim().split('\n').pop() || 'exit ' + code))) : res(); });
+    p.on('error', rej); p.on('close', async code => { await written; pcts.local = 1; code ? rej(new Error('scanner failed: ' + (errs.trim().split('\n').pop() || 'exit ' + code))) : res(); });
   });
   const remote = (cfg.hosts || []).map(alias => new Promise(res => {      // other machines over ssh: the same script, piped in, nothing installed there
     audit('run', `ssh ${alias} "nice python3 - ${cfg.days}" < core/extract_usage.py   (same read-only scanner, piped in; nothing is installed there)`);
@@ -74,9 +74,9 @@ export async function scan(cfg, on) {
     p.stderr.on('data', c => { buf += c; let i; while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i); buf = buf.slice(i + 1); if (!l.startsWith('@f\t') && !l.startsWith('@c\t')) continue;
       const [mark, tool, a, b, file] = l.split('\t'), hit = mark === '@c'; files++; if (hit) hcached++; audit(hit ? 'cache' : 'read', alias + ':' + file + (hit ? '  (unchanged since the last run: not read again)' : ''));
       const [lo, hi] = SPAN[tool] || [0, 1]; pcts[alias] = +b > 0 ? lo + (hi - lo) * (+a / +b) : lo; emit(`${alias} · ${TOOL[tool] || tool} · ${hit ? 'unchanged, from cache · ' : ''}${file}`); } });
-    const f = path.join(runDir, alias + '.json'); p.stdout.pipe(fs.createWriteStream(f)); fs.createReadStream(script).pipe(p.stdin);
+    const f = path.join(runDir, alias + '.json'), out = fs.createWriteStream(f), written = new Promise(r => { out.on('finish', r); out.on('error', r); }); p.stdout.pipe(out); fs.createReadStream(script).pipe(p.stdin);
     p.stdin.on('error', () => {}); p.on('error', () => { pcts[alias] = 1; res({ alias, ok: false, files: 0 }); });
-    p.on('close', code => { const ok = !code && fs.existsSync(f) && fs.statSync(f).size > 2; if (!ok) fs.rmSync(f, { force: true }); pcts[alias] = 1; audit('run', `ssh ${alias} finished: ${ok ? files + ' files read' : 'no data (exit ' + code + ')'}`); emit(`${alias} · ${ok ? 'done' : 'no answer'}`); res({ alias, ok, files, cached: hcached }); });
+    p.on('close', async code => { await written; const ok = !code && fs.existsSync(f) && fs.statSync(f).size > 2; if (!ok) fs.rmSync(f, { force: true }); pcts[alias] = 1; audit('run', `ssh ${alias} finished: ${ok ? files + ' files read' : 'no data (exit ' + code + ')'}`); emit(`${alias} · ${ok ? 'done' : 'no answer'}`); res({ alias, ok, files, cached: hcached }); });
   }));
   await local; const hosts = await Promise.all(remote);
   // two ssh aliases can point at one machine: keep the first answer, drop the repeat so nothing is counted twice

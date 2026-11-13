@@ -342,7 +342,7 @@ function Main({ cfg }) {
       fin(1, t1, DATA.plans.length ? DATA.plans.map(p => fg(C.cx, '✓') + ' ' + pad(fg(p.color, p.plan), 17) + m(pad(p.meter, 34)) + d('→ ') + bold(w(usd(p.usd_per_full_week))) + d(' per full week')) : [m('No weekly limit ran to its cap inside the scanned days: plans are ranked once one does.')]);
       if (cfg.git) { fin(2, gT, [fg(C.cx, '✓') + ' ' + w(DATA.git.merged_prs) + m(' merged PRs · ') + w(DATA.git.commits.toLocaleString('en-US')) + m(' commits · ') + w(DATA.git.repos) + m(' repos') + d('  in the last 7 days'), d(`  sources, 14 days: GitHub ${g.src.github} PRs · usagemeter ${g.src.meter} PRs` + (g.meter ? ` (usagemeter ${g.meter.version}${g.meter.downloaded ? ', downloaded' : ''})` : ''))]); S(2, { secs: gSecs }); }
       setSteps(s => { setPast(p => [{ kind: 'steps', id: 'steps', steps: s }, ...p]); return s; });
-      const finish = (x, done) => { let files = []; try { files = writeFiles(x.spec); } catch (e) { audit('note', 'files not written: ' + e.message); } setSaved(files); setPast(p => [...p, { kind: 'panel', ...x, done, id: 'dash' }]); return { ...x, done, moved: true }; };
+      const finish = (x, done) => { if (!DEMO) saveSettings({ last: { hosts: HOSTS, git: !!cfg.git, ai: !!cfg.ai, agent: cfg.agent ? cfg.agent.id : null } }); let files = []; try { files = writeFiles(x.spec); } catch (e) { audit('note', 'files not written: ' + e.message); } setSaved(files); setPast(p => [...p, { kind: 'panel', ...x, done, id: 'dash' }]); return { ...x, done, moved: true }; };
       if (DEMO) { setDash(blank()); st(setDash)('drawing', 'placing Verdict'); setTimeout(() => st(setDash)('drawing', 'placing Summary'), 900);
         setTimeout(() => { setDash(finish({ ...blank(), spec: demoSpec(builtin(), DATA), n: 15 }, { secs: '6.2' })); if (!TTY) setTimeout(exit, 300); }, 1900); }
       else if (!agent) setTimeout(() => { setDash(finish({ ...blank(), spec: builtin() }, { secs: null })); setTimeout(exit, 300); }, 120);
@@ -384,6 +384,12 @@ function App() {
   const [cfg, setCfg] = useState((!TTY && !TEST_INPUT) || (F_GIT && F_AI) ? preset() : null);
   // asked once: the answer is remembered in ~/.worthit/settings.json
   const [skillAsked, setSkillAsked] = useState(!(TTY || TEST_INPUT) || !!(F_GIT && F_AI) || (!DEMO && (!!settings().skill || !has('npx'))));
+  // after one finished run: offer the same answers again; No starts the questions over
+  const last = settings().last, [reuse, setReuse] = useState(!cfg && !DEMO && F_GIT == null && F_AI == null && F_HOSTS == null && last ? 'ask' : 'no');
+  if (reuse === 'ask') { const hosts = (last.hosts || []).filter(a => DETECTED.some(x => x.alias === a)), agent = AGENTS.find(a => a.id === last.agent) || AGENTS[0], ai = !!last.ai && !!agent;
+    const sum = 'this machine' + (hosts.length ? ' + ' + hosts.join(', ') : ' only') + ' · git ' + (last.git ? 'yes' : 'no') + ' · AI ' + (ai ? agent.label : 'no');
+    return h(Choice, { q: 'Same settings as last time?', onPick: o => { if (o.v) { HOSTS = hosts; setCfg({ git: !!last.git, ai, agent }); } setReuse('no'); },
+      options: [{ label: 'Yes', key: 'y', v: true, hint: sum }, { label: 'No', key: 'n', v: false, hint: 'answer the questions again' }] }); }
   if (!cfg) return h(Setup, { onDone: c => setCfg({ agent: AGENTS[0], ...c }) });
   return skillAsked ? h(Main, { cfg }) : h(SkillQ, { onDone: () => setSkillAsked(true) });
 }
