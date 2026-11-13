@@ -1,6 +1,17 @@
-# worthit
+<h1 align="center">Is your AI coding plan worth it?</h1>
 
-What your AI coding subscription is really worth. One command, everything local.
+<p align="center">
+  <b>worthit</b> prices every request in your local Claude Code, Codex and Antigravity logs at API rates,<br>
+  and shows what one weekly limit of each plan was really worth. One command. Nothing to sign up for.
+</p>
+
+<div align="center">
+
+[**npm**](https://www.npmjs.com/package/worthit) · [**Get more out of your plan**](#get-more-out-of-what-you-pay-for) · [**Share a stat**](#share-a-stat) · [**For agents**](#for-agents)
+
+</div>
+
+**What it answers:** what a weekly limit is worth in dollars · which plan gives more for its price · tokens and cost per model, per tool, per day · cost per merged PR · allowance you paid for and did not use · how much of your work runs on open models · whether a provider moved your limit.
 
 ## For humans
 
