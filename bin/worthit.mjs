@@ -21,6 +21,7 @@ import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'
 import { blocks, C, W, bar, fg, bold, d, m, w, pad, lpad, len, strip, grad, fmtTok, usd } from '../src/draw.mjs';
 import { scan, analyse, git, buildData, audit, AUDIT, has, tilde, ROOT, HOME, sshHosts, savedHosts, saveHosts } from '../src/collect.mjs';
 import { query, run as runQuery, QUERY_COMMANDS } from '../src/query.mjs';
+import { startPet, petLines, petSummary } from '../src/pet.mjs';
 import { demoHosts, demoScan, demoGit, demoPricing, demoData, demoSpec, demoAnswer } from '../src/demo.mjs';
 
 const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
@@ -230,13 +231,13 @@ function writeFiles(spec) {
 // ---------------------------------------------------------------- UI
 const FR = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏', GOLD = C.gold;
 const mid = (s, n) => s.length <= n ? s : s.slice(0, Math.floor(n * .45)) + '…' + s.slice(-(n - Math.floor(n * .45) - 1));
-function StepLine({ s, i, total, f }) {
+function StepLine({ s, i, total, f, wd = W }) {
   const head = `Step ${i + 1} of ${total} · ${s.title}`;
   if (s.state === 'wait') return h(Text, { dimColor: true }, '· ' + head);
   if (s.state === 'done') return h(Box, { flexDirection: 'column', marginBottom: 1 }, h(Text, {}, fg(C.cx, '✓') + ' ' + bold(w(head)) + d('  ' + s.secs + 's')), h(Text, { wrap: 'truncate-end' }, s.lines.map(l => '  ' + l).join('\n')));
   return h(Box, { flexDirection: 'column', marginBottom: 1 },
-    h(Text, {}, fg(GOLD, FR[f % 10]) + ' ' + bold(w(head)) + '  ' + (s.pct == null ? d('working') : bar(s.pct, 1, 28, C.cl, C.pink) + ' ' + w(lpad(Math.round(s.pct * 100) + '%', 4))) + d('  ' + Math.round((Date.now() - s.t0) / 1000) + 's')),
-    h(Text, { dimColor: true, wrap: 'truncate-end' }, '  ⎿ ' + mid(s.detail || 'starting', W - 6)));     // one line: exactly what is being read right now
+    h(Text, { wrap: 'truncate-end' }, fg(GOLD, FR[f % 10]) + ' ' + bold(w(head)) + '  ' + (s.pct == null ? d('working') : bar(s.pct, 1, 28, C.cl, C.pink) + ' ' + w(lpad(Math.round(s.pct * 100) + '%', 4))) + d('  ' + Math.round((Date.now() - s.t0) / 1000) + 's')),
+    h(Text, { dimColor: true, wrap: 'truncate-end' }, '  ⎿ ' + mid(s.detail || 'starting', wd - 6)));     // one line: exactly what is being read right now
 }
 const Title = ({ label, live, f, who }) => h(Box, { flexDirection: 'column' },
   h(Box, { gap: 1 }, h(Text, { bold: true, color: GOLD }, live.done ? '✓' : FR[f % 10]), h(Text, { bold: true }, label),
@@ -308,6 +309,11 @@ function Main({ cfg }) {
   const { exit } = useApp(); const [f, setF] = useState(0); const agent = cfg.ai ? (cfg.agent || AGENTS[0]) : null, who = agent ? agent.model : 'built-in, no AI';
   const [steps, setSteps] = useState(() => [{ title: 'Scanning your logs' }, { title: 'Pricing every request, reading the weekly meters' }, ...(cfg.git ? [{ title: 'Git activity' }] : [])].map(s => ({ ...s, state: 'wait', pct: 0, detail: '', lines: [] })));
   const [dash, setDash] = useState(null), [cur, setCur] = useState(null), [past, setPast] = useState([]), [fail, setFail] = useState(null), [saved, setSaved] = useState(null); const last = useRef(0);
+  // the hardware pet: lives in the right corner while the run works, then reports what the run cost this machine
+  const [pet, setPet] = useState(null), [hw, setHw] = useState(null), stopPet = useRef(null), PETW = 26, cols = process.stdout.columns || 100, showPet = (TTY || !!TEST_INPUT) && cols >= 92;
+  useEffect(() => { if (!(TTY || TEST_INPUT)) return; stopPet.current = startPet(setPet); return () => { if (stopPet.current) stopPet.current(); }; }, []);
+  const endPet = () => { if (!stopPet.current) return; const t = stopPet.current(); stopPet.current = null; setHw(t); audit('note', 'hardware during this run: ' + petSummary(t)); };
+  const petBox = () => h(Box, { flexDirection: 'column', width: PETW, flexShrink: 0 }, h(Text, {}, petLines(pet, Math.floor(f / 2)).join('\n')));
   const S = (i, patch) => setSteps(s => s.map((x, k) => k === i ? { ...x, ...patch } : x));
   const st = set => (status, trace) => set(x => x && ({ ...x, status, trace: trace ?? x.trace }));
   const ask = q => { setCur({ ...blank(), q }); const base = 'DATA:\n' + forModel() + '\n\nQuestion: ' + q, t0 = Date.now();
@@ -342,7 +348,7 @@ function Main({ cfg }) {
       fin(1, t1, DATA.plans.length ? DATA.plans.map(p => fg(C.cx, '✓') + ' ' + pad(fg(p.color, p.plan), 17) + m(pad(p.meter, 34)) + d('→ ') + bold(w(usd(p.usd_per_full_week))) + d(' per full week')) : [m('No weekly limit ran to its cap inside the scanned days: plans are ranked once one does.')]);
       if (cfg.git) { fin(2, gT, [fg(C.cx, '✓') + ' ' + w(DATA.git.merged_prs) + m(' merged PRs · ') + w(DATA.git.commits.toLocaleString('en-US')) + m(' commits · ') + w(DATA.git.repos) + m(' repos') + d('  in the last 7 days'), d(`  sources, 14 days: GitHub ${g.src.github} PRs · usagemeter ${g.src.meter} PRs` + (g.meter ? ` (usagemeter ${g.meter.version}${g.meter.downloaded ? ', downloaded' : ''})` : ''))]); S(2, { secs: gSecs }); }
       setSteps(s => { setPast(p => [{ kind: 'steps', id: 'steps', steps: s }, ...p]); return s; });
-      const finish = (x, done) => { if (!DEMO) saveSettings({ last: { hosts: HOSTS, git: !!cfg.git, ai: !!cfg.ai, agent: cfg.agent ? cfg.agent.id : null } }); let files = []; try { files = writeFiles(x.spec); } catch (e) { audit('note', 'files not written: ' + e.message); } setSaved(files); setPast(p => [...p, { kind: 'panel', ...x, done, id: 'dash' }]); return { ...x, done, moved: true }; };
+      const finish = (x, done) => { endPet(); if (!DEMO) saveSettings({ last: { hosts: HOSTS, git: !!cfg.git, ai: !!cfg.ai, agent: cfg.agent ? cfg.agent.id : null } }); let files = []; try { files = writeFiles(x.spec); } catch (e) { audit('note', 'files not written: ' + e.message); } setSaved(files); setPast(p => [...p, { kind: 'panel', ...x, done, id: 'dash' }]); return { ...x, done, moved: true }; };
       if (DEMO) { setDash(blank()); st(setDash)('drawing', 'placing Verdict'); setTimeout(() => st(setDash)('drawing', 'placing Summary'), 900);
         setTimeout(() => { setDash(finish({ ...blank(), spec: demoSpec(builtin(), DATA), n: 15 }, { secs: '6.2' })); if (!TTY) setTimeout(exit, 300); }, 1900); }
       else if (!agent) setTimeout(() => { setDash(finish({ ...blank(), spec: builtin() }, { secs: null })); setTimeout(exit, 300); }, 120);
@@ -352,17 +358,18 @@ function Main({ cfg }) {
           setTimeout(() => { setDash(finish({ ...blank(), spec: rc.spec, n: rc.n }, { secs: null, cached: rc.at.slice(0, 16).replace('T', ' ') })); if (ASK) ask(ASK); else if (!TTY) setTimeout(exit, 300); }, 120); }   // let the step lines paint first
         else { setDash(blank()); feed({ system: SYSTEM, user: 'Here is this week\'s data as JSON. Compose the dashboard now.\n\n' + forModel(), agent }, (spec, n) => setDash(x => ({ ...x, spec, n })), st(setDash),
           done => { setDash(x => { const ok = !(done.err || !ready(x.spec)); if (ok) saveReport(key, agent, x.spec, x.n); return finish(ok ? x : { ...x, spec: builtin() }, done); }); if (ASK) ask(ASK); else if (!TTY) setTimeout(exit, 300); }); } }
-    } catch (e) { setFail(e.message); setTimeout(exit, 200); } })();
+    } catch (e) { endPet(); setFail(e.message); setTimeout(exit, 200); } })();
     return () => clearInterval(t); }, []);
   const collected = past.some(p => p.kind === 'steps');
   return h(Box, { flexDirection: 'column', marginTop: 1 },
     h(Static, { items: past }, it => it.kind === 'steps' ? h(Box, { key: it.id, flexDirection: 'column' }, ...it.steps.map((s, i) => h(StepLine, { key: i, s, i, total: it.steps.length, f: 0 })))
       : h(Box, { key: it.id, flexDirection: 'column', marginBottom: 1 }, h(Title, { label: it.id === 'dash' ? 'YOUR WEEK' : '› ' + it.q, live: it, f: 0, who }), h(View, { spec: it.spec, k: it.id }))),
-    collected ? null : h(Box, { flexDirection: 'column' }, ...steps.map((s, i) => h(StepLine, { key: i, s, i, total: steps.length, f }))),
+    collected ? null : h(Box, { flexDirection: 'row' }, h(Box, { flexDirection: 'column', width: showPet ? cols - PETW - 1 : undefined, flexShrink: 1 }, ...steps.map((s, i) => h(StepLine, { key: i, s, i, total: steps.length, f, wd: showPet ? Math.min(W, cols - PETW - 1) : W }))), showPet && !fail ? petBox() : null),
     fail ? h(Text, { color: 'red' }, '✖ ' + fail) : null,
-    dash && !dash.moved ? h(Box, { flexDirection: 'column' }, h(Title, { label: 'YOUR WEEK', live: dash, f, who }), h(View, { spec: dash.spec, k: dash.n })) : null,
+    dash && !dash.moved ? h(Box, { flexDirection: 'column' }, collected && showPet && !hw ? h(Box, { flexDirection: 'row' }, h(Box, { flexDirection: 'column', width: cols - PETW - 1 }, h(Title, { label: 'YOUR WEEK', live: dash, f, who })), petBox()) : h(Title, { label: 'YOUR WEEK', live: dash, f, who }), h(View, { spec: dash.spec, k: dash.n })) : null,
     cur ? h(Box, { flexDirection: 'column' }, h(Title, { label: '› ' + cur.q, live: cur, f, who }), h(View, { spec: cur.spec, k: cur.n })) : null,
     saved && saved.length && !cur ? h(Text, {}, fg(C.cx, '✓') + m(' Saved to ./  ') + saved.map(x => w(x)).join(d('  ·  '))) : null,
+    hw && hw.seconds && dash && dash.moved && !cur ? h(Text, { wrap: 'truncate-end' }, fg(C.pink, '◆') + m(' This run on your machine  ') + d(petSummary(hw))) : null,
     dash && dash.moved && !cur && TTY && agent ? h(AskBar, { onSubmit: ask, f }) : null,
     dash && dash.moved && !agent ? h(Text, { dimColor: true }, '  AI is off: run again and pick an agent to ask questions about your usage') : null);
 }

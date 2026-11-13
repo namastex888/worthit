@@ -12,6 +12,8 @@ npx worthit
 
 The recording is `npx worthit --demo`: the whole run on sample data. Needs Node 22.5+ and Python 3.
 
+The creature in the right corner is the hardware pet: it reads this machine's CPU, memory, network, disk, temperature and power once a second and gets more nervous the harder the run works it. Push it far enough and it pops. The last line shows what the run cost: watts, energy, data moved.
+
 ## For agents
 
 Install the skill (the full guide) into whatever agent you use. `npx worthit` also asks "Install the worthit skill?" on its first run and does this for you:
