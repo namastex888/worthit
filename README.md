@@ -74,6 +74,12 @@ The no-AI run prints data tables only. With `--ai`, the model receives the week'
 
 Everything runs on your machine. The audit log lists every file read, command run, network request and file written. Network use: the usagemeter download (checksum verified), your own `gh` login for merged PRs, and, only if you pick `--ai`, your own Claude or Codex CLI with the week's data.
 
+## Releases
+
+Nobody types a version. Open a pull request against `dev`; when it merges, CI runs the checks, numbers the release (`0.N`, one above the last), tags it and publishes the GitHub release with the npm tarball. `dev` is the only branch, and every merge is a release.
+
+npm is the one manual step, because it asks the owner for a fingerprint: `make publish` publishes the newest release as `worthit` and `usagemeter`. `make status` shows what is out.
+
 ## Improve the method
 
 The pricing and window logic is in `core/weekly.py`; the scanner is `core/extract_usage.py`. Issues and pull requests with a better algorithm are welcome: include the audit log section that shows the case.

@@ -4,3 +4,4 @@ __pycache__/
 *-worthit.md
 *-worthit.png
 *-worthit-audit.log
+.DS_Store
