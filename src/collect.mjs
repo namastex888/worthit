@@ -114,13 +114,15 @@ async function meterBin(on) {
   audit('write', `${tilde(bin)}  (usagemeter ${lane.version}, sha256 ${sum.slice(0, 16)}… verified)`);
   return { bin, downloaded: true, version: lane.version };
 }
+const runOut = (cmd, args, ms) => new Promise(res => { let o = ''; const p = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'ignore'] }), t = setTimeout(() => p.kill(), ms);
+  p.stdout.on('data', c => { o += c; }); p.on('error', () => { clearTimeout(t); res({ out: '', code: 1 }); }); p.on('close', code => { clearTimeout(t); res({ out: o, code }); }); });
 export async function git(cfg, on) {
   const since = Date.now() - 14 * DAY, prs = new Map(), commits = new Map(), src = { github: 0, meter: 0 }; let repos = 0, meter = null;
   try {
     meter = await meterBin(on);
     on({ pct: .15, detail: 'usagemeter sync · reading new usage into its local store' });
     audit('run', `${tilde(meter.bin)} sync --no-publish --budget-secs 20`);
-    spawnSync(meter.bin, ['sync', '--no-publish', '--budget-secs', '20'], { timeout: 90000, stdio: 'ignore' });
+    await runOut(meter.bin, ['sync', '--no-publish', '--budget-secs', '20'], 90000);
     const st = JSON.parse(spawnSync(meter.bin, ['status'], { encoding: 'utf8', timeout: 20000 }).stdout); meter.version = meter.version || st.version;
     const db = path.join(st.state_dir, 'meter.db'); audit('read', tilde(db) + '  (tables pr, cwd_repo; read-only)');
     const { DatabaseSync } = await import('node:sqlite'); const d = new DatabaseSync(db, { readOnly: true });
@@ -134,9 +136,20 @@ export async function git(cfg, on) {
   } catch (e) { audit('note', 'usagemeter not used: ' + e.message); }
   if (has('gh')) {                                             // GitHub: PRs you authored that merged in the last 14 days
     on({ pct: .75, detail: 'GitHub · your merged pull requests (gh search)' });
-    const day = new Date(since).toISOString().slice(0, 10); audit('run', `gh api search/issues q="is:pr is:merged author:@me merged:>=${day}" --paginate`); audit('net', 'api.github.com/search/issues (through your gh login)');
-    const o = spawnSync('gh', ['api', '-X', 'GET', 'search/issues', '-f', `q=is:pr is:merged author:@me merged:>=${day}`, '-f', 'per_page=100', '--paginate', '-q', '.items[] | [.repository_url, .number, .pull_request.merged_at] | @tsv'], { encoding: 'utf8', timeout: 90000, maxBuffer: 64 << 20 });
-    for (const l of (o.stdout || '').split('\n')) { const [url, n, at] = l.split('\t'); if (!url || !at) continue; const k = ('github.com/' + url.split('/repos/')[1] + '#' + n).toLowerCase(); if (!prs.has(k)) src.github++; prs.set(k, Date.parse(at)); }
+    // merged PRs already fetched are kept in ~/.worthit/worthit.db: only PRs merged since the last fetch (minus a day of overlap) are asked for again
+    let db = null, from = since;
+    try { fs.mkdirSync(HOME, { recursive: true }); db = new DatabaseSync(path.join(HOME, 'worthit.db')); db.exec('CREATE TABLE IF NOT EXISTS gh_pr (key TEXT PRIMARY KEY, merged_ms INTEGER); CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);');
+      const mv = k => { const r = db.prepare('SELECT v FROM meta WHERE k = ?').get(k); return r ? +r.v : null; }, cov = mv('gh_covered_from_ms'), fetched = mv('gh_fetched_ms');
+      if (cov != null && fetched && cov <= since) from = Math.max(since, fetched - DAY); } catch { db = null; }
+    const day = new Date(from).toISOString().slice(0, 10); audit('run', `gh api search/issues q="is:pr is:merged author:@me merged:>=${day}" --paginate` + (from > since ? '   (earlier PRs come from the local store)' : '')); audit('net', 'api.github.com/search/issues (through your gh login)');
+    const o = await runOut('gh', ['api', '-X', 'GET', 'search/issues', '-f', `q=is:pr is:merged author:@me merged:>=${day}`, '-f', 'per_page=100', '--paginate', '-q', '.items[] | [.repository_url, .number, .pull_request.merged_at] | @tsv'], 90000);
+    const fresh = []; for (const l of o.out.split('\n')) { const [url, n, at] = l.split('\t'); if (!url || !at) continue; fresh.push([('github.com/' + url.split('/repos/')[1] + '#' + n).toLowerCase(), Date.parse(at)]); }
+    let rows = fresh;
+    if (db) { try { if (o.code === 0) { const up = db.prepare('INSERT OR REPLACE INTO gh_pr VALUES (?, ?)'), sm = db.prepare('INSERT OR REPLACE INTO meta VALUES (?, ?)'); db.exec('BEGIN'); for (const [k, t] of fresh) up.run(k, t);
+          if (from === since) sm.run('gh_covered_from_ms', String(since)); sm.run('gh_fetched_ms', String(Date.now())); db.exec('COMMIT'); }
+        rows = db.prepare('SELECT key, merged_ms FROM gh_pr WHERE merged_ms >= ?').all(since).map(r => [r.key, r.merged_ms]); } catch { /* keep the fresh rows */ } db.close(); }
+    if (o.code !== 0) audit('note', 'gh search did not answer: using the PRs already stored');
+    for (const [k, t] of rows) { if (!prs.has(k)) src.github++; prs.set(k, t); }
   } else audit('note', 'gh CLI not found: GitHub PRs not counted');
   on({ pct: 1, detail: 'done' });
   return { prs: [...prs.values()], commits: [...commits.values()], repos, src, meter: meter && { version: meter.version, downloaded: meter.downloaded } };

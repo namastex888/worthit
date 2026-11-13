@@ -46,7 +46,7 @@ if (JSON_MODE) {
   const cfg = { days: DAYS, hosts: HOSTS, git: F_GIT !== 'no' };
   const tick = (label, p) => { if (process.stderr.isTTY) process.stderr.write(`\r\x1b[K${label} ${p.pct == null ? '' : Math.round(p.pct * 100) + '%'} ${String(p.detail || '').slice(0, 90)}`); };
   try {
-    const s = await scan(cfg, p => tick('scanning', p)), report = await analyse(s.runDir), g = cfg.git ? await git(cfg, p => tick('git', p)) : null;
+    const gP = cfg.git ? git(cfg, () => {}) : null, s = await scan(cfg, p => tick('scanning', p)), report = await analyse(s.runDir), g = gP ? await gP : null;
     if (process.stderr.isTTY) process.stderr.write('\r\x1b[K');
     console.log(JSON.stringify({ worthit: VERSION, ...buildData(report, g, cfg, s) }, null, 1)); process.exit(0);
   } catch (e) { console.error('\nworthit: ' + e.message); process.exit(1); }
@@ -281,12 +281,13 @@ function Main({ cfg }) {
     const live = i => p => { const now = Date.now(); if (now - last.current < 80 && p.pct !== 1) return; last.current = now; S(i, { pct: p.pct, detail: p.detail }); };
     const fin = (i, t0, lines) => S(i, { state: 'done', secs: ((Date.now() - t0) / 1000).toFixed(0), lines });
     (async () => { try {
+      const gT = Date.now(); let gSecs = '0'; const gP = cfg.git ? git(cfg, live(2)).then(x => { gSecs = ((Date.now() - gT) / 1000).toFixed(0); return x; }) : null; if (gP) S(2, { state: 'run', t0: gT });   // git runs while the logs are scanned
       let t0 = Date.now(); S(0, { state: 'run', t0 }); const info = await scan({ days: DAYS, hosts: HOSTS }, live(0));
       const scanned = `${Object.values(info.counts).reduce((a, b) => a + b, 0).toLocaleString('en-US')} files on this machine` + (info.cached ? ` (${info.cached.toLocaleString('en-US')} unchanged, from cache)` : '') + (info.hosts.length ? ` · ${info.hosts.filter(x => x.ok).length} other machine${info.hosts.filter(x => x.ok).length === 1 ? '' : 's'} read in parallel` : '') + ` · last ${DAYS} days`;
       const hl = info.hosts.map(x => x.ok ? fg(C.cx, '✓ ') + w(x.alias) + d(' ' + x.files.toLocaleString('en-US') + ' files' + (x.cached ? ', ' + x.cached.toLocaleString('en-US') + ' cached' : '')) : x.same_as ? d('= ' + x.alias + ' same as ' + x.same_as) : fg(C.bad || C.go, '✗ ') + m(x.alias) + d(' no answer')), hrows = []; for (let k = 0; k < hl.length; k += 4) hrows.push('  ' + hl.slice(k, k + 4).join(d('  ·  ')));
       const scanSecs = ((Date.now() - t0) / 1000).toFixed(0); fin(0, t0, [m(scanned), ...hrows]);
       t0 = Date.now(); S(1, { state: 'run', t0, pct: null, detail: 'each request = its tokens × that model\'s API list price' }); const report = await analyse(info.runDir); const t1 = t0;
-      let g = null; if (cfg.git) { t0 = Date.now(); S(2, { state: 'run', t0 }); g = await git(cfg, live(2)); }
+      const g = gP ? await gP : null;
       DATA = buildData(report, g, { days: DAYS, hosts: HOSTS }, info);
       const hd = d(pad('  Tool', 17) + lpad('Sessions', 9) + lpad('Requests', 10) + lpad('Output', 9) + lpad('Cached in', 11) + lpad('Fresh in', 10) + lpad('API value', 11));
       const col = { claude: C.cl, codex: C.cx, antigravity: C.go }, T = DATA.tools, tot = k => T.reduce((s, x) => s + x[k], 0);
@@ -294,7 +295,7 @@ function Main({ cfg }) {
         '  ' + pad(bold(w('Last 7 days')), 15) + lpad('', 9) + lpad(bold(w(tot('requests').toLocaleString('en-US'))), 10) + lpad(bold(fg(GOLD, fmtTok(tot('output')))), 9) + lpad(bold(w(fmtTok(tot('cached')))), 11) + lpad(bold(w(fmtTok(tot('fresh')))), 10) + lpad(bold(w(usd(tot('usd')))), 11)]);
       S(0, { secs: scanSecs });
       fin(1, t1, DATA.plans.length ? DATA.plans.map(p => fg(C.cx, '✓') + ' ' + pad(fg(p.color, p.plan), 17) + m(pad(p.meter, 34)) + d('→ ') + bold(w(usd(p.usd_per_full_week))) + d(' per full week')) : [m('No weekly limit ran to its cap inside the scanned days: plans are ranked once one does.')]);
-      if (cfg.git) fin(2, t0, [fg(C.cx, '✓') + ' ' + w(DATA.git.merged_prs) + m(' merged PRs · ') + w(DATA.git.commits.toLocaleString('en-US')) + m(' commits · ') + w(DATA.git.repos) + m(' repos') + d('  in the last 7 days'), d(`  sources, 14 days: GitHub ${g.src.github} PRs · usagemeter ${g.src.meter} PRs` + (g.meter ? ` (usagemeter ${g.meter.version}${g.meter.downloaded ? ', downloaded' : ''})` : ''))]);
+      if (cfg.git) { fin(2, gT, [fg(C.cx, '✓') + ' ' + w(DATA.git.merged_prs) + m(' merged PRs · ') + w(DATA.git.commits.toLocaleString('en-US')) + m(' commits · ') + w(DATA.git.repos) + m(' repos') + d('  in the last 7 days'), d(`  sources, 14 days: GitHub ${g.src.github} PRs · usagemeter ${g.src.meter} PRs` + (g.meter ? ` (usagemeter ${g.meter.version}${g.meter.downloaded ? ', downloaded' : ''})` : ''))]); S(2, { secs: gSecs }); }
       setSteps(s => { setPast(p => [{ kind: 'steps', id: 'steps', steps: s }, ...p]); return s; });
       const finish = (x, done) => { let files = []; try { files = writeFiles(x.spec); } catch (e) { audit('note', 'files not written: ' + e.message); } setSaved(files); setPast(p => [...p, { kind: 'panel', ...x, done, id: 'dash' }]); return { ...x, done, moved: true }; };
       if (!agent) setTimeout(() => { setDash(finish({ ...blank(), spec: builtin() }, { secs: null })); setTimeout(exit, 300); }, 120);
