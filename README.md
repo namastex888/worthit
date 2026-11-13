@@ -33,6 +33,7 @@ worthit days --since 2026-11-01 --by model
 worthit sql "SELECT day, SUM(api_usd) FROM day_provider GROUP BY day"   # one read-only SELECT on the local store
 worthit schema                   # tables and columns, with meanings
 worthit --skill                  # print the full guide
+worthit share open               # an X-ready post + card image from your last run: allowance, open, models, value, ranking, waste, or "anything"
 worthit install-skill            # install the skill into your coding agents
 worthit --demo                   # the whole run on sample data
 ```
