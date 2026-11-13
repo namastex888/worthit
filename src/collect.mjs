@@ -154,20 +154,27 @@ export async function git(cfg, on) {
           if (from === since) sm.run('gh_covered_from_ms', String(since)); sm.run('gh_fetched_ms', String(Date.now())); db.exec('COMMIT'); }
         rows = db.prepare('SELECT key, merged_ms FROM gh_pr WHERE merged_ms >= ?').all(since).map(r => [r.key, r.merged_ms]); } catch { /* keep the fresh rows */ } db.close(); }
     if (o.code !== 0) audit('note', 'gh search did not answer: using the PRs already stored');
-    for (const [k, t] of rows) { if (!prs.has(k)) src.github++; prs.set(k, t); }
+    const tail = k => k.slice(k.lastIndexOf('/')), fromMeter = new Map(); for (const [k, t] of prs) fromMeter.set(tail(k), [k, t]);
+    for (const [k, t] of rows) { const m = fromMeter.get(tail(k));      // same repo name, same number, merged within the hour: one pull request under an older owner name
+      if (m && m[0] !== k && prs.has(m[0]) && Math.abs(m[1] - t) < 3600e3) { prs.delete(m[0]); src.meter--; }
+      if (!prs.has(k)) src.github++; prs.set(k, t); }
   } else audit('note', 'gh CLI not found: GitHub PRs not counted');
   // Gitea (tea) and GitLab (glab) are optional: not installed, logged out or not answering means skipped with a note, never an error.
   // A few bounded calls per forge (your own merged pull requests, newest first), not one per repository.
   const forge = async (name, cli, argsFor, pick, pageSize) => { if (!has(cli)) return; on({ pct: .9, detail: `${name} · your merged pull requests (${cli})` });
-    for (let page = 1; page <= 4; page++) { const args = argsFor(page); audit('run', `${cli} ${args.join(' ')}`); const o = await runOut(cli, args, 20000); let list = null; try { list = JSON.parse(o.out); } catch { /* not JSON */ }
+    for (let page = 1; page <= 50; page++) { const args = argsFor(page); audit('run', `${cli} ${args.join(' ')}`); const o = await runOut(cli, args, 20000); let list = null; try { list = JSON.parse(o.out); } catch { /* not JSON */ }
       if (o.code !== 0 || !Array.isArray(list)) { audit('note', `${name}: no usable answer from ${cli} (not logged in?): its pull requests are not counted`); return; }
       for (const x of list) { let r = null; try { r = pick(x); } catch { /* odd row */ } if (r && r[1] >= since && !prs.has(r[0])) { src[name.toLowerCase()]++; prs.set(r[0], r[1]); } }
       if (list.length < pageSize) return; } };
   const sinceIso = new Date(since).toISOString();
   await forge('Gitea', 'tea', page => ['api', `/repos/issues/search?type=pulls&state=closed&created=true&since=${sinceIso}&limit=50&page=${page}`],
     x => x.pull_request && x.pull_request.merged && x.pull_request.merged_at ? [('gitea/' + (x.repository ? x.repository.full_name : x.html_url) + '#' + x.number).toLowerCase(), Date.parse(x.pull_request.merged_at)] : null, 50);
-  await forge('GitLab', 'glab', page => ['api', `merge_requests?scope=created_by_me&state=merged&updated_after=${sinceIso}&per_page=100&page=${page}`],
-    x => x.merged_at ? [('gitlab/' + ((x.references && x.references.full) || x.web_url)).toLowerCase(), Date.parse(x.merged_at)] : null, 100);
+  let glHosts = [];
+  if (has('glab')) { const st = spawnSync('glab', ['auth', 'status'], { encoding: 'utf8', timeout: 20000 }), txt = (st.stdout || '') + '\n' + (st.stderr || '');   // host names sit unindented, each followed by its login lines
+    let cur = null; for (const l of txt.split('\n')) { const h = /^([a-z0-9][a-z0-9.-]*\.[a-z]{2,})\s*$/i.exec(l); if (h) cur = h[1].toLowerCase(); else if (cur && /Logged in to/.test(l) && !glHosts.includes(cur)) glHosts.push(cur); }
+    audit('run', 'glab auth status' + `   (GitLab hosts you are logged in to: ${glHosts.join(', ') || 'none'})`); }
+  for (const host of glHosts) await forge('GitLab', 'glab', page => ['api', '--hostname', host, `merge_requests?scope=created_by_me&state=merged&updated_after=${sinceIso}&per_page=100&page=${page}`],
+    x => x.merged_at ? [(host + '/' + ((x.references && x.references.full) || x.web_url)).toLowerCase(), Date.parse(x.merged_at)] : null, 100);
   on({ pct: 1, detail: 'done' });
   return { prs: [...prs.values()], commits: [...commits.values()], repos, src, meter: meter && { version: meter.version, downloaded: meter.downloaded } };
 }
