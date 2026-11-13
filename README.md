@@ -12,15 +12,35 @@ npx worthit@latest
 
 It reads the logs your AI coding tools already keep, prices every request at API list rates and shows what one full weekly limit of each plan was worth. No account, no upload. The recording is `npx worthit --demo`: the whole run on sample data. Needs Node 22.5+ and Python 3.
 
-Then share a stat:
+## Get more out of what you pay for
+
+The numbers are only useful if they change what you do next week. Each part of the screen answers one question:
+
+| You see | What it tells you | What to do |
+|---|---|---|
+| **Unused allowance** with dollars still open | You paid for capacity that resets soon | Spend it before the reset: queue the refactor, the test backfill, the long review |
+| **A plan at 100% days before its reset** | You are rationing your best model | Move bulk work (search, summaries, boilerplate) to a cheaper or open model and keep the limit for the hard parts |
+| **Model mix** with dollars per million tokens | Which models do your volume and what each costs | If an expensive model writes most of your tokens, try the cheap one on the easy half and compare next week |
+| **Cost per merged PR** going up | You are spending more for each change that ships | Look at the day it jumped: a stuck agent, a retry loop, or one very large PR |
+| **The hour grid** | When your agents work and when they sit idle | Idle nights are free capacity: start long jobs before you leave |
+| **Plan ranking** | What each plan gives back for its price | Keep the one that pays, question the one that does not |
+| **Weekly history** | Whether a limit moved, and when | Tell a provider change from your own busy week before you blame either |
+
+You do not have to read tables. Type a question in the bar at the bottom ("which day cost the most?", "what should I move to an open model?") and it answers with a chart. It remembers the conversation while the screen is open.
+
+A plan marked **measured** was read from its own meter. A plan marked **at least** may have use on a machine worthit could not read, so the true figure is that or higher.
+
+## Share a stat
 
 ```sh
 npx worthit share
 ```
 
-![a share card: model mix and open vs closed models](https://raw.githubusercontent.com/namastex888/worthit/dev/docs/share-card.png)
+![a share card: one weekly limit in dollars, and the other plans below it](https://raw.githubusercontent.com/namastex888/worthit/dev/docs/share-card.png)
 
-It writes a card like this from your last run, suggests the post, copies the image and offers to open X with the text filled in. You paste the image and press Post; worthit never posts for you. Topics: `allowance` (did your weekly limits move), `open` (open vs closed models), `models`, `value`, `ranking`, `waste`, or anything in quotes: `npx worthit share "what each merged PR cost me"`.
+It draws a card like this from your last run, writes the post, copies the image and opens X with the text filled in. You paste the image and press Post; worthit never posts for you. You can also just type "share my open model stats" in the question bar.
+
+Topics: `allowance` (did your weekly limits move), `open` (open vs closed models), `models`, `value`, `ranking`, `waste`, or anything in quotes: `npx worthit share "what each merged PR cost me"`.
 
 ## For agents
 
