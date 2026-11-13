@@ -141,12 +141,14 @@ export const blocks = {
         top.push((hi ? fg(color, part[hi].repeat(bw)) : ' '.repeat(bw)) + ' '.repeat(gap)); bot.push((lo ? fg(color, part[lo].repeat(bw)) : fg(C.track, '▁'.repeat(bw))) + ' '.repeat(gap)); } return [tall ? top.join('') : null, bot.join('')]; };
     const dates = (cw, lead) => { const lab = Array(n * cw).fill(' '), put = (t, at) => { const a = Math.max(0, Math.min(n * cw - t.length, at)); for (let i = 0; i < t.length; i++) lab[a + i] = t[i]; };
       const idx = n <= 2 ? [...Array(n).keys()] : n <= 5 || n * cw < 30 ? [0, n - 1] : [0, Math.floor((n - 1) / 2), n - 1]; for (const i of idx) put(X.weeks[i], i === n - 1 ? n * cw : i * cw); return ' '.repeat(lead) + d(lab.join('')); };
-    const wl = 62, wr = W - wl - 1, nameW = 16, cw = Math.max(3, Math.min(6, Math.floor((wl - 4 - nameW - 10) / n)));
-    const max = Math.max(10, ...X.series.flatMap(s => s.share_pct)), left = [dates(cw, nameW) + d(lpad('now', 5) + lpad('Δ', 4))];
-    for (const s of X.series) { const color = s.tool ? toolColor[s.tool] || C.ink2 : '#8a8a93', [t, b] = bars(s.share_pct, max, color, cw);
-      if (t) { if (left.length > 1) left.push(''); left.push(' '.repeat(nameW) + t); }
-      left.push(pad(s.tool ? w(s.model.slice(0, nameW - 1)) : d(s.model.slice(0, nameW - 1)), nameW) + b + bold(w(lpad(Math.round(s.share_pct[n - 1]) + '%', 5))) + chg(s)); }
-    left.push('', d('full bar height = ' + Math.round(max) + '% of a week · colour = tool'));
+    // a ranking: one horizontal bar per model for this week's share, most used first; the small bars beside it are the weeks before
+    const wl = 62, wr = W - wl - 1, nameW = 17, barW = 18, now = s => s.share_pct[n - 1] || 0;
+    const ranked = [...X.series].sort((a, b) => (!!a.models - !!b.models) || (now(b) - now(a)) || ((b.output_tokens || 0) - (a.output_tokens || 0)));
+    const max = Math.max(1, ...ranked.map(now)), spark = (vals, color) => { const top = Math.max(1, ...vals); return vals.map(v => v > 0 ? fg(color, part[Math.max(1, Math.round(v / top * 8))]) : fg(C.track, '▁')).join(''); };
+    const left = [d(pad('', nameW) + pad('this week', barW + 1) + lpad('share', 5) + lpad('Δ', 4) + '  ' + (n + ' weeks').slice(0, Math.max(n, 7)))];
+    for (const s of ranked) { const color = s.tool ? toolColor[s.tool] || C.ink2 : '#8a8a93';
+      left.push(pad(s.tool ? w(s.model.slice(0, nameW - 1)) : d(s.model.slice(0, nameW - 1)), nameW) + bar(now(s), max, barW, dark(color), color) + ' ' + bold(w(lpad(Math.round(now(s)) + '%', 5))) + chg(s) + '  ' + spark(s.share_pct, color)); }
+    left.push('', d('bar: share of this week\'s output tokens · colour = tool'), d('small bars: the same share in each of the last ' + n + ' weeks'));
     const rest = X.series.find(s => s.models); if (rest) { const lim = wl - 4; let cur = 'smaller: ', out = []; for (const nm of rest.models) { if ((cur + nm).length + 1 > lim) { out.push(cur.replace(/, $/, '')); cur = '  '; if (out.length === 2) break; } cur += nm + ', '; }
       if (out.length < 2 && cur.trim()) out.push(cur.replace(/, $/, '')); for (const l of out) left.push(d(l)); }
     const cr = Math.max(1, Math.min(4, Math.floor((wr - 4 - 7 - 5) / n))), right = [dates(cr, 7)];
@@ -154,7 +156,7 @@ export const blocks = {
     const colW = 9, rowOf = (label, f) => d(pad(label, 13)) + lpad(f(X.open), colW) + lpad(f(X.closed), colW);
     right.push('', pad('', 13) + lpad(fg(C.pink, 'open'), colW) + lpad(fg(C.cl, 'closed'), colW), rowOf('vs last week', s => chg(s)), rowOf('output', s => m(fmtTok(s.output_tokens))), rowOf('API value', s => m(usd(s.api_usd))),
       rowOf('$ per M out', s => m(s.usd_per_m_output == null ? '·' : '$' + (s.usd_per_m_output >= 100 ? Math.round(s.usd_per_m_output) : s.usd_per_m_output))), '', d('open = open-weight models'), d('(DeepSeek, GLM, Kimi, Qwen…)'));
-    return row([{ title: 'MODEL MIX', color: C.pink, right: 'share of output tokens, week by week', w: wl, lines: left }, { title: 'OPEN vs CLOSED', color: C.pink, right: 'model weights', w: wr, lines: right }]);
+    return row([{ title: 'MODEL MIX', color: C.pink, right: 'most used first', w: wl, lines: left }, { title: 'OPEN vs CLOSED', color: C.pink, right: 'model weights', w: wr, lines: right }]);
   },
   WasteTable(D) {
     const l = [d(pad('Plan', 22) + lpad('Limit', 7) + '   ' + pad('You used', 21) + '   ' + lpad('Unused', 6) + '   Why')];
