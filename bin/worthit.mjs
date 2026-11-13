@@ -21,14 +21,18 @@ import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'
 import { blocks, C, W, bar, fg, bold, d, m, w, pad, lpad, len, strip, grad, fmtTok, usd } from '../src/draw.mjs';
 import { scan, analyse, git, buildData, audit, AUDIT, has, tilde, ROOT, HOME, sshHosts, savedHosts, saveHosts } from '../src/collect.mjs';
 import { query, run as runQuery, QUERY_COMMANDS } from '../src/query.mjs';
-import { startPet, petLines, petSummary } from '../src/pet.mjs';
+import { startPet, petLines, petSummary, PET_W } from '../src/pet.mjs';
 import { demoHosts, demoScan, demoGit, demoPricing, demoData, demoSpec, demoAnswer } from '../src/demo.mjs';
 
 const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
 const h = React.createElement, argv = process.argv.slice(2);
 const flag = k => argv.includes(k), arg = (k, dflt) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : dflt; };
 if (flag('--version') || flag('-v')) { console.log(VERSION); process.exit(0); }
+if (argv[0] && !argv[0].startsWith('-') && !['get', 'days', 'sql', 'schema', 'install-skill'].includes(argv[0])) { console.error(`worthit: unknown command "${argv[0]}". Try: worthit --help`); process.exit(2); }
 if (await query(argv)) process.exit(0);        // get / days / sql / schema / --skill: answered from the local store, no scan
+// from here on a scan would start: never from inside another worthit run (lookups above stay allowed)
+if (process.env.WORTHIT_RUNNING) { console.error('worthit: started from inside another worthit run; stopping.'); process.exit(2); }
+process.env.WORTHIT_RUNNING = '1';        // inherited by every program this run starts
 if (flag('--help') || flag('-h')) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 8).map(l => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
 const JSON_MODE = flag('--json'), ASK = arg('--ask'), F_GIT = arg('--git'), F_AI = arg('--ai'), DAYS = +arg('--days', 21), F_HOSTS = arg('--hosts'), DEMO = flag('--demo'), NO_FILES = flag('--no-files') || DEMO, FRESH = flag('--fresh');
 // the agent skill (skills/worthit/SKILL.md in this package and in the repo): installed into the person's coding agents with the skills CLI
@@ -310,7 +314,7 @@ function Main({ cfg }) {
   const [steps, setSteps] = useState(() => [{ title: 'Scanning your logs' }, { title: 'Pricing every request, reading the weekly meters' }, ...(cfg.git ? [{ title: 'Git activity' }] : [])].map(s => ({ ...s, state: 'wait', pct: 0, detail: '', lines: [] })));
   const [dash, setDash] = useState(null), [cur, setCur] = useState(null), [past, setPast] = useState([]), [fail, setFail] = useState(null), [saved, setSaved] = useState(null); const last = useRef(0);
   // the hardware pet: lives in the right corner while the run works, then reports what the run cost this machine
-  const [pet, setPet] = useState(null), [hw, setHw] = useState(null), stopPet = useRef(null), PETW = 26, cols = process.stdout.columns || 100, showPet = (TTY || !!TEST_INPUT) && cols >= 92;
+  const [pet, setPet] = useState(null), [hw, setHw] = useState(null), stopPet = useRef(null), PETW = PET_W, cols = process.stdout.columns || 100, showPet = (TTY || !!TEST_INPUT) && cols >= 92;
   useEffect(() => { if (!(TTY || TEST_INPUT)) return; stopPet.current = startPet(setPet); return () => { if (stopPet.current) stopPet.current(); }; }, []);
   const endPet = () => { if (!stopPet.current) return; const t = stopPet.current(); stopPet.current = null; setHw(t); audit('note', 'hardware during this run: ' + petSummary(t)); };
   const petBox = () => h(Box, { flexDirection: 'column', width: PETW, flexShrink: 0 }, h(Text, {}, petLines(pet, Math.floor(f / 2)).join('\n')));

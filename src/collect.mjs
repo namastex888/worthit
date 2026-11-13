@@ -50,7 +50,9 @@ const SPAN = { claude: [0, .68], codex: [.68, .97], antigravity: [.97, 1] }, TOO
 export async function scan(cfg, on) {
   const py = ['python3', 'python'].find(has);
   if (!py) throw new Error('Python 3 is needed for the log scanner. macOS: xcode-select --install · Linux: install python3 with your package manager.');
-  const runDir = path.join(HOME, 'run'); fs.rmSync(runDir, { recursive: true, force: true }); fs.mkdirSync(runDir, { recursive: true });
+  const runs = path.join(HOME, 'run'), runDir = path.join(runs, String(process.pid)); fs.mkdirSync(runs, { recursive: true });
+  for (const x of fs.readdirSync(runs)) { let alive = false; try { process.kill(+x, 0); alive = /^\d+$/.test(x); } catch { /* gone */ } if (!alive || +x === process.pid) fs.rmSync(path.join(runs, x), { recursive: true, force: true }); }
+  fs.mkdirSync(runDir, { recursive: true });
   const script = path.join(ROOT, 'core', 'extract_usage.py'), counts = { claude: 0, codex: 0, antigravity: 0 };
   const cache = path.join(HOME, 'run-counts.json'), keepDir = path.join(HOME, 'run-keep');
   if (process.env.WORTHIT_REUSE && fs.existsSync(path.join(keepDir, 'local.json'))) { fs.cpSync(keepDir, runDir, { recursive: true }); audit('note', 'WORTHIT_REUSE: using the previous scan'); return { runDir, counts: JSON.parse(fs.readFileSync(cache, 'utf8')), hosts: [] }; }
@@ -101,8 +103,10 @@ export async function analyse(runDir) {
 }
 
 // ---------------------------------------------------------------- step 3: git activity
+// Automagik's usagemeter is a different program that shares a name with this package's second npm name: never mistake one for the other
+const isWorthit = p => { try { const r = fs.realpathSync(p); return /worthit\.mjs$/.test(r) || r.startsWith(ROOT + path.sep) || /^#!.*node/.test(fs.readFileSync(r, 'utf8').slice(0, 80)) && /worthit/.test(fs.readFileSync(r, 'utf8').slice(0, 4000)); } catch { return true; } };
 async function meterBin(on) {
-  for (const c of [spawnSync('which', ['usagemeter'], { encoding: 'utf8' }).stdout.trim(), path.join(os.homedir(), '.local/bin/usagemeter'), path.join(HOME, 'bin', 'usagemeter')]) if (c && fs.existsSync(c)) return { bin: c, downloaded: false };
+  for (const c of [spawnSync('which', ['usagemeter'], { encoding: 'utf8' }).stdout.trim(), path.join(os.homedir(), '.local/bin/usagemeter'), path.join(HOME, 'bin', 'usagemeter')]) if (c && fs.existsSync(c) && !isWorthit(c)) return { bin: c, downloaded: false };
   // not installed: take the build the signed meter lane points to, and check its sha256 before running it
   on({ pct: .05, detail: 'downloading usagemeter (Automagik\'s open-source token meter)' });
   audit('net', 'GET ' + LANE);
