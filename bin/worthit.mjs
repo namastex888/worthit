@@ -22,7 +22,7 @@ import { blocks, C, W, bar, fg, bold, d, m, w, pad, lpad, len, strip, grad, fmtT
 import { scan, analyse, git, buildData, audit, AUDIT, has, tilde, ROOT, HOME, sshHosts, savedHosts, saveHosts } from '../src/collect.mjs';
 import { query, run as runQuery, QUERY_COMMANDS } from '../src/query.mjs';
 import { startPet, petLines, petSummary, PET_W } from '../src/pet.mjs';
-import { demoHosts, demoScan, demoGit, demoPricing, demoData, demoSpec, demoAnswer } from '../src/demo.mjs';
+import { demoHosts, demoScan, demoGit, demoPricing, demoData, demoSpec, demoAnswer, demoPet } from '../src/demo.mjs';
 
 const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
 const h = React.createElement, argv = process.argv.slice(2);
@@ -315,9 +315,9 @@ function Main({ cfg }) {
   const [dash, setDash] = useState(null), [cur, setCur] = useState(null), [past, setPast] = useState([]), [fail, setFail] = useState(null), [saved, setSaved] = useState(null); const last = useRef(0);
   // the hardware pet: lives in the right corner while the run works, then reports what the run cost this machine
   const [pet, setPet] = useState(null), [hw, setHw] = useState(null), stopPet = useRef(null), PETW = PET_W, cols = process.stdout.columns || 100, showPet = (TTY || !!TEST_INPUT) && cols >= 92;
-  useEffect(() => { if (!(TTY || TEST_INPUT)) return; stopPet.current = startPet(setPet); return () => { if (stopPet.current) stopPet.current(); }; }, []);
+  useEffect(() => { if (!(TTY || TEST_INPUT)) return; stopPet.current = (DEMO ? demoPet : startPet)(setPet); return () => { if (stopPet.current) stopPet.current(); }; }, []);
   const endPet = () => { if (!stopPet.current) return; const t = stopPet.current(); stopPet.current = null; setHw(t); audit('note', 'hardware during this run: ' + petSummary(t)); };
-  const petBox = () => h(Box, { flexDirection: 'column', width: PETW, flexShrink: 0 }, h(Text, {}, petLines(pet, Math.floor(f / 2)).join('\n')));
+  const petBox = () => h(Box, { flexDirection: 'column', width: PETW, flexShrink: 0 }, h(Text, { wrap: 'truncate-end' }, petLines(pet, Math.floor(f / 2)).join('\n')));
   const S = (i, patch) => setSteps(s => s.map((x, k) => k === i ? { ...x, ...patch } : x));
   const st = set => (status, trace) => set(x => x && ({ ...x, status, trace: trace ?? x.trace }));
   const ask = q => { setCur({ ...blank(), q }); const base = 'DATA:\n' + forModel() + '\n\nQuestion: ' + q, t0 = Date.now();
@@ -373,7 +373,7 @@ function Main({ cfg }) {
     dash && !dash.moved ? h(Box, { flexDirection: 'column' }, collected && showPet && !hw ? h(Box, { flexDirection: 'row' }, h(Box, { flexDirection: 'column', width: cols - PETW - 1 }, h(Title, { label: 'YOUR WEEK', live: dash, f, who })), petBox()) : h(Title, { label: 'YOUR WEEK', live: dash, f, who }), h(View, { spec: dash.spec, k: dash.n })) : null,
     cur ? h(Box, { flexDirection: 'column' }, h(Title, { label: '› ' + cur.q, live: cur, f, who }), h(View, { spec: cur.spec, k: cur.n })) : null,
     saved && saved.length && !cur ? h(Text, {}, fg(C.cx, '✓') + m(' Saved to ./  ') + saved.map(x => w(x)).join(d('  ·  '))) : null,
-    hw && hw.seconds && dash && dash.moved && !cur ? h(Text, { wrap: 'truncate-end' }, fg(C.pink, '◆') + m(' This run on your machine  ') + d(petSummary(hw))) : null,
+    hw && hw.seconds && dash && dash.moved && !cur ? h(Text, { wrap: 'truncate-end' }, fg(C.pink, '◆') + m(' This run cost your machine  ') + d(petSummary(hw))) : null,
     dash && dash.moved && !cur && TTY && agent ? h(AskBar, { onSubmit: ask, f }) : null,
     dash && dash.moved && !agent ? h(Text, { dimColor: true }, '  AI is off: run again and pick an agent to ask questions about your usage') : null);
 }

@@ -90,8 +90,9 @@ export function petLines(s, frame) {        // the sprite, the scale, and one sm
   const p = parts(s), c = petColor(s.level), row = (label, x, val) => x == null ? paint(DIM, label.padEnd(6) + '·'.repeat(10) + ' n/a') : paint(DIM, label.padEnd(6)) + gauge(x, 10, petColor(x)) + ' ' + paint(INK, val.padStart(9));
   return [...sprite(s.level, frame).map(l => '      ' + l),
     ' ' + gauge(s.level, 26, c),
-    ' ' + paint(c, '\x1b[1m' + MOODS[moodOf(s.level)] + '\x1b[22m') + paint(DIM, ` · hardware load ${Math.round(s.level * 100)}%`),
+    ' ' + paint(c, '\x1b[1m' + MOODS[moodOf(s.level)] + '\x1b[22m') + paint(DIM, ` · load ${Math.round(s.level * 100)}%`),
     row(' cpu', p.cpu, `${Math.round(s.cpu * 100)}%`), row(' mem', p.mem, s.mem == null ? '' : Math.round(s.mem * 100) + '%'), row(' net', p.net, s.net == null ? '' : rate(s.net)), row(' disk', p.disk, s.disk == null ? '' : rate(s.disk)),
-    ' ' + (s.watts == null ? paint(DIM, 'power n/a') : paint(INK, `${s.watts.toFixed(1)} W`) + paint(DIM, ` · ${(s.wh * 1000).toFixed(0)} mWh so far`)) + (s.temp == null ? '' : paint(DIM, ` · ${Math.round(s.temp)}°C`))];
+    ' ' + (s.watts == null ? paint(DIM, 'power n/a') : paint(INK, `${s.watts.toFixed(1)} W`) + paint(DIM, ` · ${(s.wh * 1000).toFixed(0)} mWh`)) + (s.temp == null ? '' : paint(DIM, ` · ${Math.round(s.temp)}°C`))];
 }
-export const petSummary = t => !t || !t.seconds ? '' : (t.watts_avg == null ? '' : `${t.watts_avg} W avg · ${(t.watt_hours * 1000).toFixed(0)} mWh · `) + `cpu ${t.cpu_avg_pct}% (peak ${t.cpu_peak_pct}%) · net ${t.net_mb} MB · disk ${t.disk_mb} MB · peak load ${t.peak_level_pct}% (${t.peak_mood})`;
+const mb = v => v >= 1000 ? (v / 1000).toFixed(1) + ' GB' : Math.round(v) + ' MB';
+export const petSummary = t => !t || !t.seconds ? '' : (t.watts_avg == null ? '' : `${t.watts_avg} W avg · ${(t.watt_hours * 1000).toFixed(0)} mWh · `) + `cpu ${t.cpu_avg_pct}% · net ${mb(t.net_mb)} · disk ${mb(t.disk_mb)} · peak ${t.peak_level_pct}%`;

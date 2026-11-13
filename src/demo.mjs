@@ -44,3 +44,11 @@ export function demoSpec(spec, D) {
 
 export const demoAnswer = () => ({ root: 'r', elements: { r: { type: 'Stack', props: {}, children: ['v', 'p'] },
   v: { type: 'Verdict', props: { text: 'This is sample data. Run npx worthit to ask about your own usage.' }, children: [] }, p: { type: 'PlanRanking', props: {}, children: [] } } });
+
+// the hardware pet on a scripted load curve, so the recording shows the whole scale without stressing anything
+export function demoPet(on) {
+  const t0 = Date.now(), curve = t => t < 7 ? 0.08 + 0.87 * Math.sin(Math.min(1, t / 6) * Math.PI / 2) ** 1.4 : Math.max(0.3, 0.95 - (t - 7) * 0.12);
+  const timer = setInterval(() => { const t = (Date.now() - t0) / 1000, l = curve(t), j = 0.96 + 0.08 * Math.random();
+    on({ level: l, cpu: 0.06 + 0.82 * l * j, core: Math.min(1, 0.3 + l), mem: 0.52 + 0.4 * l, net: 2e5 * Math.pow(500, l) * j, disk: 4e6 * Math.pow(100, l) * j, temp: 30 + 12 * l, watts: 9 + 58 * l * j, wh: 0.0006 * t * (1 + 3 * l) }); }, 400);
+  return () => { clearInterval(timer); return { seconds: Math.round((Date.now() - t0) / 1000), cpu_avg_pct: 48, cpu_peak_pct: 86, net_mb: 212.4, disk_mb: 1840.5, watts_avg: 41.3, watt_hours: 0.118, peak_level_pct: 95, peak_mood: 'maxed out' }; };
+}
