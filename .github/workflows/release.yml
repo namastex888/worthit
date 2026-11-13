@@ -1,0 +1,94 @@
+name: Release
+
+# Cuts a worthit release from dev on every merge into it, as Automagik does: one version
+# (0.N, semver 0.N.0, N one above the last release: scripts/version.mjs), committed and tagged
+# `v<version>` on dev, published as the GitHub release `v<version>` with the npm tarball attached.
+# dev is the only branch: every merge is a release, so dev is always the latest release.
+#
+# A push to dev (a merged pull request) cuts one; so does a dispatch:
+#   gh workflow run release.yml --ref dev
+# The workflow's own push (the version commit) starts no run: GitHub starts none for a push made
+# with the workflow token. A dev with nothing since the last release but that commit, or only
+# CI, docs and test commits, cuts nothing. Cuts queue one at a time.
+#
+# Nothing is published to npm from here: npm asks the owner for a fingerprint, so that one step
+# is `make publish` on the owner's machine, which publishes the newest tag.
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  cut:
+    name: Cut v<version> on dev
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    concurrency:
+      group: release-cut
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    env:
+      DO_NOT_TRACK: '1'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: dev
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+
+      - name: Anything new since the last release
+        id: new
+        run: |
+          set -euo pipefail
+          last=$(git tag --list 'v0.*' --sort=-v:refname | grep -E '^v0\.(0|[1-9][0-9]*)\.0$' | head -1 || true)
+          # commits since it other than the release's own and those that ship nothing (CI, docs, tests)
+          if [[ -n "${last}" && -z "$(git log --no-merges --format=%s "${last}..HEAD" | grep -vE '^(chore\(release\)|ci|docs|test)(\([^)]*\))?!?: ' || true)" ]]; then
+            echo "dev has nothing since ${last}: no release"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: The gates the release stands on
+        if: steps.new.outputs.release == 'true'
+        run: make check
+
+      - name: Version, commit and tag
+        id: cut
+        if: steps.new.outputs.release == 'true'
+        run: |
+          set -euo pipefail
+          version=$(node scripts/version.mjs next)
+          node scripts/version.mjs set "${version}"
+          node scripts/version.mjs check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # the first release can find the version already written: commit only when something changed
+          git diff --quiet || git commit -qam "chore(release): v${version}"
+          git tag -a "v${version}" -m "worthit ${version%.0}"
+          # atomic: when dev moved meanwhile (a second merge), neither lands; the newer merge's own
+          # run, queued behind this one, releases these changes with it
+          if ! git push -q --atomic origin HEAD:refs/heads/dev "refs/tags/v${version}"; then
+            echo "::notice::dev moved on while this run cut v${version}; the run for the newer merge releases these changes too"
+            exit 0
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: GitHub release with the npm tarball
+        if: steps.cut.outputs.version != ''
+        env:
+          VERSION: ${{ steps.cut.outputs.version }}
+        run: |
+          set -euo pipefail
+          npm pack --silent
+          gh release create "v${VERSION}" "worthit-${VERSION}.tgz" --title "worthit ${VERSION%.0}" --generate-notes --verify-tag
+          echo "### worthit ${VERSION%.0} is out" >> "$GITHUB_STEP_SUMMARY"
+          echo "Publish it to npm from the owner's machine: \`make publish\`" >> "$GITHUB_STEP_SUMMARY"
