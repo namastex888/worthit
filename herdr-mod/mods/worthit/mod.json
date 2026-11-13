@@ -1,1 +1,1 @@
-{ "place": "right", "size": 340 }
+{ "place": "none", "title": "worthit", "overlay": { "kind": "dialog", "width": 380, "height": 640 } }
