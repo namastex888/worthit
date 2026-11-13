@@ -2,7 +2,8 @@
 // (GitHub search + the usagemeter store), then shape everything into the one DATA object the dashboard draws.
 // Everything read, run, fetched or written is recorded in AUDIT.
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'; import crypto from 'node:crypto';
-import { spawn, spawnSync } from 'node:child_process'; import { DatabaseSync } from 'node:sqlite';
+import { spawn, spawnSync } from 'node:child_process'; import { createRequire } from 'node:module';
+const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');   // loaded here, after quiet.mjs, so its 'experimental' warning stays silent
 import { C } from './draw.mjs';
 
 export const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
@@ -125,7 +126,7 @@ export async function git(cfg, on) {
     await runOut(meter.bin, ['sync', '--no-publish', '--budget-secs', '20'], 90000);
     const st = JSON.parse(spawnSync(meter.bin, ['status'], { encoding: 'utf8', timeout: 20000 }).stdout); meter.version = meter.version || st.version;
     const db = path.join(st.state_dir, 'meter.db'); audit('read', tilde(db) + '  (tables pr, cwd_repo; read-only)');
-    const { DatabaseSync } = await import('node:sqlite'); const d = new DatabaseSync(db, { readOnly: true });
+    const d = new DatabaseSync(db, { readOnly: true });
     for (const r of d.prepare('select repo, pr, merged_ms from pr where merged_ms >= ?').all(since)) { const k = (r.repo + '#' + r.pr).toLowerCase(); if (!prs.has(k)) { prs.set(k, r.merged_ms); src.meter++; } }
     const seen = new Set(), dirs = [];
     for (const r of d.prepare('select repo, cwd from cwd_repo where repo is not null order by checked_ms desc').all()) { if (seen.has(r.repo) || !fs.existsSync(r.cwd)) continue; seen.add(r.repo); dirs.push(r.cwd); }
@@ -289,5 +290,6 @@ export function buildData(report, g, cfg, scanInfo) {
     if (D.git && D.git.merged_prs > Math.max(...blocks.map(b => b.prs))) bests.push('PRs merged in a week');
     const pc = blocks.filter(b => b.prs).map(b => b.usd / b.prs); if (D.git && D.git.usd_per_merged_pr != null && pc.length && D.git.usd_per_merged_pr < Math.min(...pc)) bests.push('lowest cost per PR'); }
   D.game = { level, title: TITLES[Math.min(level - 1, TITLES.length - 1)], xp, xp_next: 2500 * level * level, streak_days: streak, days_tracked: keys.length, personal_bests: bests };
+  try { fs.writeFileSync(path.join(HOME, 'last.json'), JSON.stringify(D)); } catch { /* not fatal */ }      // what `worthit get` reads
   return D;
 }

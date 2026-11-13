@@ -2,9 +2,11 @@
 // worthit — what your AI coding subscription is really worth. One command, everything local.
 //   npx worthit                 three questions, live scan, dashboard, then a question bar (ctrl+c exits)
 //   npx worthit --json          no UI: prints the week's data as JSON (for agents and scripts)
+//   worthit get [section] · worthit days [--since D --until D --group day|week|month --by total|tool|model] · worthit sql "SELECT …" · worthit schema · worthit --skill
 //   --git yes|no   --ai claude|codex|omp|dsh|no   --days 21   --hosts all|none|a,b (saved ssh machines to include)   --ask "question"   --no-files
 // Writes ./<date>-worthit.md, ./<date>-worthit.png (when Chrome is installed) and ./<date>-worthit-audit.log.
 process.removeAllListeners('warning'); process.on('warning', () => {});
+import '../src/quiet.mjs';
 import React, { useState, useEffect, useRef } from 'react';
 import crypto from 'node:crypto';
 import { render, Box, Text, Static, useApp, useInput, useStdin } from 'ink';
@@ -17,12 +19,14 @@ import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import { blocks, C, W, bar, fg, bold, d, m, w, pad, lpad, len, strip, grad, fmtTok, usd } from '../src/draw.mjs';
 import { scan, analyse, git, buildData, audit, AUDIT, has, tilde, ROOT, HOME, sshHosts, savedHosts, saveHosts } from '../src/collect.mjs';
+import { query, run as runQuery, QUERY_COMMANDS } from '../src/query.mjs';
 
 const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
 const h = React.createElement, argv = process.argv.slice(2);
 const flag = k => argv.includes(k), arg = (k, dflt) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : dflt; };
 if (flag('--version') || flag('-v')) { console.log(VERSION); process.exit(0); }
-if (flag('--help') || flag('-h')) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 7).map(l => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
+if (await query(argv)) process.exit(0);        // get / days / sql / schema / --skill: answered from the local store, no scan
+if (flag('--help') || flag('-h')) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 8).map(l => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
 const JSON_MODE = flag('--json'), ASK = arg('--ask'), F_GIT = arg('--git'), F_AI = arg('--ai'), DAYS = +arg('--days', 21), F_HOSTS = arg('--hosts'), NO_FILES = flag('--no-files'), FRESH = flag('--fresh');
 const TTY = !!process.stdin.isTTY && !JSON_MODE;
 const AGENTS = [{ id: 'claude', cli: 'claude', label: 'Claude Haiku 5.5', model: 'claude-haiku-5-5' }, { id: 'codex', cli: 'codex', label: 'GPT-6 Luna', model: 'gpt-6-luna' },
@@ -93,7 +97,9 @@ const SYSTEM = catalog.prompt({ system: 'You compose the "Your week" terminal da
 const ASK_SYSTEM = catalog.prompt({ system: 'You answer questions about a developer\'s AI subscription usage for worthit. You always answer visually, by placing blocks.',
   customRules: [...COMMON,
     'Start with a Verdict that answers the question directly. Then one or two blocks that prove it: prefer a ready block that already shows it (PlanRanking, Receipts, WasteTable, LimitTrend, Heatmap, Tiles, LevelCard); otherwise a Chart or Facts with values copied from the data. A Note is optional.',
-    'If the data cannot answer the question, say in the Verdict what is missing and show the closest block.'] });
+    'DATA covers the last 7 days in detail. For other dates or finer history (per day, per week, per month, per model, per tool) you may look it up in the local store first: reply with ONLY one to three lines of the form `QUERY: worthit <command>` and nothing else. You then receive the results and draw the answer, putting looked-up values into a Chart or Facts block.',
+    'Lookup commands: `get <section>` (a section of DATA) · `days [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--group day|week|month] [--by total|tool|model] [--tool claude|codex|google|omp|dsh] [--model <part of the id>]` · `sql "SELECT ..."` over day_provider(day, provider, api_usd, output_tokens, requests), day_model(day, model, provider, output_tokens, api_usd), day(day, prs, commits), plan_value(day, provider, plan, usd_per_full_week, times_plan_price, proof).',
+    'If neither DATA nor a lookup can answer the question, say in the Verdict what is missing and show the closest block.'] });
 
 const safe = (type, props) => { try { return blocks[type](DATA, props || {}); } catch (e) { return ['  ' + type + ': could not draw (' + String(e.message).slice(0, 60) + ')']; } };
 const registry = { Stack: ({ children }) => h(Box, { flexDirection: 'column' }, children), Row: ({ children }) => h(Box, { flexDirection: 'row', gap: 1 }, children) };
@@ -129,8 +135,8 @@ function feed({ system, user, agent }, onPatch, onStatus, onDone) {
   const line = l => { l = l.trim(); if (!l.startsWith('{')) return; try { const { result, newPatches } = compiler.push(l + '\n'); if (newPatches.length) { n += newPatches.length;
     const v = JSON.parse(l).value, what = v && v.type ? 'placing ' + v.type + (v.props && v.props.text ? ': ' + String(v.props.text).slice(0, 60) : v.props && v.props.title ? ': ' + v.props.title : '') : null;
     onPatch(structuredClone(result), n); if (what) onStatus('drawing', what); } } catch { /* a bad line is skipped */ } };
-  const text = t => { buf += t; let i; while ((i = buf.indexOf('\n')) >= 0) { line(buf.slice(0, i)); buf = buf.slice(i + 1); } };
-  const end = err => { if (buf) line(buf); audit('agent', `${agent.cli} finished: ${err ? 'failed: ' + err : n + ' patches'} in ${((Date.now() - t0) / 1000).toFixed(1)}s`); onDone({ n, secs: ((Date.now() - t0) / 1000).toFixed(1), err }); };
+  let raw = ''; const text = t => { raw += t; buf += t; let i; while ((i = buf.indexOf('\n')) >= 0) { line(buf.slice(0, i)); buf = buf.slice(i + 1); } };
+  const end = err => { if (buf) line(buf); audit('agent', `${agent.cli} finished: ${err ? 'failed: ' + err : n + ' patches'} in ${((Date.now() - t0) / 1000).toFixed(1)}s`); onDone({ n, secs: ((Date.now() - t0) / 1000).toFixed(1), err, raw }); };
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'worthit-'));
   let out = '', errs = ''; const lines = fn => c => { out += c; let i; while ((i = out.indexOf('\n')) >= 0) { const l = out.slice(0, i); out = out.slice(i + 1); try { fn(JSON.parse(l)); } catch { /* not json */ } } };
   let p, pending = Promise.resolve();
@@ -296,9 +302,17 @@ function Main({ cfg }) {
   const [dash, setDash] = useState(null), [cur, setCur] = useState(null), [past, setPast] = useState([]), [fail, setFail] = useState(null), [saved, setSaved] = useState(null); const last = useRef(0);
   const S = (i, patch) => setSteps(s => s.map((x, k) => k === i ? { ...x, ...patch } : x));
   const st = set => (status, trace) => set(x => x && ({ ...x, status, trace: trace ?? x.trace }));
-  const ask = q => { setCur({ ...blank(), q });
-    feed({ system: ASK_SYSTEM, user: 'DATA:\n' + forModel() + '\n\nQuestion: ' + q, agent }, (spec, n) => setCur(x => ({ ...x, spec, n })), st(setCur),
-      done => { setCur(x => { setPast(p => [...p, { kind: 'panel', ...x, done, id: 'a' + p.length }]); return null; }); if (!TTY) setTimeout(exit, 200); }); };
+  const ask = q => { setCur({ ...blank(), q }); const base = 'DATA:\n' + forModel() + '\n\nQuestion: ' + q, t0 = Date.now();
+    const closeAsk = done => { setCur(x => { setPast(p => [...p, { kind: 'panel', ...x, done: { ...done, secs: ((Date.now() - t0) / 1000).toFixed(1) }, id: 'a' + p.length }]); return null; }); if (!TTY) setTimeout(exit, 200); };
+    // the agent may first ask for lookups in the local store (worthit get / days / sql / schema): they are run here, read-only, and logged
+    const round = (user, lookups) => feed({ system: ASK_SYSTEM, user, agent }, (spec, n) => setCur(x => ({ ...x, spec, n })), st(setCur), done => {
+      const cmds = !done.n && !done.err && lookups < 2 ? [...String(done.raw || '').matchAll(/^\s*`?QUERY:\s*worthit\s+(.+?)`?\s*$/gm)].map(x => x[1].trim()).slice(0, 3) : [];
+      if (!cmds.length) return closeAsk(done);
+      const res = cmds.map(c => { const av = [...c.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)].map(x => x[1] ?? x[2] ?? x[3]); st(setCur)('looking up', 'worthit ' + c); audit('run', `worthit ${c}   (lookup in the local store, asked for by ${agent.cli})`);
+        let v; try { if (!QUERY_COMMANDS.includes(av[0])) throw new Error('only get, days, sql and schema can be looked up'); v = JSON.stringify(runQuery(av)); } catch (e) { v = 'error: ' + e.message; }
+        return `$ worthit ${c}\n${v.length > 6000 ? v.slice(0, 6000) + ' … (truncated)' : v}`; });
+      round(base + '\n\nLookup results from the local store:\n' + res.join('\n\n') + '\n\nNow answer by placing blocks. Do not ask for more lookups.', lookups + 1); });
+    round(base, 0); };
   useEffect(() => { const t = setInterval(() => setF(x => x + 1), 90);
     const live = i => p => { const now = Date.now(); if (now - last.current < 80 && p.pct !== 1) return; last.current = now; S(i, { pct: p.pct, detail: p.detail }); };
     const fin = (i, t0, lines) => S(i, { state: 'done', secs: ((Date.now() - t0) / 1000).toFixed(0), lines });

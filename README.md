@@ -32,6 +32,22 @@ Works with Claude Code, Codex and Antigravity. omp and dsh usage is included whe
 
 Without flags, three arrow-key questions ask the same things, with the recommended answer preselected.
 
+## For agents
+
+Instant, read-only answers from the local store (no scan, no model, no network), all JSON:
+
+```sh
+worthit get                      # sections of the last run, and when it was generated
+worthit get plans                # one section; dots walk in: plans.0.usd_per_full_week
+worthit days --group month --by tool
+worthit days --since 2026-11-01 --by model
+worthit sql "SELECT day, SUM(api_usd) FROM day_provider GROUP BY day ORDER BY 2 DESC LIMIT 5"
+worthit schema                   # tables and columns, with meanings
+worthit --skill                  # the full guide, ready to save as an agent skill
+```
+
+The question bar uses the same commands: when the week's data cannot answer, the agent asks for up to three lookups, worthit runs them itself and logs each one in the audit log.
+
 ## Caching
 
 - **Logs:** a log file that has not changed since the last run is not read again, and a file that only grew is read from where it stopped. The cache (`~/.worthit/scan-cache.db`, on each scanned machine) keeps only the token counts, model names and timestamps the scanner uses: no prompts, no code. `WORTHIT_NO_CACHE=1` turns it off.
