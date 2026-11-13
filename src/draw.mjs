@@ -111,7 +111,7 @@ export const blocks = {
       let vals = pad('', 18); for (let a = N - 1; a >= 0; a--) vals += at[a] == null ? ' '.repeat(SL) : (a === 0 ? bold(w(pad(kk(at[a]), SL))) : m(pad(kk(at[a]), SL))); l.push(vals, ''); }
     let ax = pad(d('week ending'), 18); for (let a = N - 1; a >= 0; a--) ax += d(pad(new Date(today - a * 7 * 864e5).toISOString().slice(5, 10), SL)); l.push(ax);
     l.push(d('·  no meter reading that week, so no weekly limit could be measured'));
-    return box('WEEKLY ALLOWANCE HISTORY', l, W, C.cx, '$ of API usage per full weekly limit · 7-day blocks back from today');
+    return box('WEEKLY ALLOWANCE HISTORY', l, W, C.cx, '$ per full weekly limit · weeks counted back from today');
   },
 
   Events(D) {

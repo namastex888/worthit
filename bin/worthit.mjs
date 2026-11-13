@@ -23,6 +23,7 @@ import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'
 import { blocks, C, W, bar, fg, bold, d, m, w, pad, lpad, len, strip, grad, fmtTok, usd } from '../src/draw.mjs';
 import { scan, analyse, git, buildData, audit, AUDIT, has, tilde, ROOT, HOME, sshHosts, savedHosts, saveHosts } from '../src/collect.mjs';
 import { query, run as runQuery, QUERY_COMMANDS } from '../src/query.mjs';
+import { cardSpec, customSpec, cardHtml } from '../src/card.mjs';
 import { startPet, petLines, petSummary, PET_W } from '../src/pet.mjs';
 import { demoHosts, demoScan, demoGit, demoPricing, demoData, demoSpec, demoAnswer, demoPet } from '../src/demo.mjs';
 
@@ -439,69 +440,68 @@ function App() {
 // Works on the last finished run (no scan). Writes a card image, suggests the text, and builds the X link. X's link carries text only,
 // so the image is copied to the clipboard for pasting. Numbers in built-in texts come straight from the data; an agent's text is checked against it.
 const SHARE_TOPICS = {
-  allowance: { title: 'weekly allowance check', hint: 'what one full weekly limit was worth, and whether it moved', rows: [['PlanRanking', 'LimitTrend'], ['Events']], alias: ['weekly', 'limits', 'quota', 'quotas', 'limit'],
+  allowance: { title: 'weekly allowance check', hint: 'what one full weekly limit was worth, and whether it moved', alias: ['weekly', 'limits', 'quota', 'quotas', 'limit'],
     text: D => { const l = D.plans.map(p => `${p.plan.toLowerCase()} ${usd(p.usd_per_full_week)}${p.proof !== 'measured' ? ' (at least)' : p.change_vs_last_week_pct == null ? '' : ` (${p.change_vs_last_week_pct >= 0 ? '▲' : '▼'}${Math.abs(p.change_vs_last_week_pct)}% vs the week before)`}`);   // a floor is not comparable week to week
       return `weekly ai allowance check, week to ${D.week.to}.. what one full weekly limit was worth at api prices:\n${l.join('\n')}\nmeasured from my local logs: npx worthit`; } },
-  open: { title: 'open vs closed models', hint: 'how much of your work runs on open models', rows: [['ModelMix']], alias: ['open-source', 'opensource', 'oss', 'open models'],
+  open: { title: 'open vs closed models', hint: 'how much of your work runs on open models', alias: ['open-source', 'opensource', 'oss', 'open models'],
     text: D => { const o = D.model_mix.open, c = D.model_mix.closed, n = o.share_pct.length - 1, ch = o.change_pts;
       return `how much of your ai coding runs on open models? mine this week: ${Math.round(o.share_pct[n])}% of output tokens${ch == null || Math.abs(ch) < 0.5 ? '' : ` (${ch > 0 ? '▲' : '▼'}${Math.abs(Math.round(ch))} pts vs last week)`}.. $${o.usd_per_m_output} per M output vs $${c.usd_per_m_output} for closed. whats yours? npx worthit`; } },
-  models: { title: 'my model ranking', hint: 'the models you use, most to least', rows: [['ModelMix']], alias: ['model', 'mix', 'ranking of models'],
+  models: { title: 'my model ranking', hint: 'the models you use, most to least', alias: ['model', 'mix', 'ranking of models'],
     text: D => { const n = D.model_mix.weeks.length - 1, top = D.model_mix.series.filter(s => !s.models).sort((a, b) => b.share_pct[n] - a.share_pct[n]).slice(0, 4).map(s => `${s.model} ${Math.round(s.share_pct[n])}%`);
       return `my model mix this week, most used first: ${top.join(', ')}. whats yours? npx worthit`; } },
-  value: { title: 'the receipt', hint: 'what your best plan gave for its price', rows: [['Receipts']], alias: ['receipt', 'worth', 'plan'],
+  value: { title: 'the receipt', hint: 'what your best plan gave for its price', alias: ['receipt', 'worth', 'plan'],
     text: D => { const p = D.plans.slice().sort((a, b) => b.times_plan_price - a.times_plan_price)[0], mo = Math.round(p.plan_usd_per_week * 52 / 12 / 10) * 10;
       return `i pay $${mo}/mo for ${p.plan.toLowerCase()}. last week one weekly limit gave me ${usd(p.usd_per_full_week)} of api-priced usage.. ${p.times_plan_price}× the price. measured from my own local logs, not vibes. npx worthit`; } },
-  ranking: { title: 'plan ranking', hint: 'which plan gave more', rows: [['PlanRanking'], ['Receipts']], alias: ['plans', 'compare', 'comparison'],
+  ranking: { title: 'plan ranking', hint: 'which plan gave more', alias: ['plans', 'compare', 'comparison'],
     text: D => `which ai plan actually gives more? measured on my real work this week: ${D.plans.slice().sort((a, b) => b.times_plan_price - a.times_plan_price).map(p => `${p.plan.toLowerCase()} ${p.times_plan_price}×`).join(', ')} the price. one command: npx worthit` },
-  waste: { title: 'unused allowance', hint: 'what you paid for and did not use', rows: [['WasteTable']], alias: ['unused', 'wasted'],
+  waste: { title: 'unused allowance', hint: 'what you paid for and did not use', alias: ['unused', 'wasted'],
     text: D => { const un = D.waste.reduce((a, x) => a + (x.unused_usd || 0), 0), risk = D.waste.reduce((a, x) => a + (x.at_risk_usd || 0), 0);
       return `ai allowance i paid for and left unused last week: ${usd(un)}${risk ? `.. another ${usd(risk)} still open before the reset` : ''}. check yours: npx worthit`; } },
 };
-const SHARE_BLOCKS = ['PlanRanking', 'LimitTrend', 'AllowanceHistory', 'Events', 'ModelMix', 'Receipts', 'WasteTable', 'Tiles', 'Months', 'Heatmap', 'LevelCard'];
-const shareLines = rows => { const out = [];
-  for (const r of rows) { const cols = r.map(t => safe(t, {})).filter(c => c.length); if (!cols.length) continue; const hh = Math.max(...cols.map(c => c.length));
-    for (let i = 0; i < hh; i++) out.push(cols.map(c => pad(c[i] || '', Math.max(...c.map(len)))).join(' ')); }
-  return out; };
+// the card as a few terminal lines: the same headline, caption and rows the image shows
+const cardLines = c => [' ' + d(c.eyebrow.toUpperCase()), '', ' ' + bold(fg(c.color, c.hero)) + '  ' + w(c.cap) + (c.sub ? d('  ·  ') + fg(c.subColor, c.sub) : ''), '',
+  ...c.rows.map(r => ' ' + pad(fg(r.color, r.label), 26) + (r.pct == null ? '' : fg(r.color, '█'.repeat(Math.max(1, Math.round(r.pct * 20)))) + fg(C.track, '█'.repeat(20 - Math.max(1, Math.round(r.pct * 20)))) + ' ') + lpad(bold(w(r.value)), 10) + '  ' + d(r.note))];
 const numbersIn = s => (strip(String(s)).match(/\d[\d,]*(?:\.\d+)?/g) || []).map(x => String(+x.replace(/,/g, '')));
+// every number the data holds (walked value by value, so neighbours in a list are never glued together), plus each one rounded to 0, 1 and 2 decimals
+const knownNumbers = D => { const out = new Set(); (function walk(v) { if (typeof v === 'number') { for (const k of [String(v), v.toFixed(0), v.toFixed(1), v.toFixed(2)]) out.add(String(+k)); } else if (typeof v === 'string') numbersIn(v).forEach(x => out.add(x)); else if (v && typeof v === 'object') Object.values(v).forEach(walk); })(D); return out; };
 // one share = the blocks for the card, the post text, the card image and the X link. Used by `worthit share` and by the question bar.
 async function makeShare(D, ask, { agent = null, clipOk = false, files = true, say = () => {} } = {}) {
   const warnings = [], keys = Object.keys(SHARE_TOPICS);
   const ageH = Math.round((Date.now() - Date.parse(D.generated_at)) / 36e5); if (ageH >= 24) warnings.push(`the numbers are from a run ${ageH} hours ago: run worthit again for this week's figures`);
   const floors = D.plans.filter(p => p.proof !== 'measured').map(p => p.plan); if (floors.length) warnings.push(`${floors.join(' and ')}: a floor ("at least this much"), not a full measurement; the card says so`);
-  const lc = ask.toLowerCase(); let key = keys.find(k => k === lc || SHARE_TOPICS[k].alias.includes(lc)), rows, text, by = 'built-in';
-  if (key) { rows = SHARE_TOPICS[key].rows; text = SHARE_TOPICS[key].text(D); }
+  const lc = ask.toLowerCase(); let key = keys.find(k => k === lc || SHARE_TOPICS[k].alias.includes(lc)), spec, text, by = 'built-in';
+  if (key) { spec = cardSpec(key, D); text = SHARE_TOPICS[key].text(D); }
   else {      // anything else: the agent chooses the blocks and writes the post; its numbers are checked against the data
-    const fallback = why => { warnings.push(why + ': using the weekly allowance post instead'); key = 'allowance'; rows = SHARE_TOPICS.allowance.rows; text = SHARE_TOPICS.allowance.text(D); };
+    const fallback = why => { warnings.push(why + ': using the weekly allowance post instead'); key = 'allowance'; spec = cardSpec('allowance', D); text = SHARE_TOPICS.allowance.text(D); };
     if (!agent) fallback(`"${ask}" needs an AI agent (none found, or --ai no)`);
     else { say(`asking ${agent.label} for a post about: ${ask}`);
       const system = 'You write ONE post for X about a developer\'s own AI coding statistics. Voice: lowercase, casual, first person, no hashtags, no emojis, at most 250 characters, and it ends with "npx worthit". '
-        + 'Use only numbers that appear in the data; never invent or round differently. Reply with one line of JSON and nothing else: {"blocks":["..."],"text":"..."} where blocks are 1 to 3 names from: ' + SHARE_BLOCKS.join(', ') + ' (the card image shows them).';
+        + 'Use only numbers that appear in the data; never invent or round differently. Reply with one line of JSON and nothing else: {"text":"...","headline":"...","caption":"...","facts":[{"label":"...","value":"..."}]}. The card image shows ONE big number: headline is that number exactly as in the data with its unit (like $53.95, 448 or 32%), at most 8 characters; caption says what it is in at most 60 characters; facts are 2 to 4 supporting numbers (label at most 24 characters, value at most 14).';
       const done = await new Promise(r => feed({ system, user: `What the person wants to share: ${ask}\n\nTheir data (JSON):\n${forModel()}`, agent }, () => {}, () => {}, r));
       let j = null; try { j = JSON.parse((/\{[\s\S]*\}/.exec(done.raw || '') || [])[0]); } catch { /* not JSON */ }
-      const bl = j && Array.isArray(j.blocks) ? j.blocks.filter(b => SHARE_BLOCKS.includes(b)).slice(0, 3) : [];
-      if (done.err || !j || typeof j.text !== 'string' || !bl.length) fallback(`${agent.cli} gave no usable post${done.err ? ' (' + String(done.err).slice(0, 60) + ')' : ''}`);
-      else { const known = new Set(numbersIn(JSON.stringify(D)).concat(numbersIn(shareLines(bl.map(b => [b])).join('\n')))), bad = numbersIn(j.text).filter(x => !known.has(x));
-        if (bad.length) fallback(`the agent's post used numbers that are not in your data (${bad.slice(0, 3).join(', ')})`); else { key = 'custom'; rows = bl.map(b => [b]); text = j.text.trim().slice(0, 280); by = agent.label; } } }
+      const facts = j && Array.isArray(j.facts) ? j.facts.filter(f => f && f.label && f.value != null).slice(0, 4) : [];
+      if (done.err || !j || typeof j.text !== 'string' || j.headline == null || facts.length < 2) fallback(`${agent.cli} gave no usable post${done.err ? ' (' + String(done.err).slice(0, 60) + ')' : ''}`);
+      else { const known = knownNumbers(D), bad = numbersIn([j.text, j.headline, j.caption, ...facts.map(f => f.value)].join(' ')).filter(x => !known.has(x));
+        if (bad.length) fallback(`the agent's post used numbers that are not in your data (${bad.slice(0, 3).join(', ')})`); else { key = 'custom'; spec = customSpec(D, ask, { ...j, facts }); text = j.text.trim().slice(0, 280); by = agent.label; } } }
   }
-  const proof = D.plans.map(p => `${p.plan} ${p.proof}`).join(' · ');
-  const card = [...LOGO, ' ' + m('what your AI coding subscription is really worth') + d(`  ·  7 days to ${D.week.to}`), '', ...shareLines(rows), '', ' ' + d(proof), ' ' + m('measure yours:  ') + bold(w('npx worthit')), ''];
+  const card = cardLines(spec);
   const url = 'https://x.com/intent/post?text=' + encodeURIComponent(text); let image = null, clip = false;
   const chrome = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(c => fs.existsSync(c));
   if (chrome && files) { say('drawing the card image');
-    const hp = path.join(os.tmpdir(), `worthit-share-${process.pid}.html`), slug = key === 'custom' ? (ask.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 28) || 'custom') : key, f = path.resolve(`${STAMP}-worthit-share-${slug}.png`); fs.writeFileSync(hp, ansiHtml(card));
-    await new Promise(r => { const c = spawn(chrome, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=2', `--window-size=${Math.round(W * 9.05 + 64)},${Math.round(card.length * 18.6 + 60)}`, '--screenshot=' + f, 'file://' + hp], { stdio: 'ignore' });
+    const hp = path.join(os.tmpdir(), `worthit-share-${process.pid}.html`), slug = key === 'custom' ? (ask.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 28) || 'custom') : key, f = path.resolve(`${STAMP}-worthit-share-${slug}.png`); fs.writeFileSync(hp, cardHtml(spec));
+    await new Promise(r => { const c = spawn(chrome, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=1', '--window-size=1600,900', '--screenshot=' + f, 'file://' + hp], { stdio: 'ignore' });
       const t = setTimeout(() => c.kill(), 60000), end = () => { clearTimeout(t); r(); }; c.on('close', end); c.on('error', end); });   // not blocking: the screen keeps drawing
     fs.rmSync(hp, { force: true }); if (fs.existsSync(f)) image = f; }
   if (image && clipOk) {     // best effort: put the image on the clipboard so it can be pasted into the post
     if (process.platform === 'darwin') clip = spawnSync('osascript', ['-e', `set the clipboard to (read (POSIX file "${image}") as «class PNGf»)`], { stdio: 'ignore' }).status === 0;
     else if (has('wl-copy')) clip = spawnSync('sh', ['-c', `wl-copy --type image/png < "${image}"`], { stdio: 'ignore' }).status === 0;
     else if (has('xclip')) clip = spawnSync('xclip', ['-selection', 'clipboard', '-t', 'image/png', '-i', image], { stdio: 'ignore' }).status === 0; }
-  return { key, by, text, rows, card, url, image, clip, warnings };
+  return { key, by, text, card, url, image, clip, warnings };
 }
 // what a share looks like on screen, below the card or the blocks
 const shareText = r => [...r.warnings.map(x => fg(C.gold, ' ! ') + m(x)), '', ' ' + bold(w('Suggested post')) + d(`  ·  ${r.text.length} characters  ·  ${r.by}`), '', ...r.text.split('\n').map(l => '   ' + w(l)), '',
   ' ' + d('image  ') + (r.image ? m(r.image) + (r.clip ? fg(C.cx, '  ✓ copied: paste it into the post') : d('  (attach it to the post)')) : d('not written (Chrome not found)'))];
-const sharePanel = (r, tty) => [...shareLines(r.rows), ...shareText(r), ...(tty ? [] : [' ' + d('link   ') + m(r.url)]), '',
+const sharePanel = (r, tty) => [...r.card, ...shareText(r), ...(tty ? [] : [' ' + d('link   ') + m(r.url)]), '',
   ' ' + d('other cards: ask to share ') + m(Object.keys(SHARE_TOPICS).filter(k => k !== r.key).join(' · ')) + d(', or say what you want to brag about')];
 async function share() {
   let D; try { D = DEMO ? demoData() : JSON.parse(fs.readFileSync(path.join(HOME, 'last.json'), 'utf8')); } catch { console.error('worthit share: no finished run yet. Run `npx worthit` first, then share.'); process.exit(1); }
