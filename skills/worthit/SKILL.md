@@ -3,8 +3,6 @@ name: worthit
 description: Answer questions about AI coding usage, cost and productivity with the worthit CLI — which subscription gave more, tokens and API value per day/week/month, per tool and per model, merged PRs and commits, unused allowance, open vs closed models. Use when the user asks how much they used, what a plan is worth, how this week compares, or which model or tool they lean on.
 ---
 
-<!-- Generated from `worthit --skill`. Regenerate after updating worthit. -->
-
 # worthit
 
 `worthit` measures AI coding usage on this machine (and chosen ssh machines): Claude Code, Codex, Antigravity, omp, dsh. Every request is priced at API list rates. Everything is local.

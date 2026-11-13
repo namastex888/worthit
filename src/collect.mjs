@@ -265,18 +265,21 @@ export function buildData(report, g, cfg, scanInfo) {
     const upM = db.prepare('INSERT INTO day_model VALUES (?, ?, ?, ?, ?) ON CONFLICT (day, model, provider) DO UPDATE SET output_tokens = MAX(output_tokens, excluded.output_tokens), api_usd = MAX(api_usd, excluded.api_usd)');
     db.exec('BEGIN'); for (const r of report.model_days || []) upM.run(r.day, r.model, r.provider, r.output, r.usd); db.exec('COMMIT');
     const NW = 8, tdy = Date.parse(new Date(now).toISOString().slice(0, 10) + 'T00:00:00Z'), blk = {}, seenDays = {};
-    for (const r of db.prepare('SELECT day, model, output_tokens AS o, api_usd AS u FROM day_model WHERE day >= ?').all(new Date(tdy - (NW * 7 - 1) * DAY).toISOString().slice(0, 10))) {
+    const prov = {};
+    for (const r of db.prepare('SELECT day, model, provider, output_tokens AS o, api_usd AS u FROM day_model WHERE day >= ?').all(new Date(tdy - (NW * 7 - 1) * DAY).toISOString().slice(0, 10))) {
       const wk = Math.floor((tdy - Date.parse(r.day + 'T00:00:00Z')) / DAY / 7); if (wk < 0 || wk >= NW || !r.o) continue;
-      (seenDays[wk] = seenDays[wk] || new Set()).add(r.day); const name = modelName(r.model), b = blk[wk] = blk[wk] || {}, x = b[name] = b[name] || { o: 0, u: 0 }; x.o += r.o; x.u += r.u; }
+      (seenDays[wk] = seenDays[wk] || new Set()).add(r.day); const name = modelName(r.model), b = blk[wk] = blk[wk] || {}, x = b[name] = b[name] || { o: 0, u: 0 }; x.o += r.o; x.u += r.u; prov[name] = prov[name] || {}; prov[name][r.provider] = (prov[name][r.provider] || 0) + r.o; }
     const ws = Object.keys(blk).map(Number).filter(k => k === 0 || seenDays[k].size >= 5).sort((a, b) => b - a);       // oldest first; a block with under 5 days of data is left out
     if (ws.length) {
       const tot = k => Object.values(blk[k]).reduce((s, x) => s + x.o, 0), all = {}; for (const k of ws) for (const [n, x] of Object.entries(blk[k])) all[n] = (all[n] || 0) + x.o / tot(k);
-      const nowShare = n => ((blk[ws[ws.length - 1]][n] || {}).o || 0) / tot(ws[ws.length - 1]), top = Object.keys(all).sort((a, b) => (nowShare(b) - nowShare(a)) || (all[b] - all[a])).slice(0, 6),   // this week's biggest first, so a new model is not hidden in 'other'
-       pct = v => +(100 * v).toFixed(1), last = ws.length - 1;
+      const lastK = ws[ws.length - 1], shareIn = (k, n) => ((blk[k][n] || {}).o || 0) / tot(k), peak = n => Math.max(...ws.map(k => shareIn(k, n))), pct = v => +(100 * v).toFixed(1), last = ws.length - 1;
+      // a row for every model that reached 5% of some week (max 9), biggest this week first
+      const top = Object.keys(all).filter(n => peak(n) >= 0.05).sort((a, b) => (shareIn(lastK, b) - shareIn(lastK, a)) || (peak(b) - peak(a))).slice(0, 9);
       const mk = (label, pick, open) => { const share = ws.map(k => pct(Object.entries(blk[k]).filter(([n]) => pick(n)).reduce((s, [, x]) => s + x.o, 0) / tot(k)));
         const cur = Object.entries(blk[ws[last]]).filter(([n]) => pick(n)).reduce((s, [, x]) => ({ o: s.o + x.o, u: s.u + x.u }), { o: 0, u: 0 });
         return { model: label, open, share_pct: share, change_pts: last ? +(share[last] - share[last - 1]).toFixed(1) : null, output_tokens: cur.o, api_usd: Math.round(cur.u), usd_per_m_output: cur.o ? +(cur.u / (cur.o / 1e6)).toFixed(2) : null }; };
-      const series = top.map(n => mk(n, x => x === n, isOpenModel(n))); if (Object.keys(all).length > top.length) series.push(mk('other', x => !top.includes(x), null));
+      const series = top.map(n => ({ ...mk(n, x => x === n, isOpenModel(n)), tool: Object.entries(prov[n] || {}).sort((a, b) => b[1] - a[1])[0]?.[0] || null }));
+      const rest = Object.keys(all).filter(n => !top.includes(n)); if (rest.length) series.push({ ...mk(`${rest.length} smaller`, x => !top.includes(x), null), tool: null, models: rest.sort((a, b) => peak(b) - peak(a)).slice(0, 12) });
       D.model_mix = { weeks: ws.map(k => new Date(tdy - (k * 7 + 6) * DAY).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })), metric: 'share of output tokens per 7 days', series,
         open: mk('open-weight models', isOpenModel, true), closed: mk('closed models', n => !isOpenModel(n), false), open_rule: 'open = DeepSeek, GLM, Kimi (k-series), Qwen, Llama, Mistral, Gemma, MiniMax; everything else counts as closed' };
     }

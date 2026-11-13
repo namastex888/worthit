@@ -10,7 +10,7 @@
   "files": [
     "bin",
     "src",
-    "skill",
+    "skills",
     "core/*.py",
     "core/*.json",
     "core/*.csv",

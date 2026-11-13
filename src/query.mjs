@@ -31,7 +31,7 @@ export const SCHEMA = {
 export const QUERY_COMMANDS = ['get', 'days', 'sql', 'schema'];
 // CLI entry: prints the answer as JSON; false when argv is not a query command
 export async function query(argv) {
-  if (argv.includes('--skill')) { console.log(fs.readFileSync(path.join(ROOT, 'skill', 'SKILL.md'), 'utf8')); return true; }
+  if (argv.includes('--skill')) { console.log(fs.readFileSync(path.join(ROOT, 'skills', 'worthit', 'SKILL.md'), 'utf8')); return true; }
   if (!QUERY_COMMANDS.includes(argv[0])) return false;
   try { out(run(argv)); } catch (e) { console.error('worthit: ' + e.message); process.exit(2); }
   return true;

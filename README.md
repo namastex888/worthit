@@ -43,7 +43,13 @@ worthit days --group month --by tool
 worthit days --since 2026-11-01 --by model
 worthit sql "SELECT day, SUM(api_usd) FROM day_provider GROUP BY day ORDER BY 2 DESC LIMIT 5"
 worthit schema                   # tables and columns, with meanings
-worthit --skill                  # the full guide, ready to save as an agent skill
+worthit --skill                  # the full guide for agents
+```
+
+The guide is an agent skill in this repo (`skills/worthit/SKILL.md`). Install it into whatever agents you use (Claude Code, Codex, Cursor, Gemini CLI and others):
+
+```sh
+npx skills add <owner>/worthit
 ```
 
 The question bar uses the same commands: when the week's data cannot answer, the agent asks for up to three lookups, worthit runs them itself and logs each one in the audit log.

@@ -132,33 +132,29 @@ export const blocks = {
     lines.push(' '.repeat(axis) + months.map(mo => { const days = Math.max(...keys.map(k => (at(mo, k) || {}).days_tracked || 0)); return w(mo) + d(' · ' + days + ' days') + ' '.repeat(Math.max(0, g - mo.length - (' · ' + days + ' days').length)); }).join(''));
     return box('MONTH BY MONTH', lines, W, C.cx, 'API value used · under each bar: × one $' + ms[0].plan_usd_per_month + ' plan');
   },
-  ModelMix(D) {                     // two line charts: each model's share week by week, and open-weight vs closed
+  ModelMix(D) {                     // one row of bars per model, one bar per week, all on the same scale: no crossing lines
     const X = D.model_mix; if (!X || !X.series.length) return [];
-    // solid lines from half-block pixels (two per character row), a round marker on every week's point
-    const plot = (S, cols, rows, max) => { const Hd = rows * 2, px = Array.from({ length: Hd }, () => Array(cols).fill(null)), mark = Array.from({ length: rows }, () => Array(cols).fill(null));
-      const set = (x, y, c) => { if (x >= 0 && y >= 0 && x < cols && y < Hd) px[y][x] = c; };
-      for (const s of S) { const n = s.vals.length, X = i => n === 1 ? Math.round((cols - 1) / 2) : Math.round(i * (cols - 1) / (n - 1)), Y = v => (Hd - 1) - Math.min(1, v / max) * (Hd - 1);
-        if (n === 1) { for (let x = 0; x < cols; x++) set(x, Math.round(Y(s.vals[0])), s.color); }
-        for (let i = 0; i < n - 1; i++) { const x0 = X(i), x1 = X(i + 1); let prev = Math.round(Y(s.vals[i]));
-          for (let x = x0; x <= x1; x++) { const y = Math.round(Y(s.vals[i]) + (Y(s.vals[i + 1]) - Y(s.vals[i])) * (x - x0) / Math.max(1, x1 - x0)); for (let k = Math.min(prev, y); k <= Math.max(prev, y); k++) set(x, k, s.color); prev = y; } }
-        for (let i = 0; i < n; i++) mark[Math.min(rows - 1, Math.floor(Math.round(Y(s.vals[i])) / 2))][X(i)] = s.color; }
-      return Array.from({ length: rows }, (_, r) => Array.from({ length: cols }, (_, x) => { const t = px[2 * r][x], b = px[2 * r + 1][x], k = mark[r][x];
-        return k ? fg(k, '●') : t && b && t === b ? fg(t, '█') : t ? fg(t, '▀') : b ? fg(b, '▄') : ' '; }).join('')); };
-    const chart = (S, cols, rows) => { const max = Math.max(10, Math.ceil(Math.max(...S.flatMap(s => s.vals)) / 10) * 10), body = plot(S, cols, rows, max), n = X.weeks.length;
-      const out = body.map((l, i) => d(lpad(i === 0 ? max + '%' : i === rows - 1 ? '0%' : '', 4)) + ' ' + l);
-      const lab = Array(cols).fill(' '), put = (t, at) => { const a = Math.max(0, Math.min(cols - t.length, Math.round(at - t.length / 2))); for (let i = 0; i < t.length; i++) lab[a + i] = t[i]; };
-      const idx = n <= 2 ? [...Array(n).keys()] : n <= 4 ? [0, n - 1] : [0, Math.floor((n - 1) / 2), n - 1]; for (const i of idx) put(X.weeks[i], n === 1 ? cols / 2 : i * (cols - 1) / (n - 1));
-      out.push('     ' + d(lab.join(''))); return out; };
-    const pal = [C.cl, C.cx, C.go, C.pink, C.gold, C.red, '#8a8a93'], S = X.series.map((s, i) => ({ ...s, color: s.model === 'other' ? '#8a8a93' : pal[i % pal.length], vals: s.share_pct }));
-    const chg = s => s.change_pts == null ? d('  first week') : Math.abs(s.change_pts) < 0.5 ? d('  =') : s.change_pts > 0 ? fg(C.cx, ' ▲' + Math.abs(s.change_pts).toFixed(0)) : fg(C.red, ' ▼' + Math.abs(s.change_pts).toFixed(0));
-    const wl = 58, wr = W - wl - 1, left = chart([...S].reverse(), wl - 4 - 5, 10);            // biggest series drawn last, on top
-    left.push(''); for (let i = 0; i < S.length; i += 2) left.push(S.slice(i, i + 2).map(s => fg(s.color, '■ ') + pad(w(s.model.slice(0, 15)), 15) + lpad(m(Math.round(s.share_pct[s.share_pct.length - 1]) + '%'), 4) + pad(chg(s), 5)).join('  '));
-    const O = { ...X.open, color: C.cx, vals: X.open.share_pct }, K = { ...X.closed, color: C.cl, vals: X.closed.share_pct }, right = chart([K, O], wr - 4 - 5, 6), cw = 10;
-    const rowOf = (label, f) => d(pad(label, 13)) + lpad(f(O), cw) + lpad(f(K), cw);
-    right.push('', pad('', 13) + lpad(fg(C.cx, '■ ') + w('open'), cw) + lpad(fg(C.cl, '■ ') + w('closed'), cw),
-      rowOf('share', s => bold(w(Math.round(s.share_pct[s.share_pct.length - 1]) + '%')) ), rowOf('vs last week', s => chg(s)),
-      rowOf('output', s => m(fmtTok(s.output_tokens))), rowOf('API value', s => m(usd(s.api_usd))), rowOf('$ per M out', s => m(s.usd_per_m_output == null ? '·' : '$' + s.usd_per_m_output)));
-    return row([{ title: 'MODEL MIX', color: C.pink, right: 'share of output tokens · 7-day blocks', w: wl, lines: left }, { title: 'OPEN vs CLOSED', color: C.cx, right: 'weights', w: wr, lines: right }]);
+    const n = X.weeks.length, part = ' ▁▂▃▄▅▆▇█', toolColor = { claude: C.cl, codex: C.cx, google: C.go, antigravity: C.go, omp: C.pink, dsh: C.gold };
+    const chg = s => s.change_pts == null ? d(' new') : Math.abs(s.change_pts) < 0.5 ? d('   =') : s.change_pts > 0 ? fg(C.cx, lpad('▲' + Math.abs(s.change_pts).toFixed(0), 4)) : fg(C.red, lpad('▼' + Math.abs(s.change_pts).toFixed(0), 4));
+    // two character rows per series = 16 levels; an empty week keeps a faint baseline so the grid stays readable
+    const bars = (vals, max, color, cw, gap = 1) => { const top = [], bot = []; let tall = false; for (const v of vals) { const e = Math.round(Math.min(1, v / max) * 16), lo = Math.min(8, e), hi = Math.max(0, e - 8), bw = cw - gap; if (hi) tall = true;
+        top.push((hi ? fg(color, part[hi].repeat(bw)) : ' '.repeat(bw)) + ' '.repeat(gap)); bot.push((lo ? fg(color, part[lo].repeat(bw)) : fg(C.track, '▁'.repeat(bw))) + ' '.repeat(gap)); } return [tall ? top.join('') : null, bot.join('')]; };
+    const dates = (cw, lead) => { const lab = Array(n * cw).fill(' '), put = (t, at) => { const a = Math.max(0, Math.min(n * cw - t.length, at)); for (let i = 0; i < t.length; i++) lab[a + i] = t[i]; };
+      const idx = n <= 2 ? [...Array(n).keys()] : n <= 5 || n * cw < 30 ? [0, n - 1] : [0, Math.floor((n - 1) / 2), n - 1]; for (const i of idx) put(X.weeks[i], i === n - 1 ? n * cw : i * cw); return ' '.repeat(lead) + d(lab.join('')); };
+    const wl = 62, wr = W - wl - 1, nameW = 16, cw = Math.max(3, Math.min(6, Math.floor((wl - 4 - nameW - 10) / n)));
+    const max = Math.max(10, ...X.series.flatMap(s => s.share_pct)), left = [dates(cw, nameW) + d(lpad('now', 5) + lpad('Δ', 4))];
+    for (const s of X.series) { const color = s.tool ? toolColor[s.tool] || C.ink2 : '#8a8a93', [t, b] = bars(s.share_pct, max, color, cw);
+      if (t) { if (left.length > 1) left.push(''); left.push(' '.repeat(nameW) + t); }
+      left.push(pad(s.tool ? w(s.model.slice(0, nameW - 1)) : d(s.model.slice(0, nameW - 1)), nameW) + b + bold(w(lpad(Math.round(s.share_pct[n - 1]) + '%', 5))) + chg(s)); }
+    left.push('', d('full bar height = ' + Math.round(max) + '% of a week · colour = tool'));
+    const rest = X.series.find(s => s.models); if (rest) { const lim = wl - 4; let cur = 'smaller: ', out = []; for (const nm of rest.models) { if ((cur + nm).length + 1 > lim) { out.push(cur.replace(/, $/, '')); cur = '  '; if (out.length === 2) break; } cur += nm + ', '; }
+      if (out.length < 2 && cur.trim()) out.push(cur.replace(/, $/, '')); for (const l of out) left.push(d(l)); }
+    const cr = Math.max(1, Math.min(4, Math.floor((wr - 4 - 7 - 5) / n))), right = [dates(cr, 7)];
+    for (const [label, s, color] of [['open', X.open, C.pink], ['closed', X.closed, C.cl]]) { const [t, b] = bars(s.share_pct, 100, color, cr, 0); if (t) right.push('', ' '.repeat(7) + t); right.push(pad(fg(color, label), 7) + b + bold(w(lpad(Math.round(s.share_pct[n - 1]) + '%', 5)))); }
+    const colW = 9, rowOf = (label, f) => d(pad(label, 13)) + lpad(f(X.open), colW) + lpad(f(X.closed), colW);
+    right.push('', pad('', 13) + lpad(fg(C.pink, 'open'), colW) + lpad(fg(C.cl, 'closed'), colW), rowOf('vs last week', s => chg(s)), rowOf('output', s => m(fmtTok(s.output_tokens))), rowOf('API value', s => m(usd(s.api_usd))),
+      rowOf('$ per M out', s => m(s.usd_per_m_output == null ? '·' : '$' + (s.usd_per_m_output >= 100 ? Math.round(s.usd_per_m_output) : s.usd_per_m_output))), '', d('open = open-weight models'), d('(DeepSeek, GLM, Kimi, Qwen…)'));
+    return row([{ title: 'MODEL MIX', color: C.pink, right: 'share of output tokens, week by week', w: wl, lines: left }, { title: 'OPEN vs CLOSED', color: C.pink, right: 'model weights', w: wr, lines: right }]);
   },
   WasteTable(D) {
     const l = [d(pad('Plan', 18) + lpad('Limit', 7) + '   ' + pad('You used', 31) + '   ' + lpad('Unused', 6) + '   Why')];
