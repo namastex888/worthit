@@ -78,7 +78,8 @@ export const blocks = {
       return { title: p.plan, color: p.color, right: p.proof, w: i === k - 1 ? W - (wd + 1) * (k - 1) : wd, lines: [
         fg(C.track, '█'.repeat(pre)) + bar(1, 1, mid, dark(p.color), p.color) + fg(C.track, '█'.repeat(Math.max(0, n - pre - mid))),
         m(p.meter), d('tokens ') + m(p.tokens), d('priced ') + w(usd(p.priced_usd)), d('scaled ') + m('÷ ' + p.fraction_of_week + ' weekly limits'),
-        d('     = ') + bold(fg(p.color, usd(p.usd_per_full_week))) + d(' per week'), d('price  ') + m('÷ $' + p.plan_usd_per_week + ' plan') + d(' = ') + bold(w(p.times_plan_price + '×'))] }; }));
+        d('     = ') + bold(fg(p.color, usd(p.usd_per_full_week))) + d(' per week'), d('price  ') + m('÷ $' + p.plan_usd_per_week + ' plan') + d(' = ') + bold(w(p.times_plan_price + '×')),
+        ...(D.plans.some(q => q.usd_per_full_week_all_machines) ? [p.usd_per_full_week_all_machines ? d('up to  ') + m(usd(p.usd_per_full_week_all_machines)) + d(' with unmetered') : '', p.usd_per_full_week_all_machines ? d('        machines (+' + usd(p.other_machines_usd) + ')') : ''] : [])] }; }));
   },
 
   Heatmap(D) {

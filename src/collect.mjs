@@ -122,7 +122,7 @@ async function meterBin(on) {
 const runOut = (cmd, args, ms) => new Promise(res => { let o = ''; const p = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'ignore'] }), t = setTimeout(() => p.kill(), ms);
   p.stdout.on('data', c => { o += c; }); p.on('error', () => { clearTimeout(t); res({ out: '', code: 1 }); }); p.on('close', code => { clearTimeout(t); res({ out: o, code }); }); });
 export async function git(cfg, on) {
-  const since = Date.now() - 14 * DAY, prs = new Map(), commits = new Map(), src = { github: 0, meter: 0 }; let repos = 0, meter = null;
+  const since = Date.now() - 14 * DAY, prs = new Map(), commits = new Map(), src = { github: 0, meter: 0, gitea: 0, gitlab: 0 }; let repos = 0, meter = null;
   try {
     meter = await meterBin(on);
     on({ pct: .15, detail: 'usagemeter sync · reading new usage into its local store' });
@@ -156,6 +156,18 @@ export async function git(cfg, on) {
     if (o.code !== 0) audit('note', 'gh search did not answer: using the PRs already stored');
     for (const [k, t] of rows) { if (!prs.has(k)) src.github++; prs.set(k, t); }
   } else audit('note', 'gh CLI not found: GitHub PRs not counted');
+  // Gitea (tea) and GitLab (glab) are optional: not installed, logged out or not answering means skipped with a note, never an error.
+  // A few bounded calls per forge (your own merged pull requests, newest first), not one per repository.
+  const forge = async (name, cli, argsFor, pick, pageSize) => { if (!has(cli)) return; on({ pct: .9, detail: `${name} · your merged pull requests (${cli})` });
+    for (let page = 1; page <= 4; page++) { const args = argsFor(page); audit('run', `${cli} ${args.join(' ')}`); const o = await runOut(cli, args, 20000); let list = null; try { list = JSON.parse(o.out); } catch { /* not JSON */ }
+      if (o.code !== 0 || !Array.isArray(list)) { audit('note', `${name}: no usable answer from ${cli} (not logged in?): its pull requests are not counted`); return; }
+      for (const x of list) { let r = null; try { r = pick(x); } catch { /* odd row */ } if (r && r[1] >= since && !prs.has(r[0])) { src[name.toLowerCase()]++; prs.set(r[0], r[1]); } }
+      if (list.length < pageSize) return; } };
+  const sinceIso = new Date(since).toISOString();
+  await forge('Gitea', 'tea', page => ['api', `/repos/issues/search?type=pulls&state=closed&created=true&since=${sinceIso}&limit=50&page=${page}`],
+    x => x.pull_request && x.pull_request.merged && x.pull_request.merged_at ? [('gitea/' + (x.repository ? x.repository.full_name : x.html_url) + '#' + x.number).toLowerCase(), Date.parse(x.pull_request.merged_at)] : null, 50);
+  await forge('GitLab', 'glab', page => ['api', `merge_requests?scope=created_by_me&state=merged&updated_after=${sinceIso}&per_page=100&page=${page}`],
+    x => x.merged_at ? [('gitlab/' + ((x.references && x.references.full) || x.web_url)).toLowerCase(), Date.parse(x.merged_at)] : null, 100);
   on({ pct: 1, detail: 'done' });
   return { prs: [...prs.values()], commits: [...commits.values()], repos, src, meter: meter && { version: meter.version, downloaded: meter.downloaded } };
 }
@@ -204,6 +216,7 @@ export function buildData(report, g, cfg, scanInfo) {
     const past = Object.keys(byWeek).sort().slice(-5).map(k => byWeek[k]), pl = (report.pooled || {})[key], v = pl ? pl.usd_per_full_week : w.usd_per_full_week, resets = events.filter(e => e.provider === key && e.type === 'reset' && e.confidence === 'high').length, from = Math.round(w.meter_start_pct), to = Math.round(w.meter_end_pct), per = report.prices.plan_usd_per_week[key];
     plans.push({ key, ...PLAN[key], usd_per_full_week: v, times_plan_price: Math.round(v / per), proof: key === 'claude' && allMachines ? 'measured' : 'floor', plan_usd_per_week: Math.round(per), meter_from: from, meter_to: to,
       meter: pl ? `${pl.stretches} stretches · ${pl.meter_points} points` : key === 'google' ? `no meter · cap after ${w.hours} h` : `meter ${from}% → ${to}% in ${w.hours} h`, priced_usd: pl ? pl.api_usd : w.measured.api_usd, fraction_of_week: pl ? +(pl.meter_points / 100).toFixed(2) : +((to - from) / 100).toFixed(2),
+      other_machines_usd: pl && pl.other_machines_usd >= 1 ? Math.round(pl.other_machines_usd) : 0, usd_per_full_week_all_machines: pl && pl.other_machines_usd >= 1 ? pl.usd_per_full_week_all_machines : null,
       stretches: pl ? pl.stretches : 1, range_usd: report.this_week[key + '_range'] || null, resets_this_week: resets,
       tokens: pl ? `${ft(pl.output_tokens)} out ${ft(pl.cached_input_tokens)} cached` : `${ft(w.measured.output_tokens)} out ${ft(w.measured.cached_input_tokens)} cached`, models: models(w.measured.model_mix_by_usd), history: [...past, v], change_vs_last_week_pct: past.length ? pctChange(v, past[past.length - 1]) : null });
   }
