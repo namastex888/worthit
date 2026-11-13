@@ -22,7 +22,7 @@ Works with Claude Code, Codex and Antigravity. omp and dsh usage is included whe
 |---|---|
 | `--json` | Headless: print the data as JSON, no UI. For agents and scripts. |
 | `--git yes\|no` | Count merged PRs and commits (uses `gh` and the usagemeter store). |
-| `--ai no\|claude\|codex` | Who composes the dashboard. `no` = data tables only. `claude` = Haiku 5.5, `codex` = GPT-6 Luna, both medium reasoning, through your own CLI login. |
+| `--ai no\|claude\|codex\|omp\|dsh` | Who composes the dashboard. `no` = data tables only. `claude` = Haiku 5.5, `codex` = GPT-6 Luna, both medium reasoning. `omp` = omp with your default model. `dsh` = `dsh headless` with your DeepSeek profile. All through your own CLI login. |
 | `--ask "question"` | Answer one question about your usage, drawn as blocks. |
 | `--days N` | Days of logs to scan (default 21). |
 | `--hosts all\|none\|a,b` | Other machines to include, from your saved ssh hosts. Scanned in parallel with the same read-only script piped in; nothing is installed there (it leaves only its scan cache in `~/.worthit`). Without the flag, a checklist asks once and the choice is remembered. |

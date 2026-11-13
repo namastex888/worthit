@@ -2,7 +2,7 @@
 // worthit — what your AI coding subscription is really worth. One command, everything local.
 //   npx worthit                 three questions, live scan, dashboard, then a question bar (ctrl+c exits)
 //   npx worthit --json          no UI: prints the week's data as JSON (for agents and scripts)
-//   --git yes|no   --ai claude|codex|no   --days 21   --hosts all|none|a,b (saved ssh machines to include)   --ask "question"   --no-files
+//   --git yes|no   --ai claude|codex|omp|dsh|no   --days 21   --hosts all|none|a,b (saved ssh machines to include)   --ask "question"   --no-files
 // Writes ./<date>-worthit.md, ./<date>-worthit.png (when Chrome is installed) and ./<date>-worthit-audit.log.
 process.removeAllListeners('warning'); process.on('warning', () => {});
 import React, { useState, useEffect, useRef } from 'react';
@@ -25,7 +25,8 @@ if (flag('--version') || flag('-v')) { console.log(VERSION); process.exit(0); }
 if (flag('--help') || flag('-h')) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 7).map(l => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
 const JSON_MODE = flag('--json'), ASK = arg('--ask'), F_GIT = arg('--git'), F_AI = arg('--ai'), DAYS = +arg('--days', 21), F_HOSTS = arg('--hosts'), NO_FILES = flag('--no-files'), FRESH = flag('--fresh');
 const TTY = !!process.stdin.isTTY && !JSON_MODE;
-const AGENTS = [{ id: 'claude', cli: 'claude', label: 'Claude Haiku 5.5', model: 'claude-haiku-5-5' }, { id: 'codex', cli: 'codex', label: 'GPT-6 Luna', model: 'gpt-6-luna' }].filter(a => has(a.cli));
+const AGENTS = [{ id: 'claude', cli: 'claude', label: 'Claude Haiku 5.5', model: 'claude-haiku-5-5' }, { id: 'codex', cli: 'codex', label: 'GPT-6 Luna', model: 'gpt-6-luna' },
+  { id: 'omp', cli: 'omp', label: 'omp', model: 'omp · your default model', via: 'omp -p, your default model' }, { id: 'dsh', cli: 'dsh', label: 'dsh', model: 'dsh headless', via: 'dsh headless, your DeepSeek profile' }].filter(a => has(a.cli));
 const STAMP = (() => { const t = new Date(); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); })();
 let DATA = null;
 const DETECTED = sshHosts(), SAVED = savedHosts();      // other machines: --hosts all | none | a,b; without the flag, the remembered choice (or the question)
@@ -141,6 +142,21 @@ function feed({ system, user, agent }, onPatch, onStatus, onDone) {
       else if (it.type === 'reasoning' && it.text) onStatus('thinking', tail(String(it.text).replace(/\*\*/g, ''), W - 8));
       else if (it.type === 'command_execution') onStatus('using a tool', tail(String(it.command || ''), W - 8));
       else if (o.type === 'error') errs += String(o.message || ''); }));
+  } else if (agent.id === 'omp') {  // omp streams text and thinking deltas as JSON events; no tools, no skills, no project context
+    audit('agent', `omp -p --mode json --no-session --no-tools --thinking medium (your default model)   (${system.length + user.length} characters sent, shown below)`);
+    p = spawn('omp', ['-p', '--mode', 'json', '--no-session', '--no-tools', '--no-skills', '--no-rules', '--no-context-files', '--no-extensions', '--no-title', '--thinking', 'medium', '--system-prompt', system], { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+    p.stdin.end(user);
+    p.stdout.on('data', lines(o => { const ev = o.assistantMessageEvent || {};
+      if (o.type === 'message_update' && ev.type === 'text_delta') text(ev.delta || '');
+      else if (o.type === 'message_update' && ev.type === 'thinking_delta') { think += ev.delta || ''; onStatus('thinking', tail(think, W - 8)); }
+      else if (o.type === 'message_start' && o.message && o.message.role === 'assistant' && o.message.model) onStatus('asking ' + o.message.model, 'answering');
+      else if (o.type === 'error') errs += String(o.message || o.error || ''); }));
+  } else if (agent.id === 'dsh') {  // dsh headless prints the final answer whole and has no system-prompt flag: prepend the rules, then draw line by line
+    audit('agent', `dsh headless --approval-policy never -   (${system.length + user.length} characters sent on stdin, shown below)`);
+    p = spawn('dsh', ['headless', '--approval-policy', 'never', '-'], { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+    p.stdin.end(system + '\n\n' + user); let all = '';
+    p.stdout.on('data', c => { all += c; });
+    p.stdout.on('end', () => { for (const l of all.split('\n')) pending = pending.then(() => new Promise(r => { text(l + '\n'); setTimeout(r, 40); })); });
   } else {
     audit('agent', `claude -p --model ${agent.model} --effort medium --tools "" (no tools)   (${system.length + user.length} characters sent, shown below)`);
     p = spawn('claude', ['-p', '--model', agent.model, '--effort', 'medium', '--output-format', 'stream-json', '--include-partial-messages', '--verbose',
@@ -155,7 +171,7 @@ function feed({ system, user, agent }, onPatch, onStatus, onDone) {
   for (const l of (user).split('\n')) audit('sent', l.length > 4000 ? l.slice(0, 4000) + ` … (${l.length} characters)` : l);
   onStatus('asking ' + agent.label, 'sending the week\'s data');
   p.stderr.on('data', c => { errs += c; });
-  p.on('close', code => pending.then(() => end(code ? (errs.trim().split('\n').pop() || agent.cli + ' exited ' + code) : null)));
+  p.on('close', code => pending.then(() => end(code || (!n && errs.trim()) ? (errs.trim().split('\n').filter(l => !/^Warning:/.test(l)).pop() || agent.cli + ' exited ' + code).slice(0, 160) : null)));
   p.on('error', e => end('could not start ' + agent.cli + ': ' + e.message));
 }
 
@@ -263,7 +279,7 @@ function Setup({ onDone }) {
     h(Choice, { key: 'a', q: 'Use an AI agent for the summary and your questions?', onPick: pick('AI', o => ({ ai: o.v }), AGENTS.length > 1 ? 2 : null),
       options: [{ label: 'Yes', key: 'y', v: true, hint: 'recommended · runs through your own CLI login; the week\'s data is sent to it' }, { label: 'No', key: 'n', v: false, hint: 'same dashboard, nothing leaves this machine, no questions' }] }),
     h(Choice, { key: 'w', q: 'Which agent?', onPick: pick('Agent', o => ({ agent: o.v }), null),
-      options: AGENTS.map((a, k) => ({ label: a.label, v: a, hint: (k === 0 ? 'recommended · ' : '') + 'medium reasoning, via ' + a.cli })) })];
+      options: AGENTS.map((a, k) => ({ label: a.label, v: a, hint: (k === 0 ? 'recommended · ' : '') + (a.via || 'medium reasoning, via ' + a.cli) })) })];
   return h(Box, { flexDirection: 'column' }, ...ans.map(a => h(Box, { key: a, gap: 1 }, h(Text, { color: 'green' }, '✓'), h(Text, {}, a))),
     AGENTS.length === 0 && step === 0 && hostsAsked ? h(Text, { dimColor: true }, '  no claude or codex CLI found: the dashboard will be built without AI') : null,
     hostsAsked ? qs[step] : h(MultiChoice, { q: 'Include your other machines?', options: DETECTED, initial: SAVED || [],
