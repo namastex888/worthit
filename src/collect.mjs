@@ -121,6 +121,11 @@ async function meterBin(on) {
 }
 const runOut = (cmd, args, ms) => new Promise(res => { let o = ''; const p = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'ignore'] }), t = setTimeout(() => p.kill(), ms);
   p.stdout.on('data', c => { o += c; }); p.on('error', () => { clearTimeout(t); res({ out: '', code: 1 }); }); p.on('close', code => { clearTimeout(t); res({ out: o, code }); }); });
+// what a merged pull request was, read from its title prefix (feat:, fix(scope):, docs!: ...): the convention most repositories already follow
+const KIND_ALIAS = { feature: 'feat', features: 'feat', bugfix: 'fix', hotfix: 'fix', bug: 'fix', doc: 'docs', tests: 'test', performance: 'perf', deps: 'chore', dep: 'chore', release: 'chore' };
+export const KINDS = { feat: 'features', fix: 'fixes', docs: 'docs', test: 'tests', chore: 'chores', ci: 'ci', refactor: 'refactors', perf: 'performance', build: 'build', style: 'style', revert: 'reverts', other: 'no prefix' };
+export const kindOf = title => { const m = /^\s*\[?([a-z]+)\]?\s*(\([^)]*\))?\s*!?\s*:/i.exec(String(title || '')); if (!m) return 'other'; const k = KIND_ALIAS[m[1].toLowerCase()] || m[1].toLowerCase(); return KINDS[k] && k !== 'other' ? k : 'other'; };
+const HIST = 84 * DAY;                 // merged pull requests are kept for 12 weeks, so delivery can be shown week by week and month by month
 export async function git(cfg, on) {
   const since = Date.now() - 14 * DAY, prs = new Map(), commits = new Map(), src = { github: 0, meter: 0, gitea: 0, gitlab: 0 }; let repos = 0, meter = null;
   try {
@@ -139,44 +144,56 @@ export async function git(cfg, on) {
       const o = spawnSync('git', ['-C', cwd, 'log', '--all', '--since=14 days ago', '--format=%H %ct'], { encoding: 'utf8', timeout: 8000, maxBuffer: 64 << 20 }).stdout || '';
       for (const l of o.split('\n')) { const [hh, ct] = l.split(' '); if (hh && ct) commits.set(hh, +ct * 1000); } });
   } catch (e) { audit('note', 'usagemeter not used: ' + e.message); }
-  if (has('gh')) {                                             // GitHub: PRs you authored that merged in the last 14 days
-    on({ pct: .75, detail: 'GitHub · your merged pull requests (gh search)' });
-    // merged PRs already fetched are kept in ~/.worthit/worthit.db: only PRs merged since the last fetch (minus a day of overlap) are asked for again
-    let db = null, from = since;
-    try { fs.mkdirSync(HOME, { recursive: true }); db = new DatabaseSync(path.join(HOME, 'worthit.db')); db.exec('CREATE TABLE IF NOT EXISTS gh_pr (key TEXT PRIMARY KEY, merged_ms INTEGER); CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);');
-      const mv = k => { const r = db.prepare('SELECT v FROM meta WHERE k = ?').get(k); return r ? +r.v : null; }, cov = mv('gh_covered_from_ms'), fetched = mv('gh_fetched_ms');
-      if (cov != null && fetched && cov <= since) from = Math.max(since, fetched - DAY); } catch { db = null; }
-    const day = new Date(from).toISOString().slice(0, 10); audit('run', `gh api search/issues q="is:pr is:merged author:@me merged:>=${day}" --paginate` + (from > since ? '   (earlier PRs come from the local store)' : '')); audit('net', 'api.github.com/search/issues (through your gh login)');
-    const o = await runOut('gh', ['api', '-X', 'GET', 'search/issues', '-f', `q=is:pr is:merged author:@me merged:>=${day}`, '-f', 'per_page=100', '--paginate', '-q', '.items[] | [.repository_url, .number, .pull_request.merged_at] | @tsv'], 90000);
-    const fresh = []; for (const l of o.out.split('\n')) { const [url, n, at] = l.split('\t'); if (!url || !at) continue; fresh.push([('github.com/' + url.split('/repos/')[1] + '#' + n).toLowerCase(), Date.parse(at)]); }
-    let rows = fresh;
-    if (db) { try { if (o.code === 0) { const up = db.prepare('INSERT OR REPLACE INTO gh_pr VALUES (?, ?)'), sm = db.prepare('INSERT OR REPLACE INTO meta VALUES (?, ?)'); db.exec('BEGIN'); for (const [k, t] of fresh) up.run(k, t);
-          if (from === since) sm.run('gh_covered_from_ms', String(since)); sm.run('gh_fetched_ms', String(Date.now())); db.exec('COMMIT'); }
-        rows = db.prepare('SELECT key, merged_ms FROM gh_pr WHERE merged_ms >= ?').all(since).map(r => [r.key, r.merged_ms]); } catch { /* keep the fresh rows */ } db.close(); }
-    if (o.code !== 0) audit('note', 'gh search did not answer: using the PRs already stored');
-    const tail = k => k.slice(k.lastIndexOf('/')), fromMeter = new Map(); for (const [k, t] of prs) fromMeter.set(tail(k), [k, t]);
-    for (const [k, t] of rows) { const m = fromMeter.get(tail(k));      // same repo name, same number, merged within the hour: one pull request under an older owner name
-      if (m && m[0] !== k && prs.has(m[0]) && Math.abs(m[1] - t) < 3600e3) { prs.delete(m[0]); src.meter--; }
-      if (!prs.has(k)) src.github++; prs.set(k, t); }
+  // Merged pull requests, with what each one was, live in ~/.worthit/worthit.db (table pr_kind): each run only asks the forges for what is new.
+  const histFrom = Date.now() - HIST, fresh = []; let db = null;
+  try { fs.mkdirSync(HOME, { recursive: true }); db = new DatabaseSync(path.join(HOME, 'worthit.db')); db.exec('CREATE TABLE IF NOT EXISTS pr_kind (key TEXT PRIMARY KEY, merged_ms INTEGER, kind TEXT); CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);'); } catch { db = null; }
+  const mv = k => { try { const r = db && db.prepare('SELECT v FROM meta WHERE k = ?').get(k); return r ? +r.v : null; } catch { return null; } };
+  const sv = (k, v) => { try { if (db) db.prepare('INSERT OR REPLACE INTO meta VALUES (?, ?)').run(k, String(v)); } catch { /* bookkeeping only */ } };
+  const keep = rows => { fresh.push(...rows); if (!db || !rows.length) return; try { const up = db.prepare('INSERT OR REPLACE INTO pr_kind VALUES (?, ?, ?)'); db.exec('BEGIN'); for (const [k, t, kind] of rows) up.run(k, t, kind); db.exec('COMMIT'); } catch { /* the rows stay in memory for this run */ } };
+  if (has('gh')) {                                             // GitHub: PRs you authored that merged, with their titles
+    on({ pct: .75, detail: 'GitHub · your merged pull requests (gh search)' }); audit('net', 'api.github.com/search/issues (through your gh login)');
+    const iso = t => new Date(t).toISOString().slice(0, 19) + 'Z';
+    // one search answers at most 1,000 rows, so the time is asked in slices of a week (and a full slice is asked again in halves)
+    const range = async (a, b) => { audit('run', `gh api search/issues q="is:pr is:merged author:@me merged:${iso(a)}..${iso(b)}" --paginate`);
+      const o = await runOut('gh', ['api', '-X', 'GET', 'search/issues', '-f', `q=is:pr is:merged author:@me merged:${iso(a)}..${iso(b)}`, '-f', 'per_page=100', '--paginate', '-q', '.items[] | [.repository_url, .number, .pull_request.merged_at, .title] | @tsv'], 90000);
+      const rows = []; for (const l of o.out.split('\n')) { const [url, n, at, ...ti] = l.split('\t'); if (!url || !at) continue; rows.push([('github.com/' + url.split('/repos/')[1] + '#' + n).toLowerCase(), Date.parse(at), kindOf(ti.join(' '))]); }
+      if (o.code === 0 && rows.length >= 1000 && b - a > DAY) { const mid = a + Math.floor((b - a) / 2), x = await range(a, mid), y = await range(mid, b); return x && y; }
+      if (o.code !== 0) return false; keep(rows); return true; };
+    const slices = async (from, to) => { let done = to; for (let b = to; b > from; b -= 7 * DAY) { const a = Math.max(from, b - 7 * DAY); if (!await range(a, b)) break; done = a; } return done; };   // newest first; returns how far back it got
+    const cov = mv('gh_kind_from_ms'), fetched = mv('gh_kind_fetched_ms'), now0 = Date.now();
+    const recentFrom = cov != null && fetched ? Math.max(cov, fetched - DAY) : since, got = await slices(recentFrom, now0);
+    if (got <= recentFrom) { sv('gh_kind_fetched_ms', now0); let from = cov != null && fetched ? cov : recentFrom;
+      if (from > histFrom) { on({ pct: .8, detail: 'GitHub · earlier weeks of merged pull requests (asked once, then kept)' }); from = await slices(histFrom, from); }   // an unanswered slice (rate limit) is asked again on the next run
+      sv('gh_kind_from_ms', from); }
+    else audit('note', 'gh search did not answer: using the pull requests already stored');
   } else audit('note', 'gh CLI not found: GitHub PRs not counted');
   // Gitea (tea) and GitLab (glab) are optional: not installed, logged out or not answering means skipped with a note, never an error.
-  // A few bounded calls per forge (your own merged pull requests, newest first), not one per repository.
-  const forge = async (name, cli, argsFor, pick, pageSize) => { if (!has(cli)) return; on({ pct: .9, detail: `${name} · your merged pull requests (${cli})` });
-    for (let page = 1; page <= 50; page++) { const args = argsFor(page); audit('run', `${cli} ${args.join(' ')}`); const o = await runOut(cli, args, 20000); let list = null; try { list = JSON.parse(o.out); } catch { /* not JSON */ }
-      if (o.code !== 0 || !Array.isArray(list)) { audit('note', `${name}: no usable answer from ${cli} (not logged in?): its pull requests are not counted`); return; }
-      for (const x of list) { let r = null; try { r = pick(x); } catch { /* odd row */ } if (r && r[1] >= since && !prs.has(r[0])) { src[name.toLowerCase()]++; prs.set(r[0], r[1]); } }
-      if (list.length < pageSize) return; } };
-  const sinceIso = new Date(since).toISOString();
-  await forge('Gitea', 'tea', page => ['api', `/repos/issues/search?type=pulls&state=closed&created=true&since=${sinceIso}&limit=50&page=${page}`],
-    x => x.pull_request && x.pull_request.merged && x.pull_request.merged_at ? [('gitea/' + (x.repository ? x.repository.full_name : x.html_url) + '#' + x.number).toLowerCase(), Date.parse(x.pull_request.merged_at)] : null, 50);
+  // A few bounded calls per forge (your own merged pull requests), not one per repository; later runs only ask for what changed since the last one.
+  const forge = async (name, cli, id, argsFor, pick, pageSize) => { if (!has(cli)) return; on({ pct: .9, detail: `${name} · your merged pull requests (${cli})` });
+    const last = mv('forge_fetched_ms:' + id), from = new Date(last ? Math.max(histFrom, last - DAY) : histFrom).toISOString(), t0 = Date.now(), rows = [];
+    for (let page = 1; page <= 60; page++) { const args = argsFor(page, from); audit('run', `${cli} ${args.join(' ')}`); const o = await runOut(cli, args, 30000); let list = null; try { list = JSON.parse(o.out); } catch { /* not JSON */ }
+      if (o.code !== 0 || !Array.isArray(list)) { audit('note', `${name}: no usable answer from ${cli} (not logged in?): its pull requests are not counted`); keep(rows); return; }
+      for (const x of list) { let r = null; try { r = pick(x); } catch { /* odd row */ } if (r && r[1] >= histFrom) rows.push(r); }
+      if (list.length < pageSize) { keep(rows); sv('forge_fetched_ms:' + id, t0); return; } }
+    keep(rows); };
+  await forge('Gitea', 'tea', 'gitea', (page, from) => ['api', `/repos/issues/search?type=pulls&state=closed&created=true&since=${from}&limit=50&page=${page}`],
+    x => x.pull_request && x.pull_request.merged && x.pull_request.merged_at ? [('gitea/' + (x.repository ? x.repository.full_name : x.html_url) + '#' + x.number).toLowerCase(), Date.parse(x.pull_request.merged_at), kindOf(x.title)] : null, 50);
   let glHosts = [];
   if (has('glab')) { const st = spawnSync('glab', ['auth', 'status'], { encoding: 'utf8', timeout: 20000 }), txt = (st.stdout || '') + '\n' + (st.stderr || '');   // host names sit unindented, each followed by its login lines
     let cur = null; for (const l of txt.split('\n')) { const h = /^([a-z0-9][a-z0-9.-]*\.[a-z]{2,})\s*$/i.exec(l); if (h) cur = h[1].toLowerCase(); else if (cur && /Logged in to/.test(l) && !glHosts.includes(cur)) glHosts.push(cur); }
     audit('run', 'glab auth status' + `   (GitLab hosts you are logged in to: ${glHosts.join(', ') || 'none'})`); }
-  for (const host of glHosts) await forge('GitLab', 'glab', page => ['api', '--hostname', host, `merge_requests?scope=created_by_me&state=merged&updated_after=${sinceIso}&per_page=100&page=${page}`],
-    x => x.merged_at ? [(host + '/' + ((x.references && x.references.full) || x.web_url)).toLowerCase(), Date.parse(x.merged_at)] : null, 100);
+  for (const host of glHosts) await forge('GitLab', 'glab', 'gitlab:' + host, (page, from) => ['api', '--hostname', host, `merge_requests?scope=created_by_me&state=merged&updated_after=${from}&per_page=100&page=${page}`],
+    x => x.merged_at ? [(host + '/' + ((x.references && x.references.full) || x.web_url)).toLowerCase(), Date.parse(x.merged_at), kindOf(x.title)] : null, 100);
+  // every forge row of the last 12 weeks (stored + this run); the last 14 days of them join the usagemeter rows
+  let rows = fresh; if (db) { try { rows = db.prepare('SELECT key, merged_ms, kind FROM pr_kind WHERE merged_ms >= ?').all(histFrom).map(r => [r.key, r.merged_ms, r.kind || 'other']); } catch { /* keep this run's rows */ } try { db.close(); } catch { /* closed */ } }
+  const tail = k => k.slice(k.lastIndexOf('/')), fromMeter = new Map(), kinds = new Map(); for (const [k, t] of prs) fromMeter.set(tail(k), [k, t]);
+  for (const [k, t, kind] of rows) { kinds.set(k, [t, kind]); if (t < since) continue;
+    const m = fromMeter.get(tail(k));      // same repo name, same number, merged within the hour: one pull request the usagemeter store holds under an older owner name
+    if (m && m[0] !== k && prs.has(m[0]) && Math.abs(m[1] - t) < 3600e3) { prs.delete(m[0]); src.meter--; }
+    if (!prs.has(k)) src[k.startsWith('github.com/') ? 'github' : k.startsWith('gitea/') ? 'gitea' : 'gitlab']++; prs.set(k, t); }
+  for (const [k, t] of prs) if (!kinds.has(k)) kinds.set(k, [t, 'other']);      // a pull request only the usagemeter store knows has no title here
   on({ pct: 1, detail: 'done' });
-  return { prs: [...prs.values()], commits: [...commits.values()], repos, src, meter: meter && { version: meter.version, downloaded: meter.downloaded } };
+  return { prs: [...prs.values()], kinds: [...kinds.values()], commits: [...commits.values()], repos, src, meter: meter && { version: meter.version, downloaded: meter.downloaded } };
 }
 
 // ---------------------------------------------------------------- shape the data the dashboard draws
@@ -268,6 +285,24 @@ export function buildData(report, g, cfg, scanInfo) {
   if (g) { for (const t of g.prs) (agg[dayKey(t)] = agg[dayKey(t)] || { out: 0, usd: 0, prs: 0, commits: 0 }).prs++; for (const t of g.commits) (agg[dayKey(t)] = agg[dayKey(t)] || { out: 0, usd: 0, prs: 0, commits: 0 }).commits++; }
   for (const [k, o] of Object.entries(agg)) hist.days[k] = { out: Math.round(o.out), usd: Math.round(o.usd), prs: g ? o.prs : (hist.days[k] || {}).prs || 0, commits: g ? o.commits : (hist.days[k] || {}).commits || 0 };
   fs.mkdirSync(HOME, { recursive: true }); fs.writeFileSync(hf, JSON.stringify(hist)); audit('write', tilde(hf) + `  (${Object.keys(hist.days).length} daily rows)`);
+  // delivery: what the merged pull requests were (title prefix), ranked, and how features and their cost moved day by day, week by week, month by month
+  if (g && g.kinds && g.kinds.length) {
+    const K = g.kinds, count = rs => { const c = { prs: rs.length }; for (const [, k] of rs) c[k] = (c[k] || 0) + 1; return c; }, between = (a, b) => K.filter(([t]) => t >= a && t < b);
+    const cur7 = count(between(w1, now + 1)), prev7 = count(between(w0, w1)), each = (usd, c, min = 5) => usd != null && (c.feat || 0) >= min ? Math.round(usd / c.feat) : null, share = c => c.prs ? Math.round(100 * (c.fix || 0) / c.prs) : null;
+    const dayUsd = k => { const r = hist.days[k]; return r && r.usd ? r.usd : null; }, byDay = {}, byMonth = {}; for (const [t, k] of K) { const dk = dayKey(t); (byDay[dk] = byDay[dk] || []).push([t, k]); (byMonth[dk.slice(0, 7)] = byMonth[dk.slice(0, 7)] || []).push([t, k]); }
+    const shape = (c, usd, min) => ({ prs: c.prs, features: c.feat || 0, fixes: c.fix || 0, fix_share_pct: share(c), usd: usd == null ? null : Math.round(usd), usd_per_feature: each(usd, c, min) });
+    const weeks = []; for (let a = 11; a >= 0; a--) { const end = now - a * 7 * DAY, c = count(between(end - 7 * DAY, end + (a ? 0 : 1))); if (!c.prs) continue;
+      let usd = a === 0 ? D.totals.api_value_usd : a === 1 ? sum(prev, 'usd') : 0, n = a < 2 ? 7 : 0; if (a >= 2) for (let i = 0; i < 7; i++) { const v = dayUsd(dayKey(end - i * DAY)); if (v != null) { usd += v; n++; } }
+      weeks.push({ weeks_ago: a, to: new Date(end).toISOString().slice(0, 10), ...shape(c, n >= 5 ? usd : null) }); }       // a week with fewer than 5 priced days has no trustworthy cost
+    const days = []; for (let i = 13; i >= 0; i--) { const dk = dayKey(now - i * DAY); days.push({ day: dk, ...shape(count(byDay[dk] || []), dayUsd(dk), 3) }); }
+    const months = Object.keys(byMonth).sort().map(mo => { let usd = 0, n = 0; for (const [dk, r] of Object.entries(hist.days)) if (dk.startsWith(mo) && r.usd) { usd += r.usd; n++; }
+      return { month: mo, days_with_cost: n, ...shape(count(byMonth[mo]), n ? usd : null) }; });
+    const f0 = each(D.totals.api_value_usd, cur7), f1 = each(sum(prev, 'usd'), prev7);
+    D.delivery = { source: 'title prefix of each merged pull request (feat:, fix:, docs: ...); a cost per feature needs 5 features in the week (3 in a day)', typed_pct: cur7.prs ? Math.round(100 * (cur7.prs - (cur7.other || 0)) / cur7.prs) : null,
+      kinds: Object.keys(KINDS).filter(k => cur7[k] || prev7[k]).map(k => ({ kind: k, label: KINDS[k], prs: cur7[k] || 0, share_pct: cur7.prs ? Math.round(100 * (cur7[k] || 0) / cur7.prs) : 0, last_week: prev7[k] || 0, change_pct: pctChange(cur7[k] || 0, prev7[k] || 0) })).sort((x, y) => y.prs - x.prs),
+      features: cur7.feat || 0, features_change_pct: pctChange(cur7.feat || 0, prev7.feat || 0), usd_per_feature: f0, usd_per_feature_change_pct: f0 != null && f1 ? pctChange(f0, f1) : null,
+      fix_share_pct: share(cur7), fix_share_last_week_pct: share(prev7), days, weeks, months };
+  }
 
   // the player's own store, ~/.worthit/worthit.db (SQLite): small daily rows per provider, each run's measured plan value, months on top
   let months = [];
