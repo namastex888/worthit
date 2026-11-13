@@ -213,11 +213,16 @@ export function buildData(report, g, cfg, scanInfo) {
   for (const c of (report.codex_weeks || []).filter(c => c.quality !== 'too_small' && Date.parse(c.window_reset) > w1).sort((a, b) => a.window_reset < b.window_reset ? -1 : 1)) {
     const used = Math.round(c.meter_end_pct), limit = c.usd_per_full_week || (used > 0 ? c.measured.api_usd / (used / 100) : 0); if (!limit) continue;
     const open = c.status === 'open', left = Math.round(limit * (1 - used / 100)), hrs = Math.max(0, Math.round((Date.parse(c.window_reset) - now) / H));
-    waste.push({ account: 'ChatGPT Pro ' + String.fromCharCode(65 + n++), limit_usd: Math.round(limit), used_pct: used, unused_usd: open || c.capped ? 0 : left, at_risk_usd: open && !c.capped ? left : 0, open, why: c.capped ? 'hit the cap' : open ? `$${left} left, resets ${hrs} h` : 'you spent less' });
+    waste.push({ acct: c.account, account: 'ChatGPT Pro ' + String.fromCharCode(65 + n++), limit_usd: Math.round(limit), used_pct: used, unused_usd: open || c.capped ? 0 : left, at_risk_usd: open && !c.capped ? left : 0, open, why: c.capped ? 'hit the cap' : open ? `$${left} left, resets ${hrs} h` : 'you spent less' });
   }
   // an account-week priced far below the others was mostly used on machines that were not scanned: leave it out
-  const med = waste.map(x => x.limit_usd).sort((a, b) => a - b)[Math.floor(waste.length / 2)] || 0, ok = waste.filter(x => x.limit_usd >= .25 * med), rank = x => x.unused_usd ? 0 : x.open ? 1 : 2, keep = [...ok].sort((a, b) => rank(a) - rank(b)).slice(0, 5).sort((a, b) => ok.indexOf(a) - ok.indexOf(b)), hidden = waste.length - keep.length;
-  waste.length = 0; keep.forEach((x, i) => waste.push({ ...x, account: 'ChatGPT Pro ' + String.fromCharCode(65 + i) }));
+  const med = waste.map(x => x.limit_usd).sort((a, b) => a - b)[Math.floor(waste.length / 2)] || 0, ok = waste.filter(x => x.limit_usd >= .25 * med);
+  // several accounts on the same plan read as one line: the person thinks in plans, not in account letters
+  waste.length = 0; let hidden = 0;
+  if (ok.length) { const L = ok.reduce((a, x) => a + x.limit_usd, 0), un = ok.reduce((a, x) => a + x.unused_usd, 0), risk = ok.reduce((a, x) => a + (x.at_risk_usd || 0), 0), nOpen = ok.filter(x => x.open).length, nClosed = ok.length - nOpen;
+    const accounts = new Set(ok.map(x => x.acct).filter(Boolean)).size || 1, used = L ? Math.round(ok.reduce((a, x) => a + x.limit_usd * x.used_pct, 0) / L) : 0;
+    const why = un && risk ? `$${un} unused · $${risk} still open` : un ? 'you spent less' : risk ? `$${risk} left, still open` : 'hit the cap';
+    waste.push({ account: 'ChatGPT Pro 200' + (accounts > 1 ? ` (×${accounts})` : ''), accounts, account_weeks: ok.length, limit_usd: L, used_pct: used, unused_usd: un, at_risk_usd: risk, open: nOpen > 0, why }); }
   for (const p of plans) if (p.key !== 'codex') waste.unshift({ account: p.plan, limit_usd: p.usd_per_full_week, used_pct: 100, unused_usd: 0, why: 'hit the cap' });
 
   const tools = ['claude', 'codex', 'antigravity', 'omp', 'dsh'].filter(p => p !== 'omp' && p !== 'dsh' || (report.other_tools || {})[p]).map(p => { const r = cur.filter(a => a.provider === p), ot = (report.other_tools || {})[p];
