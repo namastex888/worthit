@@ -157,13 +157,13 @@ export const blocks = {
     return row([{ title: 'MODEL MIX', color: C.pink, right: 'share of output tokens, week by week', w: wl, lines: left }, { title: 'OPEN vs CLOSED', color: C.pink, right: 'model weights', w: wr, lines: right }]);
   },
   WasteTable(D) {
-    const l = [d(pad('Plan', 18) + lpad('Limit', 7) + '   ' + pad('You used', 31) + '   ' + lpad('Unused', 6) + '   Why')];
+    const l = [d(pad('Plan', 22) + lpad('Limit', 7) + '   ' + pad('You used', 21) + '   ' + lpad('Unused', 6) + '   Why')];
     if (!D.waste.length) return box('SUBSCRIPTION WASTE', [d('No account week closed in the last 7 days.')], W, C.red);
     for (const x of D.waste) { const c = (D.plans.find(p => x.account.startsWith(p.plan)) || {}).color || C.ink2;
-      l.push(pad(fg(c, x.account), 18) + lpad(w(usd(x.limit_usd)), 7) + '   ' + bar(x.used_pct, 100, 26, dark(c), c) + ' ' + lpad(w(x.used_pct + '%'), 4) + '   ' + lpad(bold(fg(x.unused_usd ? C.red : C.ink3, usd(x.unused_usd))), 6) + '   ' + fg(x.unused_usd ? C.gold : x.open ? C.ink2 : C.ink3, x.why)); }
+      l.push(pad(fg(c, x.account), 22) + lpad(w(usd(x.limit_usd)), 7) + '   ' + bar(x.used_pct, 100, 16, dark(c), c) + ' ' + lpad(w(x.used_pct + '%'), 4) + '   ' + lpad(bold(fg(x.unused_usd ? C.red : C.ink3, usd(x.unused_usd))), 6) + '   ' + fg(x.unused_usd ? C.gold : x.open ? C.ink2 : C.ink3, x.why)); }
     const un = D.waste.reduce((s, x) => s + x.unused_usd, 0);
     if (D.waste_hidden) l.push(d(D.waste_hidden + ' smaller account-weeks not shown'));
-    l.push(d(pad('Total unused', 18) + lpad('', 7) + '   ' + pad('', 31) + '   ') + lpad(bold(fg(un ? C.red : C.ink3, usd(un))), 6));
+    l.push(d(pad('Total unused', 22) + lpad('', 7) + '   ' + pad('', 21) + '   ') + lpad(bold(fg(un ? C.red : C.ink3, usd(un))), 6));
     return box('SUBSCRIPTION WASTE', l, W, C.red, 'unused allowance is not the provider\'s fault');
   },
 

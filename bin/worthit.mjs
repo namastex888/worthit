@@ -41,7 +41,7 @@ const settings = () => { try { return JSON.parse(fs.readFileSync(SETTINGS_FILE, 
 const saveSettings = patch => { try { fs.mkdirSync(HOME, { recursive: true }); fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ ...settings(), ...patch })); } catch { /* not fatal */ } };
 if (argv[0] === 'install-skill') { const r = spawnSync(SKILL_CMD[0], SKILL_CMD.slice(1), { stdio: 'inherit' }); if (r.status === 0) saveSettings({ skill: 'installed', skill_at: new Date().toISOString() }); process.exit(r.status ?? 1); }
 const TTY = !!process.stdin.isTTY && !JSON_MODE;
-const AGENTS = [{ id: 'claude', cli: 'claude', label: 'Claude Haiku 5.5', model: 'claude-haiku-5-5' }, { id: 'codex', cli: 'codex', label: 'GPT-6 Luna', model: 'gpt-6-luna' },
+const AGENTS = [{ id: 'claude', cli: 'claude', label: 'Claude Sonnet 5.5', model: 'claude-sonnet-5-5' }, { id: 'codex', cli: 'codex', label: 'GPT-6.1 Sol', model: 'gpt-6.1-sol' },
   { id: 'omp', cli: 'omp', label: 'omp', model: 'omp · your default model', via: 'omp -p, your default model' }, { id: 'dsh', cli: 'dsh', label: 'dsh', model: 'dsh headless', via: 'dsh headless, your DeepSeek profile' }].filter(a => has(a.cli));
 const STAMP = (() => { const t = new Date(); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); })();
 let DATA = null;
@@ -310,7 +310,7 @@ function Setup({ onDone }) {
 const blank = () => ({ spec: null, n: 0, status: 'starting', trace: '', done: null });
 
 function Main({ cfg }) {
-  const { exit } = useApp(); const [f, setF] = useState(0); const agent = cfg.ai ? (cfg.agent || AGENTS[0]) : null, who = agent ? agent.model : 'built-in, no AI';
+  const { exit } = useApp(); const [f, setF] = useState(0); const agent = cfg.ai ? (cfg.agent || AGENTS[0]) : null, [whoNow, setWho] = useState(null), who = whoNow || (agent ? agent.model : 'built-in, no AI');
   const [steps, setSteps] = useState(() => [{ title: 'Scanning your logs' }, { title: 'Pricing every request, reading the weekly meters' }, ...(cfg.git ? [{ title: 'Git activity' }] : [])].map(s => ({ ...s, state: 'wait', pct: 0, detail: '', lines: [] })));
   const [dash, setDash] = useState(null), [cur, setCur] = useState(null), [past, setPast] = useState([]), [fail, setFail] = useState(null), [saved, setSaved] = useState(null); const last = useRef(0);
   // the hardware pet: lives in the right corner while the run works, then reports what the run cost this machine
@@ -360,8 +360,13 @@ function Main({ cfg }) {
         if (rc && sameReport(rc.key, key) && ready(rc.spec)) {        // nothing material changed since the saved report: show it, do not call the model
           audit('agent', `no headline number moved more than 2% since ${rc.at}: the saved report is shown, ${agent.cli} is not called (--fresh forces a new one)`);
           setTimeout(() => { setDash(finish({ ...blank(), spec: rc.spec, n: rc.n }, { secs: null, cached: rc.at.slice(0, 16).replace('T', ' ') })); if (ASK) ask(ASK); else if (!TTY) setTimeout(exit, 300); }, 120); }   // let the step lines paint first
-        else { setDash(blank()); feed({ system: SYSTEM, user: 'Here is this week\'s data as JSON. Compose the dashboard now.\n\n' + forModel(), agent }, (spec, n) => setDash(x => ({ ...x, spec, n })), st(setDash),
-          done => { setDash(x => { const ok = !(done.err || !ready(x.spec)); if (ok) saveReport(key, agent, x.spec, x.n); return finish(ok ? x : { ...x, spec: builtin() }, done); }); if (ASK) ask(ASK); else if (!TTY) setTimeout(exit, 300); }); } }
+        else { setDash(blank());
+          // the chosen agent writes the report; if it cannot (not logged in, no credit, model missing), the next installed one tries, and the built-in tables are the last resort
+          const order = [agent, ...AGENTS.filter(a => a.id !== agent.id)];
+          const compose = k => feed({ system: SYSTEM, user: 'Here is this week\'s data as JSON. Compose the dashboard now.\n\n' + forModel(), agent: order[k] }, (spec, n) => setDash(x => ({ ...x, spec, n })), st(setDash),
+            done => { if (done.err && order[k + 1]) { audit('note', `${order[k].cli} could not write the report (${done.err}): trying ${order[k + 1].cli}`); setWho(order[k + 1].model); setDash({ ...blank(), status: `${order[k].cli} failed, trying ${order[k + 1].cli}`, trace: String(done.err).slice(0, 80) }); return compose(k + 1); }
+              setDash(x => { const ok = !(done.err || !ready(x.spec)); if (ok) saveReport(key, order[k], x.spec, x.n); return finish(ok ? x : { ...x, spec: builtin() }, done); }); if (ASK) ask(ASK); else if (!TTY) setTimeout(exit, 300); });
+          compose(0); } }
     } catch (e) { endPet(); setFail(e.message); setTimeout(exit, 200); } })();
     return () => clearInterval(t); }, []);
   const collected = past.some(p => p.kind === 'steps');
