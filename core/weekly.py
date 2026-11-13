@@ -258,6 +258,7 @@ for s in stints:
     claude_stints.append(st)
 claude_stints.sort(key=lambda s: s['start'])
 
+if not any('since' in v for v in hosts.values()): sys.exit('the scan returned no data (empty scan files in ' + sys.argv[1] + ')')
 since = max(v['since'] for v in hosts.values() if 'since' in v)
 # ---------------------------------------------------------------- Google (Antigravity): caps are the meter (a cap = 100%)
 AG = [b for b in B if b['provider'] == 'antigravity']
