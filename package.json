@@ -37,5 +37,13 @@
     "react": "^19.0.0",
     "zod": "^4.0.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/namastex888/worthit.git"
+  },
+  "homepage": "https://github.com/namastex888/worthit#readme",
+  "bugs": {
+    "url": "https://github.com/namastex888/worthit/issues"
+  }
 }

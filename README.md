@@ -49,7 +49,7 @@ worthit --skill                  # the full guide for agents
 The guide is an agent skill in this repo (`skills/worthit/SKILL.md`). Install it into whatever agents you use (Claude Code, Codex, Cursor, Gemini CLI and others):
 
 ```sh
-npx skills add <owner>/worthit
+npx skills add namastex888/worthit
 ```
 
 The question bar uses the same commands: when the week's data cannot answer, the agent asks for up to three lookups, worthit runs them itself and logs each one in the audit log.
