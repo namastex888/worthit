@@ -1,7 +1,7 @@
 {
   "name": "worthit",
   "version": "0.13.0",
-  "description": "What your AI coding subscription is really worth: a local, one-command AI coding productivity meter for Claude Code, Codex and Antigravity.",
+  "description": "Is your AI coding plan worth it? One command prices every request in your local Claude Code, Codex and Antigravity logs at API rates: what a weekly limit is really worth, cost per model and per merged PR, unused allowance, open vs closed models. Local, no account.",
   "type": "module",
   "bin": {
     "worthit": "bin/worthit.mjs"
@@ -18,17 +18,7 @@
   "engines": {
     "node": ">=22.5"
   },
-  "keywords": [
-    "ai",
-    "coding",
-    "usage",
-    "tokens",
-    "claude-code",
-    "codex",
-    "antigravity",
-    "productivity",
-    "quota"
-  ],
+  "keywords": ["ai-coding", "claude-code", "claude", "anthropic", "codex", "openai", "antigravity", "gemini", "token-usage", "usage-tracker", "llm-cost", "cost-tracking", "rate-limits", "quota", "subscription", "developer-productivity", "coding-agents", "cli", "tui", "local-first"],
   "dependencies": {
     "@json-render/core": "0.22.0",
     "@json-render/ink": "0.22.0",
