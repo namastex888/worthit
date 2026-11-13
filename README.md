@@ -1,87 +1,52 @@
 # worthit
 
-Is your AI coding subscription worth it? One command scans the session logs already on your machine, prices every request at API list rates, and shows which plan gave you more.
+What your AI coding subscription is really worth. One command, everything local.
+
+## For humans
 
 ```sh
-npx worthit        # same tool: npx usagemeter
+npx worthit
 ```
 
-Works with Claude Code, Codex and Antigravity. omp and dsh usage is included when the Automagik usagemeter store is present on a scanned machine: omp's own reported cost is used, and dsh is priced at the rates those costs imply for the same model and time of day. Needs Node 22.5+ and Python 3.
+![worthit running: three questions, a live scan, then the dashboard](https://raw.githubusercontent.com/namastex888/worthit/dev/docs/demo.gif)
 
-## What you get
-
-- **Which plan gave more**: API-list-price dollars per full weekly limit, and how many times the plan price that is.
-- **Your week**: output tokens, API value used, merged PRs, commits, cost per merged PR, each against the 7 days before.
-- **Subscription waste**: allowance you left unused, per account. A week that closed under the limit says "you spent less"; the provider is not blamed for it.
-- **Level, XP, streak**: a small daily history in `~/.worthit/history.json` (one row per day, no prompts, no code).
-- **Model mix**: one row of bars per model showing its share of output tokens week by week, and open-weight against closed models (share, tokens, API value, dollars per million output).
-- Three files in the current folder: `<date>-worthit.md`, `<date>-worthit.png`, `<date>-worthit-audit.log`.
-
-## Options
-
-| Flag | What it does |
-|---|---|
-| `--json` | Headless: print the data as JSON, no UI. For agents and scripts. |
-| `--git yes\|no` | Count merged PRs and commits (uses `gh` and the usagemeter store). |
-| `--ai no\|claude\|codex\|omp\|dsh` | Who composes the dashboard. `no` = data tables only. `claude` = Haiku 5.5, `codex` = GPT-6 Luna, both medium reasoning. `omp` = omp with your default model. `dsh` = `dsh headless` with your DeepSeek profile. All through your own CLI login. |
-| `--ask "question"` | Answer one question about your usage, drawn as blocks. |
-| `--days N` | Days of logs to scan (default 21). |
-| `--hosts all\|none\|a,b` | Other machines to include, from your saved ssh hosts. Scanned in parallel with the same read-only script piped in; nothing is installed there (it leaves only its scan cache in `~/.worthit`). Without the flag, a checklist asks once and the choice is remembered. |
-| `--no-files` | Do not write the three files. |
-| `--fresh` | Ask the model for a new report even when the data has not changed. |
-
-Without flags, three arrow-key questions ask the same things, with the recommended answer preselected.
+The recording is `npx worthit --demo`: the whole run on sample data. Needs Node 22.5+ and Python 3.
 
 ## For agents
 
-Instant, read-only answers from the local store (no scan, no model, no network), all JSON:
-
-```sh
-worthit get                      # sections of the last run, and when it was generated
-worthit get plans                # one section; dots walk in: plans.0.usd_per_full_week
-worthit days --group month --by tool
-worthit days --since 2026-11-01 --by model
-worthit sql "SELECT day, SUM(api_usd) FROM day_provider GROUP BY day ORDER BY 2 DESC LIMIT 5"
-worthit schema                   # tables and columns, with meanings
-worthit --skill                  # the full guide for agents
-```
-
-The guide is an agent skill in this repo (`skills/worthit/SKILL.md`). Install it into whatever agents you use (Claude Code, Codex, Cursor, Gemini CLI and others):
+Install the skill (the full guide) into whatever agent you use. `npx worthit` also asks "Install the worthit skill?" on its first run and does this for you:
 
 ```sh
 npx skills add namastex888/worthit
 ```
 
-The question bar uses the same commands: when the week's data cannot answer, the agent asks for up to three lookups, worthit runs them itself and logs each one in the audit log.
+Every command prints JSON and reads only local files:
 
-## Caching
+```sh
+worthit --json                   # scan now, print the week's data (no UI, no model)
+worthit get                      # sections of the last run, no scan
+worthit get plans                # one section; dots walk in: plans.0.usd_per_full_week
+worthit days --group month --by tool             # daily history, grouped: day|week|month by total|tool|model
+worthit days --since 2026-11-01 --by model
+worthit sql "SELECT day, SUM(api_usd) FROM day_provider GROUP BY day"   # one read-only SELECT on the local store
+worthit schema                   # tables and columns, with meanings
+worthit --skill                  # print the full guide
+worthit install-skill            # install the skill into your coding agents
+worthit --demo                   # the whole run on sample data
+```
 
-- **Logs:** a log file that has not changed since the last run is not read again, and a file that only grew is read from where it stopped. The cache (`~/.worthit/scan-cache.db`, on each scanned machine) keeps only the token counts, model names and timestamps the scanner uses: no prompts, no code. `WORTHIT_NO_CACHE=1` turns it off.
-- **Report:** the saved report is shown, and the model is not called, when it is the same day, the ranking, level, streak and events are the same, and no headline number moved by more than 2%. The tables are always drawn from current data.
+Flags for a scan (`worthit` or `worthit --json`):
 
-## How it is measured
+| Flag | What it does |
+|---|---|
+| `--git yes\|no` | count commits and merged PRs |
+| `--ai claude\|codex\|omp\|dsh\|no` | which agent writes the summary; `no` = tables only |
+| `--ask "question"` | answer one question about the data, then exit |
+| `--hosts all\|none\|a,b` | also read your saved ssh machines, in parallel |
+| `--days 21` | how far back to scan |
+| `--fresh` | rewrite the summary even if nothing changed |
+| `--no-files` | do not write the `.md`, `.png` and audit log |
 
-1. Every request in your local logs is priced at the provider's API list rate: input, cached input, cache writes, output including thinking. Prices are in `core/prices.json`.
-2. A plan's number is the priced usage inside one stretch of its weekly meter, divided by the meter points that stretch consumed, times 100.
-3. Each number carries its proof level:
-   - **measured**: the provider's own meter was read at both ends of the stretch.
-   - **floor**: usage on machines that were not scanned is missing, so the real value is at least this.
-   - **estimate**: no meter; derived from when the cap was hit.
+A normal run writes `./<date>-worthit.md`, `./<date>-worthit.png` and `./<date>-worthit-audit.log`. Its store is `~/.worthit/`.
 
-The no-AI run prints data tables only. With `--ai`, the model receives the week's data as JSON and may only choose blocks and write the one-line verdict and the summary; every number on screen is drawn from the data by the tool.
-
-## Privacy
-
-Everything runs on your machine. The audit log lists every file read, command run, network request and file written. Network use: the usagemeter download (checksum verified), your own `gh` login for merged PRs, and, only if you pick `--ai`, your own Claude or Codex CLI with the week's data.
-
-## Releases
-
-Nobody types a version. Open a pull request against `dev`; when it merges, CI runs the checks, numbers the release (`0.N`, one above the last), tags it and publishes the GitHub release with the npm tarball. `dev` is the only branch, and every merge is a release.
-
-npm is the one manual step, because it asks the owner for a fingerprint: `make publish` publishes the newest release as `worthit` and `usagemeter`. `make status` shows what is out.
-
-## Improve the method
-
-The pricing and window logic is in `core/weekly.py`; the scanner is `core/extract_usage.py`. Issues and pull requests with a better algorithm are welcome: include the audit log section that shows the case.
-
-MIT
+MIT. Releases: every merge into `dev` cuts a version; `make publish` puts it on npm.
