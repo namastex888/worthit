@@ -238,7 +238,7 @@ export function buildData(report, g, cfg, scanInfo) {
   waste.length = 0; let hidden = 0;
   if (ok.length) { const L = ok.reduce((a, x) => a + x.limit_usd, 0), un = ok.reduce((a, x) => a + x.unused_usd, 0), risk = ok.reduce((a, x) => a + (x.at_risk_usd || 0), 0), nOpen = ok.filter(x => x.open).length, nClosed = ok.length - nOpen;
     const accounts = new Set(ok.map(x => x.acct).filter(Boolean)).size || 1, used = L ? Math.round(ok.reduce((a, x) => a + x.limit_usd * x.used_pct, 0) / L) : 0;
-    const why = un && risk ? `$${un} unused · $${risk} still open` : un ? 'you spent less' : risk ? `$${risk} left, still open` : 'hit the cap';
+    const why = un && risk ? `$${risk.toLocaleString('en-US')} more still open` : un ? 'you spent less' : risk ? `$${risk} left, still open` : 'hit the cap';
     waste.push({ account: 'ChatGPT Pro 200' + (accounts > 1 ? ` (×${accounts})` : ''), accounts, account_weeks: ok.length, limit_usd: L, used_pct: used, unused_usd: un, at_risk_usd: risk, open: nOpen > 0, why }); }
   for (const p of plans) if (p.key !== 'codex') waste.unshift({ account: p.plan, limit_usd: p.usd_per_full_week, used_pct: 100, unused_usd: 0, why: 'hit the cap' });
 
