@@ -32,11 +32,14 @@ const DETECTED = sshHosts(), SAVED = savedHosts();      // other machines: --hos
 let HOSTS = F_HOSTS == null ? (SAVED || []) : F_HOSTS === 'all' ? DETECTED.map(x => x.alias) : F_HOSTS === 'none' ? [] : F_HOSTS.split(',').filter(Boolean);
 // Saved report: when nothing the report is built from has changed, the model is not asked again.
 const REPORT_FILE = path.join(HOME, 'report-cache.json');
-const reportKey = agent => { const D = DATA, pick = (o, ks) => Object.fromEntries(ks.map(k => [k, o == null ? null : o[k]]));
-  const stable = { week: D.week, machines: D.machines, plans: D.plans.map(p => pick(p, ['key', 'usd_per_full_week', 'priced_usd', 'stretches', 'proof'])), tools: D.tools, totals: D.totals,
-    waste: D.waste.map(x => pick(x, ['account', 'limit_usd', 'used_pct', 'unused_usd'])), git: D.git && pick(D.git, ['merged_prs', 'commits', 'repos']), months: D.months, events: D.events,
-    game: D.game && pick(D.game, ['level', 'xp', 'streak_days']) };
-  return crypto.createHash('sha256').update(JSON.stringify(stable) + '|' + agent.id + '|' + agent.model + '|' + SYSTEM).digest('hex'); };
+// "Same data" means: same day, same ranking, level, streak and events, and no headline number moved by more than 2%.
+// (An exact match would never hit while agents are working: every new request changes the totals a little.)
+const reportKey = agent => { const D = DATA, t = D.totals || {}, g = D.git || {}, nums = { output_tokens: t.output_tokens, api_value_usd: t.api_value_usd, merged_prs: g.merged_prs, commits: g.commits, usd_per_merged_pr: g.usd_per_merged_pr };
+  for (const p of D.plans) nums['plan_' + p.key] = p.usd_per_full_week;
+  for (const x of D.waste) nums['unused_' + x.account] = x.unused_usd;
+  const exact = crypto.createHash('sha256').update(JSON.stringify([D.week.to, D.machines, D.plans.map(p => p.key + p.proof), (D.events || []).map(e => e.date + e.title), D.game && [D.game.level, D.game.streak_days], agent.id, agent.model, SYSTEM])).digest('hex');
+  return { exact, nums }; };
+const sameReport = (a, b) => !!a && !!a.nums && a.exact === b.exact && Object.keys({ ...a.nums, ...b.nums }).every(k => { const x = +a.nums[k] || 0, y = +b.nums[k] || 0; return Math.abs(x - y) <= Math.max(1, 0.02 * Math.abs(x)); });
 const readReport = () => { try { return JSON.parse(fs.readFileSync(REPORT_FILE, 'utf8')); } catch { return null; } };
 const saveReport = (key, agent, spec, n) => { try { fs.mkdirSync(HOME, { recursive: true }); fs.writeFileSync(REPORT_FILE, JSON.stringify({ key, at: new Date().toISOString(), agent: agent.model, n, spec })); audit('write', tilde(REPORT_FILE) + '  (this report, reused while the data stays the same)'); } catch { /* not fatal */ } };
 const forModel = () => { const { heat, ...rest } = DATA; return JSON.stringify({ ...rest, busiest: heat.note }); };   // the hourly grid is drawn by the harness
@@ -204,7 +207,7 @@ function StepLine({ s, i, total, f }) {
 }
 const Title = ({ label, live, f, who }) => h(Box, { flexDirection: 'column' },
   h(Box, { gap: 1 }, h(Text, { bold: true, color: GOLD }, live.done ? '✓' : FR[f % 10]), h(Text, { bold: true }, label),
-    h(Text, { dimColor: true }, live.done ? (live.done.err ? 'failed: ' + live.done.err : live.done.cached ? `${who} · no new data: saved report from ${live.done.cached}` : `${who}${live.done.secs == null ? '' : ' · ' + live.done.secs + 's'}`) : `${who} · ${live.status}`)),
+    h(Text, { dimColor: true }, live.done ? (live.done.err ? 'failed: ' + live.done.err : live.done.cached ? `${who} · saved report from ${live.done.cached} (numbers moved under 2%)` : `${who}${live.done.secs == null ? '' : ' · ' + live.done.secs + 's'}`) : `${who} · ${live.status}`)),
   live.done || !live.trace ? null : h(Text, { dimColor: true, italic: true, wrap: 'truncate-end' }, '  ⎿ ' + live.trace));
 function AskBar({ onSubmit, f }) {
   const [v, setV] = useState('');
@@ -300,8 +303,8 @@ function Main({ cfg }) {
       const finish = (x, done) => { let files = []; try { files = writeFiles(x.spec); } catch (e) { audit('note', 'files not written: ' + e.message); } setSaved(files); setPast(p => [...p, { kind: 'panel', ...x, done, id: 'dash' }]); return { ...x, done, moved: true }; };
       if (!agent) setTimeout(() => { setDash(finish({ ...blank(), spec: builtin() }, { secs: null })); setTimeout(exit, 300); }, 120);
       else { const key = reportKey(agent), rc = FRESH ? null : readReport();
-        if (rc && rc.key === key && ready(rc.spec)) {        // nothing new since the saved report: show it, do not call the model
-          audit('agent', `no new data since ${rc.at}: the saved report is shown, ${agent.cli} is not called (--fresh forces a new one)`);
+        if (rc && sameReport(rc.key, key) && ready(rc.spec)) {        // nothing material changed since the saved report: show it, do not call the model
+          audit('agent', `no headline number moved more than 2% since ${rc.at}: the saved report is shown, ${agent.cli} is not called (--fresh forces a new one)`);
           setTimeout(() => { setDash(finish({ ...blank(), spec: rc.spec, n: rc.n }, { secs: null, cached: rc.at.slice(0, 16).replace('T', ' ') })); if (ASK) ask(ASK); else if (!TTY) setTimeout(exit, 300); }, 120); }   // let the step lines paint first
         else { setDash(blank()); feed({ system: SYSTEM, user: 'Here is this week\'s data as JSON. Compose the dashboard now.\n\n' + forModel(), agent }, (spec, n) => setDash(x => ({ ...x, spec, n })), st(setDash),
           done => { setDash(x => { const ok = !(done.err || !ready(x.spec)); if (ok) saveReport(key, agent, x.spec, x.n); return finish(ok ? x : { ...x, spec: builtin() }, done); }); if (ASK) ask(ASK); else if (!TTY) setTimeout(exit, 300); }); } }

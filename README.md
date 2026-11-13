@@ -34,7 +34,7 @@ Without flags, three arrow-key questions ask the same things, with the recommend
 ## Caching
 
 - **Logs:** a log file that has not changed since the last run is not read again, and a file that only grew is read from where it stopped. The cache (`~/.worthit/scan-cache.db`, on each scanned machine) keeps only the token counts, model names and timestamps the scanner uses: no prompts, no code. `WORTHIT_NO_CACHE=1` turns it off.
-- **Report:** when the data the report is built from is the same as last time, the saved report is shown and the model is not called.
+- **Report:** the saved report is shown, and the model is not called, when it is the same day, the ranking, level, streak and events are the same, and no headline number moved by more than 2%. The tables are always drawn from current data.
 
 ## How it is measured
 
