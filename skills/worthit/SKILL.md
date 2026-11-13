@@ -1,6 +1,6 @@
 ---
 name: worthit
-description: Answer questions about AI coding usage, cost and productivity with the worthit CLI — which subscription gave more, tokens and API value per day/week/month, per tool and per model, merged PRs and commits, unused allowance, open vs closed models. Use when the user asks how much they used, what a plan is worth, how this week compares, or which model or tool they lean on.
+description: Answer questions about AI coding usage, cost and productivity with the worthit CLI — which subscription gave more, tokens and API value per day/week/month, per tool and per model, merged PRs and commits, unused allowance, open vs closed models — and turn any of it into a ready-to-post card and text with `worthit share`. Use when the user asks how much they used, what a plan is worth, how this week compares, which model or tool they lean on, or wants to share or post a stat.
 ---
 
 # worthit
@@ -26,13 +26,13 @@ Parts of the last run. Dots walk into objects and arrays (`plans.0.usd_per_full_
 
 | Section | What it holds |
 |---|---|
-| `plans` | Per plan: `usd_per_full_week` (API-list dollars one full weekly limit is worth), `times_plan_price`, `proof` (measured, floor, estimate), `stretches`, `meter`, `priced_usd`, `models` |
+| `plans` | Per plan: `usd_per_full_week` (API-list dollars one full weekly limit is worth), `times_plan_price`, `proof` (measured, floor), `stretches`, `meter`, `priced_usd`, `models`, `history` (earlier 7-day blocks, oldest first, then this week), `change_vs_last_week_pct`, and when machines without a meter log were busy in the same hours: `other_machines_usd`, `usd_per_full_week_all_machines` (an upper figure) |
 | `totals` | Last 7 days against the 7 before: output tokens, API value, changes in % |
 | `tools` | Per tool, last 7 days: requests, output, cached and fresh input, dollars, where the data came from |
 | `months` | Per month and plan: API value used, times the monthly plan price, days tracked |
 | `model_mix` | `weeks`, `series` (per model: `share_pct` per week, `change_pts`), `open`, `closed` (share, tokens, dollars, dollars per million output) |
-| `git` | Merged PRs, commits, repos, cost per merged PR, per-day series |
-| `waste` | Per account week: limit, share used, dollars unused, and why (hit the cap, spent less, still open) |
+| `git` | Merged PRs, commits, repos, cost per merged PR, per-day series, `sources` (GitHub, the usagemeter store, and Gitea or GitLab when `tea` or `glab` is logged in) |
+| `waste` | One row per plan: limit, share used, dollars unused, dollars still open (`at_risk_usd`), and why. Several accounts on one plan are summed into one row (`accounts`, `account_weeks`), named like `ChatGPT Pro 200 (×4)` |
 | `events` | Provider events in the window: resets, limit changes, launches, with source links |
 | `game` | Level, XP, streak, personal bests |
 | `heat` | Output tokens per weekday and hour |
@@ -79,7 +79,9 @@ The human dashboard (`worthit` with no flags) also writes `<date>-worthit.md`, `
 
 - **API value** is what the same usage would cost at API list prices. It is not what the user paid.
 - **`usd_per_full_week`** pools every clean, finished meter stretch of the week: priced dollars divided by meter points consumed. `times_plan_price` divides it by the plan's weekly price ($200/month ≈ $46/week).
-- **Proof:** `measured` means every scanned machine on the account was read; `floor` means usage elsewhere may be missing, so the true value is at least this; `estimate` has no meter behind it.
+- **Proof:** `measured` is read from the plan's own meter with every selected machine answering; `floor` means usage elsewhere may be missing, so the true value is at least this. Say "at least" for a floor and do not compare a floor week to week.
+- **One account on several machines** draws the same meter line on each; worthit joins those lines into one stretch. Use on machines that keep no meter log cannot be tied to an account: it is left out of `usd_per_full_week` and counted only in `usd_per_full_week_all_machines`.
+- **Week over week** compares 7-day blocks counted back from now, each pooled the same way.
 - **Months:** "times plan price" is against one subscription. A user with several accounts on a plan should divide by the number of accounts.
 - **Resets** are listed in `events` and never assumed used. Usage counts in the period it happened.
 - **omp and dsh** come from the Automagik usagemeter store. omp's own reported cost is used; dsh is priced at the rates those costs imply. Their history only goes back as far as that store (about 30 days).
@@ -95,4 +97,30 @@ The human dashboard (`worthit` with no flags) also writes `<date>-worthit.md`, `
 
 ## Sharing a stat
 
-`worthit share <topic>` turns the last run into a post for X: it writes a card image, suggests the text and prints a link that opens X with the text filled in (the image must be pasted or attached by the person). Topics: `allowance` (weekly limits and whether they moved), `open`, `models`, `value`, `ranking`, `waste`, or any free text, which the person's agent writes from the data. Piped, it prints JSON: `{topic, text, image, url, warnings}`. It never posts by itself.
+`worthit share <topic>` turns the last finished run into a post for X. It does not scan and it never posts.
+
+```
+worthit share allowance     # weekly limits per plan and whether they moved
+worthit share open          # open vs closed models
+worthit share models        # the models used, most to least
+worthit share value         # the best plan: dollars per weekly limit and times its price
+worthit share ranking       # all plans side by side
+worthit share waste         # allowance paid for and not used
+worthit share "what each merged PR cost me"     # anything else: the person's agent writes it from the data
+```
+
+Piped (as you run it), it prints JSON: `{topic, written_by, text, characters, image, url, data_generated_at, warnings}`.
+
+- `text` is the suggested post. `image` is the card (`./<date>-worthit-share-<topic>.png`). `url` opens X with the text filled in.
+- X's link cannot carry an image: tell the person to attach or paste the card.
+- Free text is written by the person's own agent; if any number in it is not in the data, worthit falls back to the built-in `allowance` post and says so in `warnings`.
+- `--ai no` keeps it to the built-in topics. `--demo` uses sample data.
+- Inside the worthit screen the person can simply type it in the question bar ("share my open model stats"): the card and the post appear there and enter opens X.
+
+## Helping the person
+
+1. **A question about usage:** answer from `get`, `days` or `sql`; run `worthit --json` first only when `generated_at` is too old for the question.
+2. **"Share this", "make me a post", "what should I post":** if they did not say what, offer the six topics in one line each. Run `worthit share <topic>`, then show them the `text`, the `image` path and the `url`, and repeat any `warnings`. Offer to adjust the wording yourself; keep every number exactly as in `text`.
+3. **A weekly habit** (for example a Monday allowance post): `worthit --json` to refresh, then `worthit share allowance`.
+4. **Never** post for them, open a browser for them unless asked, or read their logs yourself: worthit is the only reader.
+5. If `worthit share` says there is no finished run, run `worthit --json` once and try again.

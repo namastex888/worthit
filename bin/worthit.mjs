@@ -108,11 +108,14 @@ const COMMON = [
 const SYSTEM = catalog.prompt({ system: 'You compose the "Your week" terminal dashboard for worthit, a tool that tells a developer what their AI coding subscriptions were really worth this week and how productive they were. You place ready-made blocks and write two pieces of text.',
   customRules: [...COMMON,
     'Use exactly this order: Verdict, Tiles, Row(LevelCard, PlanRanking), Receipts, Row(Heatmap, LimitTrend), WasteTable, Months, ModelMix, Events, Summary.',
-    'Verdict: which plan gave the most this week and by how much. If "plans" is empty, make it about the week\'s output instead.',
+    'Verdict: which plan gave the most this week and by how much. If "plans" is empty, make it about the week\'s output instead. A plan whose proof is "floor" gave AT LEAST its number: say "at least" for it, and never present a week-over-week change for a floor.',
     'Summary: three short sentences, direct and a little playful. Say whether the last 7 days were more or less productive than the 7 before, what carried them, and the one thing to do next (use allowance that is about to reset, protect the streak, reach the next level). If the data has no "git" key, do not mention PRs or cost per PR.'] });
 const ASK_SYSTEM = catalog.prompt({ system: 'You answer questions about a developer\'s AI subscription usage for worthit. You always answer visually, by placing blocks.',
   customRules: [...COMMON,
-    'Start with a Verdict that answers the question directly. Then one or two blocks that prove it: prefer a ready block that already shows it (PlanRanking, Receipts, WasteTable, LimitTrend, Heatmap, Tiles, LevelCard); otherwise a Chart or Facts with values copied from the data. A Note is optional.',
+    'Reading the data: usd_per_full_week is what one full weekly limit of a plan was worth at API list prices. proof "measured" is read from the meter; "floor" means at least that much (say "at least", and do not compare a floor week to week). usd_per_full_week_all_machines, when present, is an upper figure that also counts machines with no meter log. A waste row named like "ChatGPT Pro 200 (×4)" is several accounts on one plan, summed. model_mix.open and .closed split output tokens by open-weight and closed models.',
+    'This is one continuous conversation. EARLIER IN THIS SESSION, when present, lists the previous questions and what you answered: use it for follow-ups ("and last month?", "make it shorter", "share that") and never say you have no memory of them.',
+    'If the person wants to share, post, tweet or brag about something, or asks whether or how they can: reply with ONLY one line of the form `SHARE: <topic>` and nothing else. topic is one of allowance (weekly limits and whether they moved), open (open vs closed models), models, value (the best plan), ranking (all plans), waste (unused allowance), or the person\'s own words when none of those fits. If they did not say what to share, use allowance. worthit then makes the card image and the post text right here and offers to open X; you never say that sharing is not possible.',
+    'Start with a Verdict that answers the question directly. Then one or two blocks that prove it: prefer a ready block that already shows it (PlanRanking, Receipts, WasteTable, LimitTrend, Heatmap, Tiles, LevelCard, Months, ModelMix, Events); otherwise a Chart or Facts with values copied from the data. A Note is optional.',
     'DATA covers the last 7 days in detail. For other dates or finer history (per day, per week, per month, per model, per tool) you may look it up in the local store first: reply with ONLY one to three lines of the form `QUERY: worthit <command>` and nothing else. You then receive the results and draw the answer, putting looked-up values into a Chart or Facts block.',
     'Lookup commands: `get <section>` (a section of DATA) · `days [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--group day|week|month] [--by total|tool|model] [--tool claude|codex|google|omp|dsh] [--model <part of the id>]` · `sql "SELECT ..."` over day_provider(day, provider, api_usd, output_tokens, requests), day_model(day, model, provider, output_tokens, api_usd), day(day, prs, commits), plan_value(day, provider, plan, usd_per_full_week, times_plan_price, proof).',
     'If neither DATA nor a lookup can answer the question, say in the Verdict what is missing and show the closest block.'] });
@@ -250,11 +253,11 @@ const Title = ({ label, live, f, who }) => h(Box, { flexDirection: 'column' },
   h(Box, { gap: 1 }, h(Text, { bold: true, color: GOLD }, live.done ? '✓' : FR[f % 10]), h(Text, { bold: true }, label),
     h(Text, { dimColor: true }, live.done ? (live.done.err ? 'failed: ' + live.done.err : live.done.cached ? `${who} · saved report from ${live.done.cached} (numbers moved under 2%)` : `${who}${live.done.secs == null ? '' : ' · ' + live.done.secs + 's'}`) : `${who} · ${live.status}`)),
   live.done || !live.trace ? null : h(Text, { dimColor: true, italic: true, wrap: 'truncate-end' }, '  ⎿ ' + live.trace));
-function AskBar({ onSubmit, f }) {
+function AskBar({ onSubmit, f, openUrl, onOpen }) {
   const [v, setV] = useState('');
-  useInput((input, key) => { if (key.return) { if (v.trim()) { onSubmit(v.trim()); setV(''); } } else if (key.backspace || key.delete) setV(x => x.slice(0, -1)); else if (input && !key.ctrl && !key.meta) setV(x => x + input); });
+  useInput((input, key) => { if (key.return) { if (v.trim()) { onSubmit(v.trim()); setV(''); } else if (openUrl) onOpen(); } else if (key.backspace || key.delete) setV(x => x.slice(0, -1)); else if (input && !key.ctrl && !key.meta) setV(x => x + input); });
   return h(Box, { borderStyle: 'round', borderColor: GOLD, paddingX: 1, marginTop: 1, width: W }, h(Text, { color: GOLD, bold: true }, '› '), h(Text, {}, v), h(Text, { color: GOLD }, Math.floor(f / 5) % 2 ? '█' : ' '),
-    v ? null : h(Text, { dimColor: true }, 'Would you like to know anything else about your usage?'), h(Box, { flexGrow: 1 }), h(Text, { dimColor: true }, 'enter to ask · ctrl+c to exit'));
+    v ? null : openUrl ? h(Text, { color: GOLD }, 'press enter to open X with this post') : h(Text, { dimColor: true }, 'Would you like to know anything else about your usage?'), h(Box, { flexGrow: 1 }), h(Text, { dimColor: true }, openUrl && !v ? 'or type a question · ctrl+c to exit' : 'enter to ask · ctrl+c to exit'));
 }
 // Mouse: the questions are clickable. The terminal reports a click as a screen row; the cursor position report tells where
 // the live area ends, so a click is turned into "N lines up from the last line". Mouse reporting is on only while a question
@@ -311,6 +314,9 @@ function Setup({ onDone }) {
       onDone: sel => { HOSTS = sel; if (!DEMO) saveHosts(sel); setAns(a => [...a, 'Machines: this one' + (sel.length ? ' + ' + sel.join(', ') : ' only')]); setHostsAsked(true); } }));
 }
 const blank = () => ({ spec: null, n: 0, status: 'starting', trace: '', done: null });
+// what an answer said, in words: the blocks placed and any text in them (kept so the next question can refer back)
+const answerText = spec => { const out = []; for (const e of Object.values((spec && spec.elements) || {})) { const t = Object.values(e.props || {}).filter(v => typeof v === 'string' && v.length > 12).join(' '); out.push(t ? `${e.type}: ${t}` : e.type); }
+  return out.filter(x => !/^(Row|Column|Stack|Box)$/.test(x)).join(' | ').slice(0, 900) || '(no answer)'; };
 
 function Main({ cfg }) {
   const { exit } = useApp(); const [f, setF] = useState(0); const agent = cfg.ai ? (cfg.agent || AGENTS[0]) : null, [whoNow, setWho] = useState(null), who = whoNow || (agent ? agent.model : 'built-in, no AI');
@@ -323,11 +329,20 @@ function Main({ cfg }) {
   const petBox = () => h(Box, { flexDirection: 'column', width: PETW, flexShrink: 0 }, h(Text, { wrap: 'truncate-end' }, petLines(pet, Math.floor(f / 2)).join('\n')));
   const S = (i, patch) => setSteps(s => s.map((x, k) => k === i ? { ...x, ...patch } : x));
   const st = set => (status, trace) => set(x => x && ({ ...x, status, trace: trace ?? x.trace }));
-  const ask = q => { setCur({ ...blank(), q }); const base = 'DATA:\n' + forModel() + '\n\nQuestion: ' + q, t0 = Date.now();
-    const closeAsk = done => { setCur(x => { setPast(p => [...p, { kind: 'panel', ...x, done: { ...done, secs: ((Date.now() - t0) / 1000).toFixed(1) }, id: 'a' + p.length }]); return null; }); if (!TTY) setTimeout(exit, 200); };
+  const [xUrl, setXUrl] = useState(null);
+  const openX = () => { const u = xUrl; setXUrl(null); if (!TEST_INPUT) spawnSync(process.platform === 'darwin' ? 'open' : 'xdg-open', [u], { stdio: 'ignore' }); audit('run', 'opened X with the post text filled in (asked for with enter)');
+    setPast(p => [...p, { kind: 'panel', id: 'x' + p.length, q: 'open X', who: 'worthit', lines: [' ' + fg(C.cx, '✓') + m(' opened X with the text filled in. Paste the image (cmd+V), then press Post.')], done: { n: 1, secs: '0.0' } }]); };
+  const talk = useRef([]);
+  const ask = q => { setXUrl(null); setCur({ ...blank(), q }); const t0 = Date.now(), turn = { q, a: null };
+    const earlier = [...(dash && dash.spec ? ['[the week summary you wrote] ' + answerText(dash.spec)] : []), ...talk.current.slice(-12).map(x => `Person: ${x.q}\nYou: ${x.a}`)];
+    const base = 'DATA:\n' + forModel() + (earlier.length ? '\n\nEARLIER IN THIS SESSION (oldest first):\n' + earlier.join('\n') : '') + '\n\nQuestion: ' + q;
+    const closeAsk = done => { setCur(x => { if (x && !turn.a) { turn.a = x.said || (done.err ? '(failed: ' + done.err + ')' : answerText(x.spec)); talk.current.push(turn); } setPast(p => [...p, { kind: 'panel', ...x, done: { ...done, secs: ((Date.now() - t0) / 1000).toFixed(1) }, id: 'a' + p.length }]); return null; }); if (!TTY) setTimeout(exit, 200); };
     if (DEMO) { setCur(x => ({ ...x, spec: demoAnswer(), n: 2 })); setTimeout(() => closeAsk({ n: 2 }), 700); return; }
     // the agent may first ask for lookups in the local store (worthit get / days / sql / schema): they are run here, read-only, and logged
     const round = (user, lookups) => feed({ system: ASK_SYSTEM, user, agent }, (spec, n) => setCur(x => ({ ...x, spec, n })), st(setCur), done => {
+      const sh = !done.n && !done.err ? /^\s*`?SHARE:\s*(.+?)`?\s*$/m.exec(String(done.raw || '')) : null;
+      if (sh) { const topic = sh[1].trim().replace(/^["']|["']$/g, ''); st(setCur)('making the card', 'worthit share ' + topic); audit('run', `worthit share ${topic}   (asked for in the question bar)`);
+        return makeShare(DATA, topic, { agent, clipOk: TTY && !TEST_INPUT, say: t => st(setCur)('writing the post', t) }).then(r => { if (TTY) setXUrl(r.url); setCur(x => x && ({ ...x, lines: sharePanel(r, TTY), said: `made a share card (${r.key}) and this post: ${r.text}` })); closeAsk({ n: 1 }); }, e => closeAsk({ err: e.message })); }
       const cmds = !done.n && !done.err && lookups < 2 ? [...String(done.raw || '').matchAll(/^\s*`?QUERY:\s*worthit\s+(.+?)`?\s*$/gm)].map(x => x[1].trim()).slice(0, 3) : [];
       if (!cmds.length) return closeAsk(done);
       const res = cmds.map(c => { const av = [...c.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)].map(x => x[1] ?? x[2] ?? x[3]); st(setCur)('looking up', 'worthit ' + c); audit('run', `worthit ${c}   (lookup in the local store, asked for by ${agent.cli})`);
@@ -381,14 +396,14 @@ function Main({ cfg }) {
   const collected = past.some(p => p.kind === 'steps');
   return h(Box, { flexDirection: 'column', marginTop: 1 },
     h(Static, { items: past }, it => it.kind === 'steps' ? h(Box, { key: it.id, flexDirection: 'column' }, ...it.steps.map((s, i) => h(StepLine, { key: i, s, i, total: it.steps.length, f: 0 })))
-      : h(Box, { key: it.id, flexDirection: 'column', marginBottom: 1 }, h(Title, { label: it.label || (it.id === 'dash' ? 'YOUR WEEK' : '› ' + it.q), live: it, f: 0, who: it.who || who }), it.show === false ? null : h(View, { spec: it.show || it.spec, k: it.id }))),
+      : h(Box, { key: it.id, flexDirection: 'column', marginBottom: 1 }, h(Title, { label: it.label || (it.id === 'dash' ? 'YOUR WEEK' : '› ' + it.q), live: it, f: 0, who: it.who || who }), it.show === false ? null : it.lines ? h(Text, {}, it.lines.join('\n')) : h(View, { spec: it.show || it.spec, k: it.id }))),
     collected ? null : h(Box, { flexDirection: 'row' }, h(Box, { flexDirection: 'column', width: showPet ? cols - PETW - 1 : undefined, flexShrink: 1 }, ...steps.map((s, i) => h(StepLine, { key: i, s, i, total: steps.length, f, wd: showPet ? Math.min(W, cols - PETW - 1) : W }))), showPet && !fail ? petBox() : null),
     fail ? h(Text, { color: 'red' }, '✖ ' + fail) : null,
     dash && !dash.moved ? h(Box, { flexDirection: 'column' }, collected && showPet && !hw ? h(Box, { flexDirection: 'row' }, h(Box, { flexDirection: 'column', width: cols - PETW - 1 }, h(Title, { label: dash.label || 'YOUR WEEK', live: dash, f, who })), petBox()) : h(Title, { label: dash.label || 'YOUR WEEK', live: dash, f, who }), dash.textOnly ? null : h(View, { spec: dash.spec, k: dash.n })) : null,
     cur ? h(Box, { flexDirection: 'column' }, h(Title, { label: '› ' + cur.q, live: cur, f, who }), h(View, { spec: cur.spec, k: cur.n })) : null,
     saved && saved.length && !cur ? h(Text, {}, fg(C.cx, '✓') + m(' Saved to ./  ') + saved.map(x => w(x)).join(d('  ·  '))) : null,
     hw && hw.seconds && dash && dash.moved && !cur ? h(Text, { wrap: 'truncate-end' }, fg(C.pink, '◆') + m(' This run cost your machine  ') + d(petSummary(hw))) : null,
-    dash && dash.moved && !cur && TTY && agent ? h(AskBar, { onSubmit: ask, f }) : null,
+    dash && dash.moved && !cur && TTY && agent ? h(AskBar, { onSubmit: ask, f, openUrl: xUrl, onOpen: openX }) : null,
     dash && dash.moved && !agent ? h(Text, { dimColor: true }, '  AI is off: run again and pick an agent to ask questions about your usage') : null);
 }
 function SkillQ({ onDone }) {      // "Install skill?": runs the skills CLI, which installs the worthit skill into the coding agents it finds
@@ -446,24 +461,17 @@ const shareLines = rows => { const out = [];
     for (let i = 0; i < hh; i++) out.push(cols.map(c => pad(c[i] || '', Math.max(...c.map(len)))).join(' ')); }
   return out; };
 const numbersIn = s => (strip(String(s)).match(/\d[\d,]*(?:\.\d+)?/g) || []).map(x => String(+x.replace(/,/g, '')));
-async function share() {
-  let D; try { D = JSON.parse(fs.readFileSync(path.join(HOME, 'last.json'), 'utf8')); } catch { console.error('worthit share: no finished run yet. Run `npx worthit` first, then share.'); process.exit(1); }
-  DATA = D; const tty = !!process.stdout.isTTY && !!process.stdin.isTTY && !JSON_MODE, warnings = [];
+// one share = the blocks for the card, the post text, the card image and the X link. Used by `worthit share` and by the question bar.
+async function makeShare(D, ask, { agent = null, clipOk = false, files = true, say = () => {} } = {}) {
+  const warnings = [], keys = Object.keys(SHARE_TOPICS);
   const ageH = Math.round((Date.now() - Date.parse(D.generated_at)) / 36e5); if (ageH >= 24) warnings.push(`the numbers are from a run ${ageH} hours ago: run worthit again for this week's figures`);
   const floors = D.plans.filter(p => p.proof !== 'measured').map(p => p.plan); if (floors.length) warnings.push(`${floors.join(' and ')}: a floor ("at least this much"), not a full measurement; the card says so`);
-  const rl = q => new Promise(r => { const i = readline.createInterface({ input: process.stdin, output: process.stdout }); i.question(q, a => { i.close(); r(a.trim()); }); });
-  let ask = (argv[0] === 'share' ? argv.slice(1) : argv.slice(argv.indexOf('--share') + 1)).filter((a, i, all) => !a.startsWith('--') && !(all[i - 1] === '--ai')).join(' ').trim();
-  const keys = Object.keys(SHARE_TOPICS);
-  if (!ask && tty) { console.log('\n ' + bold(w('What do you want to share?')) + '\n'); keys.forEach((k, i) => console.log(`  ${w(String(i + 1))}  ${pad(fg(C.cl, k), 11)} ${d(SHARE_TOPICS[k].hint)}`)); console.log(d('\n  or type anything: "brag about my streak", "my busiest hours" …\n'));
-    const a = await rl(' › '); ask = keys[+a - 1] || a; }
-  if (!ask) ask = 'allowance';
   const lc = ask.toLowerCase(); let key = keys.find(k => k === lc || SHARE_TOPICS[k].alias.includes(lc)), rows, text, by = 'built-in';
   if (key) { rows = SHARE_TOPICS[key].rows; text = SHARE_TOPICS[key].text(D); }
   else {      // anything else: the agent chooses the blocks and writes the post; its numbers are checked against the data
-    const st = settings().last || {}, agent = F_AI === 'no' ? null : AGENTS.find(a => a.id === (F_AI || st.agent)) || AGENTS[0];
     const fallback = why => { warnings.push(why + ': using the weekly allowance post instead'); key = 'allowance'; rows = SHARE_TOPICS.allowance.rows; text = SHARE_TOPICS.allowance.text(D); };
     if (!agent) fallback(`"${ask}" needs an AI agent (none found, or --ai no)`);
-    else { if (tty) console.log(d(`\n  asking ${agent.label} for a post about: ${ask}`));
+    else { say(`asking ${agent.label} for a post about: ${ask}`);
       const system = 'You write ONE post for X about a developer\'s own AI coding statistics. Voice: lowercase, casual, first person, no hashtags, no emojis, at most 250 characters, and it ends with "npx worthit". '
         + 'Use only numbers that appear in the data; never invent or round differently. Reply with one line of JSON and nothing else: {"blocks":["..."],"text":"..."} where blocks are 1 to 3 names from: ' + SHARE_BLOCKS.join(', ') + ' (the card image shows them).';
       const done = await new Promise(r => feed({ system, user: `What the person wants to share: ${ask}\n\nTheir data (JSON):\n${forModel()}`, agent }, () => {}, () => {}, r));
@@ -477,20 +485,36 @@ async function share() {
   const card = [...LOGO, ' ' + m('what your AI coding subscription is really worth') + d(`  ·  7 days to ${D.week.to}`), '', ...shareLines(rows), '', ' ' + d(proof), ' ' + m('measure yours:  ') + bold(w('npx worthit')), ''];
   const url = 'https://x.com/intent/post?text=' + encodeURIComponent(text); let image = null, clip = false;
   const chrome = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(c => fs.existsSync(c));
-  if (chrome && !NO_FILES) { const hp = path.join(os.tmpdir(), `worthit-share-${process.pid}.html`), slug = key === 'custom' ? (ask.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 28) || 'custom') : key, f = path.resolve(`${STAMP}-worthit-share-${slug}.png`); fs.writeFileSync(hp, ansiHtml(card));
-    spawnSync(chrome, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=2', `--window-size=${Math.round(W * 9.05 + 64)},${Math.round(card.length * 18.6 + 60)}`, '--screenshot=' + f, 'file://' + hp], { stdio: 'ignore', timeout: 60000 });
+  if (chrome && files) { say('drawing the card image');
+    const hp = path.join(os.tmpdir(), `worthit-share-${process.pid}.html`), slug = key === 'custom' ? (ask.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 28) || 'custom') : key, f = path.resolve(`${STAMP}-worthit-share-${slug}.png`); fs.writeFileSync(hp, ansiHtml(card));
+    await new Promise(r => { const c = spawn(chrome, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=2', `--window-size=${Math.round(W * 9.05 + 64)},${Math.round(card.length * 18.6 + 60)}`, '--screenshot=' + f, 'file://' + hp], { stdio: 'ignore' });
+      const t = setTimeout(() => c.kill(), 60000), end = () => { clearTimeout(t); r(); }; c.on('close', end); c.on('error', end); });   // not blocking: the screen keeps drawing
     fs.rmSync(hp, { force: true }); if (fs.existsSync(f)) image = f; }
-  if (image && tty) {     // best effort: put the image on the clipboard so it can be pasted into the post
+  if (image && clipOk) {     // best effort: put the image on the clipboard so it can be pasted into the post
     if (process.platform === 'darwin') clip = spawnSync('osascript', ['-e', `set the clipboard to (read (POSIX file "${image}") as «class PNGf»)`], { stdio: 'ignore' }).status === 0;
     else if (has('wl-copy')) clip = spawnSync('sh', ['-c', `wl-copy --type image/png < "${image}"`], { stdio: 'ignore' }).status === 0;
     else if (has('xclip')) clip = spawnSync('xclip', ['-selection', 'clipboard', '-t', 'image/png', '-i', image], { stdio: 'ignore' }).status === 0; }
-  if (!tty) { console.log(JSON.stringify({ topic: key, written_by: by, text, characters: text.length, image, url, data_generated_at: D.generated_at, warnings }, null, 1)); return; }
-  console.log('\n' + card.join('\n')); for (const x of warnings) console.log(fg(C.gold, ' ! ') + m(x));
-  console.log('\n ' + bold(w('Suggested post')) + d(`  ·  ${text.length} characters  ·  ${by}`) + '\n'); for (const l of text.split('\n')) console.log('   ' + w(l));
-  console.log('\n ' + d('image  ') + (image ? m(image) + (clip ? fg(C.cx, '  ✓ copied: paste it into the post') : d('  (attach it to the post)')) : d('not written (Chrome not found)')));
-  console.log(' ' + d('link   ') + m(url) + '\n');
-  const go = flag('--open') ? 'y' : await rl(' Open X with this text now? [y/N] ');
-  if (/^y/i.test(go)) { spawnSync(process.platform === 'darwin' ? 'open' : 'xdg-open', [url], { stdio: 'ignore' }); console.log(d(' opened. ' + (clip ? 'Paste the image (cmd+V), then post.' : 'Attach the image, then post.'))); }
+  return { key, by, text, rows, card, url, image, clip, warnings };
+}
+// what a share looks like on screen, below the card or the blocks
+const shareText = r => [...r.warnings.map(x => fg(C.gold, ' ! ') + m(x)), '', ' ' + bold(w('Suggested post')) + d(`  ·  ${r.text.length} characters  ·  ${r.by}`), '', ...r.text.split('\n').map(l => '   ' + w(l)), '',
+  ' ' + d('image  ') + (r.image ? m(r.image) + (r.clip ? fg(C.cx, '  ✓ copied: paste it into the post') : d('  (attach it to the post)')) : d('not written (Chrome not found)'))];
+const sharePanel = (r, tty) => [...shareLines(r.rows), ...shareText(r), ...(tty ? [] : [' ' + d('link   ') + m(r.url)]), '',
+  ' ' + d('other cards: ask to share ') + m(Object.keys(SHARE_TOPICS).filter(k => k !== r.key).join(' · ')) + d(', or say what you want to brag about')];
+async function share() {
+  let D; try { D = DEMO ? demoData() : JSON.parse(fs.readFileSync(path.join(HOME, 'last.json'), 'utf8')); } catch { console.error('worthit share: no finished run yet. Run `npx worthit` first, then share.'); process.exit(1); }
+  DATA = D; const tty = !!process.stdout.isTTY && !!process.stdin.isTTY && !JSON_MODE, keys = Object.keys(SHARE_TOPICS);
+  const rl = q => new Promise(r => { const i = readline.createInterface({ input: process.stdin, output: process.stdout }); i.question(q, a => { i.close(); r(a.trim()); }); });
+  let ask = (argv[0] === 'share' ? argv.slice(1) : argv.slice(argv.indexOf('--share') + 1)).filter((a, i, all) => !a.startsWith('--') && !(all[i - 1] === '--ai')).join(' ').trim();
+  if (!ask && tty) { console.log('\n ' + bold(w('What do you want to share?')) + '\n'); keys.forEach((k, i) => console.log(`  ${w(String(i + 1))}  ${pad(fg(C.cl, k), 11)} ${d(SHARE_TOPICS[k].hint)}`)); console.log(d('\n  or type anything: "brag about my streak", "my busiest hours" …\n'));
+    const a = await rl(' › '); ask = keys[+a - 1] || a; }
+  if (!ask) ask = 'allowance';
+  const st = settings().last || {}, agent = F_AI === 'no' ? null : AGENTS.find(a => a.id === (F_AI || st.agent)) || AGENTS[0];
+  const r = await makeShare(D, ask, { agent, clipOk: tty, files: !flag('--no-files'), say: t => { if (tty) console.log(d('\n  ' + t)); } });
+  if (!tty) { console.log(JSON.stringify({ topic: r.key, written_by: r.by, text: r.text, characters: r.text.length, image: r.image, url: r.url, data_generated_at: D.generated_at, warnings: r.warnings }, null, 1)); return; }
+  console.log('\n' + r.card.join('\n')); console.log(shareText(r).join('\n')); console.log(' ' + d('link   ') + m(r.url) + '\n');
+  const go = flag('--open') ? 'y' : await rl(' Open X with this text now? [Y/n] ');
+  if (!/^n/i.test(go)) { spawnSync(process.platform === 'darwin' ? 'open' : 'xdg-open', [r.url], { stdio: 'ignore' }); console.log(d(' opened. ' + (r.clip ? 'Paste the image (cmd+V), then post.' : 'Attach the image, then post.'))); }
 }
 if (SHARE) { await share(); process.exit(0); }
 console.log('\n' + LOGO.join('\n') + '\n ' + m('what your AI coding subscription is really worth') + d(`  ·  v${VERSION}  ·  ` + (DEMO ? 'demo · sample data' : 'reads your local logs')));
