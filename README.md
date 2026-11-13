@@ -14,7 +14,7 @@ Works with Claude Code, Codex and Antigravity. omp and dsh usage is included whe
 - **Your week**: output tokens, API value used, merged PRs, commits, cost per merged PR, each against the 7 days before.
 - **Subscription waste**: allowance you left unused, per account. A week that closed under the limit says "you spent less"; the provider is not blamed for it.
 - **Level, XP, streak**: a small daily history in `~/.worthit/history.json` (one row per day, no prompts, no code).
-- **Model mix**: a line chart of each model's share of output tokens week by week, and open-weight against closed models (share, tokens, API value, dollars per million output).
+- **Model mix**: one row of bars per model showing its share of output tokens week by week, and open-weight against closed models (share, tokens, API value, dollars per million output).
 - Three files in the current folder: `<date>-worthit.md`, `<date>-worthit.png`, `<date>-worthit-audit.log`.
 
 ## Options
