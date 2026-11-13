@@ -3,6 +3,7 @@
 //   npx worthit                 three questions, live scan, dashboard, then a question bar (ctrl+c exits)
 //   npx worthit --json          no UI: prints the week's data as JSON (for agents and scripts)
 //   worthit get [section] · worthit days [--since D --until D --group day|week|month --by total|tool|model] · worthit sql "SELECT …" · worthit schema · worthit --skill
+//   worthit --demo (the whole run on sample data) · worthit install-skill (adds the agent skill to your coding agents)
 //   --git yes|no   --ai claude|codex|omp|dsh|no   --days 21   --hosts all|none|a,b (saved ssh machines to include)   --ask "question"   --no-files
 // Writes ./<date>-worthit.md, ./<date>-worthit.png (when Chrome is installed) and ./<date>-worthit-audit.log.
 process.removeAllListeners('warning'); process.on('warning', () => {});
@@ -20,6 +21,7 @@ import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'
 import { blocks, C, W, bar, fg, bold, d, m, w, pad, lpad, len, strip, grad, fmtTok, usd } from '../src/draw.mjs';
 import { scan, analyse, git, buildData, audit, AUDIT, has, tilde, ROOT, HOME, sshHosts, savedHosts, saveHosts } from '../src/collect.mjs';
 import { query, run as runQuery, QUERY_COMMANDS } from '../src/query.mjs';
+import { demoHosts, demoScan, demoGit, demoPricing, demoData, demoSpec, demoAnswer } from '../src/demo.mjs';
 
 const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
 const h = React.createElement, argv = process.argv.slice(2);
@@ -27,13 +29,18 @@ const flag = k => argv.includes(k), arg = (k, dflt) => { const i = argv.indexOf(
 if (flag('--version') || flag('-v')) { console.log(VERSION); process.exit(0); }
 if (await query(argv)) process.exit(0);        // get / days / sql / schema / --skill: answered from the local store, no scan
 if (flag('--help') || flag('-h')) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 8).map(l => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
-const JSON_MODE = flag('--json'), ASK = arg('--ask'), F_GIT = arg('--git'), F_AI = arg('--ai'), DAYS = +arg('--days', 21), F_HOSTS = arg('--hosts'), NO_FILES = flag('--no-files'), FRESH = flag('--fresh');
+const JSON_MODE = flag('--json'), ASK = arg('--ask'), F_GIT = arg('--git'), F_AI = arg('--ai'), DAYS = +arg('--days', 21), F_HOSTS = arg('--hosts'), DEMO = flag('--demo'), NO_FILES = flag('--no-files') || DEMO, FRESH = flag('--fresh');
+// the agent skill (skills/worthit/SKILL.md in this package and in the repo): installed into the person's coding agents with the skills CLI
+const SKILL_CMD = ['npx', '-y', 'skills', 'add', 'namastex888/worthit', '-s', 'worthit', '-g', '-y'], SETTINGS_FILE = path.join(HOME, 'settings.json');
+const settings = () => { try { return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')); } catch { return {}; } };
+const saveSettings = patch => { try { fs.mkdirSync(HOME, { recursive: true }); fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ ...settings(), ...patch })); } catch { /* not fatal */ } };
+if (argv[0] === 'install-skill') { const r = spawnSync(SKILL_CMD[0], SKILL_CMD.slice(1), { stdio: 'inherit' }); if (r.status === 0) saveSettings({ skill: 'installed', skill_at: new Date().toISOString() }); process.exit(r.status ?? 1); }
 const TTY = !!process.stdin.isTTY && !JSON_MODE;
 const AGENTS = [{ id: 'claude', cli: 'claude', label: 'Claude Haiku 5.5', model: 'claude-haiku-5-5' }, { id: 'codex', cli: 'codex', label: 'GPT-6 Luna', model: 'gpt-6-luna' },
   { id: 'omp', cli: 'omp', label: 'omp', model: 'omp · your default model', via: 'omp -p, your default model' }, { id: 'dsh', cli: 'dsh', label: 'dsh', model: 'dsh headless', via: 'dsh headless, your DeepSeek profile' }].filter(a => has(a.cli));
 const STAMP = (() => { const t = new Date(); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); })();
 let DATA = null;
-const DETECTED = sshHosts(), SAVED = savedHosts();      // other machines: --hosts all | none | a,b; without the flag, the remembered choice (or the question)
+const DETECTED = DEMO ? demoHosts : sshHosts(), SAVED = DEMO ? ['build-box'] : savedHosts();      // other machines: --hosts all | none | a,b; without the flag, the remembered choice (or the question)
 let HOSTS = F_HOSTS == null ? (SAVED || []) : F_HOSTS === 'all' ? DETECTED.map(x => x.alias) : F_HOSTS === 'none' ? [] : F_HOSTS.split(',').filter(Boolean);
 // Saved report: when nothing the report is built from has changed, the model is not asked again.
 const REPORT_FILE = path.join(HOME, 'report-cache.json');
@@ -51,6 +58,7 @@ const forModel = () => { const { heat, ...rest } = DATA; return JSON.stringify({
 
 // ---------------------------------------------------------------- headless: --json
 if (JSON_MODE) {
+  if (DEMO) { console.log(JSON.stringify({ worthit: VERSION, ...demoData() }, null, 1)); process.exit(0); }
   const cfg = { days: DAYS, hosts: HOSTS, git: F_GIT !== 'no' };
   const tick = (label, p) => { if (process.stderr.isTTY) process.stderr.write(`\r\x1b[K${label} ${p.pct == null ? '' : Math.round(p.pct * 100) + '%'} ${String(p.detail || '').slice(0, 90)}`); };
   try {
@@ -292,7 +300,7 @@ function Setup({ onDone }) {
   return h(Box, { flexDirection: 'column' }, ...ans.map(a => h(Box, { key: a, gap: 1 }, h(Text, { color: 'green' }, '✓'), h(Text, {}, a))),
     AGENTS.length === 0 && step === 0 && hostsAsked ? h(Text, { dimColor: true }, '  no claude or codex CLI found: the dashboard will be built without AI') : null,
     hostsAsked ? qs[step] : h(MultiChoice, { q: 'Include your other machines?', options: DETECTED, initial: SAVED || [],
-      onDone: sel => { HOSTS = sel; saveHosts(sel); setAns(a => [...a, 'Machines: this one' + (sel.length ? ' + ' + sel.join(', ') : ' only')]); setHostsAsked(true); } }));
+      onDone: sel => { HOSTS = sel; if (!DEMO) saveHosts(sel); setAns(a => [...a, 'Machines: this one' + (sel.length ? ' + ' + sel.join(', ') : ' only')]); setHostsAsked(true); } }));
 }
 const blank = () => ({ spec: null, n: 0, status: 'starting', trace: '', done: null });
 
@@ -304,6 +312,7 @@ function Main({ cfg }) {
   const st = set => (status, trace) => set(x => x && ({ ...x, status, trace: trace ?? x.trace }));
   const ask = q => { setCur({ ...blank(), q }); const base = 'DATA:\n' + forModel() + '\n\nQuestion: ' + q, t0 = Date.now();
     const closeAsk = done => { setCur(x => { setPast(p => [...p, { kind: 'panel', ...x, done: { ...done, secs: ((Date.now() - t0) / 1000).toFixed(1) }, id: 'a' + p.length }]); return null; }); if (!TTY) setTimeout(exit, 200); };
+    if (DEMO) { setCur(x => ({ ...x, spec: demoAnswer(), n: 2 })); setTimeout(() => closeAsk({ n: 2 }), 700); return; }
     // the agent may first ask for lookups in the local store (worthit get / days / sql / schema): they are run here, read-only, and logged
     const round = (user, lookups) => feed({ system: ASK_SYSTEM, user, agent }, (spec, n) => setCur(x => ({ ...x, spec, n })), st(setCur), done => {
       const cmds = !done.n && !done.err && lookups < 2 ? [...String(done.raw || '').matchAll(/^\s*`?QUERY:\s*worthit\s+(.+?)`?\s*$/gm)].map(x => x[1].trim()).slice(0, 3) : [];
@@ -317,14 +326,14 @@ function Main({ cfg }) {
     const live = i => p => { const now = Date.now(); if (now - last.current < 80 && p.pct !== 1) return; last.current = now; S(i, { pct: p.pct, detail: p.detail }); };
     const fin = (i, t0, lines) => S(i, { state: 'done', secs: ((Date.now() - t0) / 1000).toFixed(0), lines });
     (async () => { try {
-      const gT = Date.now(); let gSecs = '0'; const gP = cfg.git ? git(cfg, live(2)).then(x => { gSecs = ((Date.now() - gT) / 1000).toFixed(0); return x; }) : null; if (gP) S(2, { state: 'run', t0: gT });   // git runs while the logs are scanned
-      let t0 = Date.now(); S(0, { state: 'run', t0 }); const info = await scan({ days: DAYS, hosts: HOSTS }, live(0));
+      const gT = Date.now(); let gSecs = '0'; const gP = cfg.git ? (DEMO ? demoGit(live(2)) : git(cfg, live(2))).then(x => { gSecs = ((Date.now() - gT) / 1000).toFixed(0); return x; }) : null; if (gP) S(2, { state: 'run', t0: gT });   // git runs while the logs are scanned
+      let t0 = Date.now(); S(0, { state: 'run', t0 }); const info = DEMO ? await demoScan(HOSTS, live(0)) : await scan({ days: DAYS, hosts: HOSTS }, live(0));
       const scanned = `${Object.values(info.counts).reduce((a, b) => a + b, 0).toLocaleString('en-US')} files on this machine` + (info.cached ? ` (${info.cached.toLocaleString('en-US')} unchanged, from cache)` : '') + (info.hosts.length ? ` · ${info.hosts.filter(x => x.ok).length} other machine${info.hosts.filter(x => x.ok).length === 1 ? '' : 's'} read in parallel` : '') + ` · last ${DAYS} days`;
       const hl = info.hosts.map(x => x.ok ? fg(C.cx, '✓ ') + w(x.alias) + d(' ' + x.files.toLocaleString('en-US') + ' files' + (x.cached ? ', ' + x.cached.toLocaleString('en-US') + ' cached' : '')) : x.same_as ? d('= ' + x.alias + ' same as ' + x.same_as) : fg(C.bad || C.go, '✗ ') + m(x.alias) + d(' no answer')), hrows = []; for (let k = 0; k < hl.length; k += 4) hrows.push('  ' + hl.slice(k, k + 4).join(d('  ·  ')));
       const scanSecs = ((Date.now() - t0) / 1000).toFixed(0); fin(0, t0, [m(scanned), ...hrows]);
-      t0 = Date.now(); S(1, { state: 'run', t0, pct: null, detail: 'each request = its tokens × that model\'s API list price' }); const report = await analyse(info.runDir); const t1 = t0;
+      t0 = Date.now(); S(1, { state: 'run', t0, pct: null, detail: 'each request = its tokens × that model\'s API list price' }); const report = DEMO ? await demoPricing() : await analyse(info.runDir); const t1 = t0;
       const g = gP ? await gP : null;
-      DATA = buildData(report, g, { days: DAYS, hosts: HOSTS }, info);
+      DATA = DEMO ? demoData() : buildData(report, g, { days: DAYS, hosts: HOSTS }, info);
       const hd = d(pad('  Tool', 17) + lpad('Sessions', 9) + lpad('Requests', 10) + lpad('Output', 9) + lpad('Cached in', 11) + lpad('Fresh in', 10) + lpad('API value', 11));
       const col = { claude: C.cl, codex: C.cx, antigravity: C.go, omp: C.pink, dsh: C.gold }, T = DATA.tools, tot = k => T.reduce((s, x) => s + x[k], 0);
       fin(0, 0, [m(scanned), hd, ...T.map(x => x.found ? fg(C.cx, '✓') + ' ' + pad(fg(col[x.key], x.tool), 15) + lpad(x.sessions ? w(x.sessions.toLocaleString('en-US')) : d('·'), 9) + lpad(w(x.requests.toLocaleString('en-US')), 10) + lpad(w(fmtTok(x.output)), 9) + lpad(w(fmtTok(x.cached)), 11) + lpad(w(fmtTok(x.fresh)), 10) + lpad(w(usd(x.usd)), 11) : d('– ' + pad(x.tool, 15) + 'no logs found')),
@@ -334,7 +343,9 @@ function Main({ cfg }) {
       if (cfg.git) { fin(2, gT, [fg(C.cx, '✓') + ' ' + w(DATA.git.merged_prs) + m(' merged PRs · ') + w(DATA.git.commits.toLocaleString('en-US')) + m(' commits · ') + w(DATA.git.repos) + m(' repos') + d('  in the last 7 days'), d(`  sources, 14 days: GitHub ${g.src.github} PRs · usagemeter ${g.src.meter} PRs` + (g.meter ? ` (usagemeter ${g.meter.version}${g.meter.downloaded ? ', downloaded' : ''})` : ''))]); S(2, { secs: gSecs }); }
       setSteps(s => { setPast(p => [{ kind: 'steps', id: 'steps', steps: s }, ...p]); return s; });
       const finish = (x, done) => { let files = []; try { files = writeFiles(x.spec); } catch (e) { audit('note', 'files not written: ' + e.message); } setSaved(files); setPast(p => [...p, { kind: 'panel', ...x, done, id: 'dash' }]); return { ...x, done, moved: true }; };
-      if (!agent) setTimeout(() => { setDash(finish({ ...blank(), spec: builtin() }, { secs: null })); setTimeout(exit, 300); }, 120);
+      if (DEMO) { setDash(blank()); st(setDash)('drawing', 'placing Verdict'); setTimeout(() => st(setDash)('drawing', 'placing Summary'), 900);
+        setTimeout(() => { setDash(finish({ ...blank(), spec: demoSpec(builtin(), DATA), n: 15 }, { secs: '6.2' })); if (!TTY) setTimeout(exit, 300); }, 1900); }
+      else if (!agent) setTimeout(() => { setDash(finish({ ...blank(), spec: builtin() }, { secs: null })); setTimeout(exit, 300); }, 120);
       else { const key = reportKey(agent), rc = FRESH ? null : readReport();
         if (rc && sameReport(rc.key, key) && ready(rc.spec)) {        // nothing material changed since the saved report: show it, do not call the model
           audit('agent', `no headline number moved more than 2% since ${rc.at}: the saved report is shown, ${agent.cli} is not called (--fresh forces a new one)`);
@@ -355,12 +366,28 @@ function Main({ cfg }) {
     dash && dash.moved && !cur && TTY && agent ? h(AskBar, { onSubmit: ask, f }) : null,
     dash && dash.moved && !agent ? h(Text, { dimColor: true }, '  AI is off: run again and pick an agent to ask questions about your usage') : null);
 }
+function SkillQ({ onDone }) {      // "Install skill?": runs the skills CLI, which installs the worthit skill into the coding agents it finds
+  const [state, setState] = useState('ask'), [msg, setMsg] = useState('');
+  const end = (v, line) => { if (v && !DEMO) saveSettings({ skill: v, skill_at: new Date().toISOString() }); setMsg(line); setState('done'); setTimeout(onDone, 900); };
+  const pick = o => { if (!o.v) return end('declined', 'Skill not installed. Any time: npx worthit install-skill');
+    if (DEMO) return end('installed', 'worthit skill installed for your coding agents (demo: nothing was run)');
+    setState('run'); audit('run', SKILL_CMD.join(' ') + '   (installs the worthit skill into your coding agents)'); const p = spawn(SKILL_CMD[0], SKILL_CMD.slice(1), { stdio: 'ignore' });
+    p.on('error', () => end(null, 'Could not run npx. Later: npx worthit install-skill'));
+    p.on('close', code => code ? end(null, 'The skills CLI did not finish. Later: npx worthit install-skill') : end('installed', 'worthit skill installed for your coding agents')); };
+  if (state === 'run') return h(Text, {}, fg(GOLD, '⠿') + ' ' + w('Installing the worthit skill') + d('  ' + SKILL_CMD.join(' ')));
+  if (state === 'done') return h(Text, {}, fg(C.cx, '✓') + ' ' + m(msg));
+  return h(Choice, { q: 'Install the worthit skill for your coding agents?', onPick: pick,
+    options: [{ label: 'Yes', key: 'y', v: true, hint: 'recommended · they can then answer usage questions with worthit' }, { label: 'No', key: 'n', v: false, hint: 'later: npx worthit install-skill' }] });
+}
 function App() {
   const preset = () => { const ai = F_AI ? F_AI !== 'no' : AGENTS.length > 0; return { git: F_GIT ? F_GIT !== 'no' : true, ai: ai && AGENTS.length > 0, agent: AGENTS.find(a => a.id === F_AI) || AGENTS[0] }; };
   const [cfg, setCfg] = useState((!TTY && !TEST_INPUT) || (F_GIT && F_AI) ? preset() : null);
-  return cfg ? h(Main, { cfg }) : h(Setup, { onDone: c => setCfg({ agent: AGENTS[0], ...c }) });
+  // asked once: the answer is remembered in ~/.worthit/settings.json
+  const [skillAsked, setSkillAsked] = useState(!(TTY || TEST_INPUT) || !!(F_GIT && F_AI) || (!DEMO && (!!settings().skill || !has('npx'))));
+  if (!cfg) return h(Setup, { onDone: c => setCfg({ agent: AGENTS[0], ...c }) });
+  return skillAsked ? h(Main, { cfg }) : h(SkillQ, { onDone: () => setSkillAsked(true) });
 }
-console.log('\n' + LOGO.join('\n') + '\n ' + m('what your AI coding subscription is really worth') + d(`  ·  v${VERSION}  ·  reads your local logs`));
+console.log('\n' + LOGO.join('\n') + '\n ' + m('what your AI coding subscription is really worth') + d(`  ·  v${VERSION}  ·  ` + (DEMO ? 'demo · sample data' : 'reads your local logs')));
 const fake = () => { const s = new PassThrough(); s.isTTY = true; s.setRawMode = () => s; s.ref = () => s; s.unref = () => s; return s; };   // no keyboard (pipes, tests): a stand-in input
 const stdin = process.stdin.isTTY ? null : fake();
 render(h(App), stdin ? { stdin } : {});
