@@ -3,12 +3,14 @@
 //   npx worthit                 three questions, live scan, dashboard, then a question bar (ctrl+c exits)
 //   npx worthit --json          no UI: prints the week's data as JSON (for agents and scripts)
 //   worthit get [section] · worthit days [--since D --until D --group day|week|month --by total|tool|model] · worthit sql "SELECT …" · worthit schema · worthit --skill
+//   worthit share [allowance|open|models|value|ranking|waste|"anything"]   an X-ready post and card image from your last run
 //   worthit --demo (the whole run on sample data) · worthit install-skill (adds the agent skill to your coding agents)
 //   --git yes|no   --ai claude|codex|omp|dsh|no   --days 21   --hosts all|none|a,b (saved ssh machines to include)   --ask "question"   --no-files
 // Writes ./<date>-worthit.md, ./<date>-worthit.png (when Chrome is installed) and ./<date>-worthit-audit.log.
 process.removeAllListeners('warning'); process.on('warning', () => {});
 import '../src/quiet.mjs';
 import React, { useState, useEffect, useRef } from 'react';
+import readline from 'node:readline';
 import crypto from 'node:crypto';
 import { render, Box, Text, Static, useApp, useInput, useStdin } from 'ink';
 import { PassThrough } from 'node:stream';
@@ -28,12 +30,12 @@ const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf
 const h = React.createElement, argv = process.argv.slice(2);
 const flag = k => argv.includes(k), arg = (k, dflt) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : dflt; };
 if (flag('--version') || flag('-v')) { console.log(VERSION); process.exit(0); }
-if (argv[0] && !argv[0].startsWith('-') && !['get', 'days', 'sql', 'schema', 'install-skill'].includes(argv[0])) { console.error(`worthit: unknown command "${argv[0]}". Try: worthit --help`); process.exit(2); }
+if (argv[0] && !argv[0].startsWith('-') && !['get', 'days', 'sql', 'schema', 'install-skill', 'share'].includes(argv[0])) { console.error(`worthit: unknown command "${argv[0]}". Try: worthit --help`); process.exit(2); }
 if (await query(argv)) process.exit(0);        // get / days / sql / schema / --skill: answered from the local store, no scan
 // from here on a scan would start: never from inside another worthit run (lookups above stay allowed)
 if (process.env.WORTHIT_RUNNING) { console.error('worthit: started from inside another worthit run; stopping.'); process.exit(2); }
 process.env.WORTHIT_RUNNING = '1';        // inherited by every program this run starts
-if (flag('--help') || flag('-h')) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 8).map(l => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
+if (flag('--help') || flag('-h')) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 9).map(l => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
 const JSON_MODE = flag('--json'), ASK = arg('--ask'), F_GIT = arg('--git'), F_AI = arg('--ai'), DAYS = +arg('--days', 21), F_HOSTS = arg('--hosts'), DEMO = flag('--demo'), NO_FILES = flag('--no-files') || DEMO, FRESH = flag('--fresh');
 // the agent skill (skills/worthit/SKILL.md in this package and in the repo): installed into the person's coding agents with the skills CLI
 const SKILL_CMD = ['npx', '-y', 'skills', 'add', 'namastex888/worthit', '-s', 'worthit', '-g', '-y'], SETTINGS_FILE = path.join(HOME, 'settings.json');
@@ -62,7 +64,8 @@ const saveReport = (key, agent, spec, n) => { try { fs.mkdirSync(HOME, { recursi
 const forModel = () => { const { heat, ...rest } = DATA; return JSON.stringify({ ...rest, busiest: heat.note }); };   // the hourly grid is drawn by the harness
 
 // ---------------------------------------------------------------- headless: --json
-if (JSON_MODE) {
+const SHARE = argv[0] === 'share' || flag('--share');
+if (JSON_MODE && !SHARE) {
   if (DEMO) { console.log(JSON.stringify({ worthit: VERSION, ...demoData() }, null, 1)); process.exit(0); }
   const cfg = { days: DAYS, hosts: HOSTS, git: F_GIT !== 'no' };
   const tick = (label, p) => { if (process.stderr.isTTY) process.stderr.write(`\r\x1b[K${label} ${p.pct == null ? '' : Math.round(p.pct * 100) + '%'} ${String(p.detail || '').slice(0, 90)}`); };
@@ -415,6 +418,81 @@ function App() {
   if (!cfg) return h(Setup, { onDone: c => setCfg({ agent: AGENTS[0], ...c }) });
   return skillAsked ? h(Main, { cfg }) : h(SkillQ, { onDone: () => setSkillAsked(true) });
 }
+// ---------------------------------------------------------------- worthit share: one stat as an X-ready post
+// Works on the last finished run (no scan). Writes a card image, suggests the text, and builds the X link. X's link carries text only,
+// so the image is copied to the clipboard for pasting. Numbers in built-in texts come straight from the data; an agent's text is checked against it.
+const SHARE_TOPICS = {
+  allowance: { title: 'weekly allowance check', hint: 'what one full weekly limit was worth, and whether it moved', rows: [['PlanRanking', 'LimitTrend'], ['Events']], alias: ['weekly', 'limits', 'quota', 'quotas', 'limit'],
+    text: D => { const l = D.plans.map(p => `${p.plan.toLowerCase()} ${usd(p.usd_per_full_week)}${p.proof !== 'measured' ? ' (at least)' : p.change_vs_last_week_pct == null ? '' : ` (${p.change_vs_last_week_pct >= 0 ? '▲' : '▼'}${Math.abs(p.change_vs_last_week_pct)}% vs the week before)`}`);   // a floor is not comparable week to week
+      return `weekly ai allowance check, week to ${D.week.to}.. what one full weekly limit was worth at api prices:\n${l.join('\n')}\nmeasured from my local logs: npx worthit`; } },
+  open: { title: 'open vs closed models', hint: 'how much of your work runs on open models', rows: [['ModelMix']], alias: ['open-source', 'opensource', 'oss', 'open models'],
+    text: D => { const o = D.model_mix.open, c = D.model_mix.closed, n = o.share_pct.length - 1, ch = o.change_pts;
+      return `how much of your ai coding runs on open models? mine this week: ${Math.round(o.share_pct[n])}% of output tokens${ch == null || Math.abs(ch) < 0.5 ? '' : ` (${ch > 0 ? '▲' : '▼'}${Math.abs(Math.round(ch))} pts vs last week)`}.. $${o.usd_per_m_output} per M output vs $${c.usd_per_m_output} for closed. whats yours? npx worthit`; } },
+  models: { title: 'my model ranking', hint: 'the models you use, most to least', rows: [['ModelMix']], alias: ['model', 'mix', 'ranking of models'],
+    text: D => { const n = D.model_mix.weeks.length - 1, top = D.model_mix.series.filter(s => !s.models).sort((a, b) => b.share_pct[n] - a.share_pct[n]).slice(0, 4).map(s => `${s.model} ${Math.round(s.share_pct[n])}%`);
+      return `my model mix this week, most used first: ${top.join(', ')}. whats yours? npx worthit`; } },
+  value: { title: 'the receipt', hint: 'what your best plan gave for its price', rows: [['Receipts']], alias: ['receipt', 'worth', 'plan'],
+    text: D => { const p = D.plans.slice().sort((a, b) => b.times_plan_price - a.times_plan_price)[0], mo = Math.round(p.plan_usd_per_week * 52 / 12 / 10) * 10;
+      return `i pay $${mo}/mo for ${p.plan.toLowerCase()}. last week one weekly limit gave me ${usd(p.usd_per_full_week)} of api-priced usage.. ${p.times_plan_price}× the price. measured from my own local logs, not vibes. npx worthit`; } },
+  ranking: { title: 'plan ranking', hint: 'which plan gave more', rows: [['PlanRanking'], ['Receipts']], alias: ['plans', 'compare', 'comparison'],
+    text: D => `which ai plan actually gives more? measured on my real work this week: ${D.plans.slice().sort((a, b) => b.times_plan_price - a.times_plan_price).map(p => `${p.plan.toLowerCase()} ${p.times_plan_price}×`).join(', ')} the price. one command: npx worthit` },
+  waste: { title: 'unused allowance', hint: 'what you paid for and did not use', rows: [['WasteTable']], alias: ['unused', 'wasted'],
+    text: D => { const un = D.waste.reduce((a, x) => a + (x.unused_usd || 0), 0), risk = D.waste.reduce((a, x) => a + (x.at_risk_usd || 0), 0);
+      return `ai allowance i paid for and left unused last week: ${usd(un)}${risk ? `.. another ${usd(risk)} still open before the reset` : ''}. check yours: npx worthit`; } },
+};
+const SHARE_BLOCKS = ['PlanRanking', 'LimitTrend', 'Events', 'ModelMix', 'Receipts', 'WasteTable', 'Tiles', 'Months', 'Heatmap', 'LevelCard'];
+const shareLines = rows => { const out = [];
+  for (const r of rows) { const cols = r.map(t => safe(t, {})).filter(c => c.length); if (!cols.length) continue; const hh = Math.max(...cols.map(c => c.length));
+    for (let i = 0; i < hh; i++) out.push(cols.map(c => pad(c[i] || '', Math.max(...c.map(len)))).join(' ')); }
+  return out; };
+const numbersIn = s => (strip(String(s)).match(/\d[\d,]*(?:\.\d+)?/g) || []).map(x => String(+x.replace(/,/g, '')));
+async function share() {
+  let D; try { D = JSON.parse(fs.readFileSync(path.join(HOME, 'last.json'), 'utf8')); } catch { console.error('worthit share: no finished run yet. Run `npx worthit` first, then share.'); process.exit(1); }
+  DATA = D; const tty = !!process.stdout.isTTY && !!process.stdin.isTTY && !JSON_MODE, warnings = [];
+  const ageH = Math.round((Date.now() - Date.parse(D.generated_at)) / 36e5); if (ageH >= 24) warnings.push(`the numbers are from a run ${ageH} hours ago: run worthit again for this week's figures`);
+  const floors = D.plans.filter(p => p.proof !== 'measured').map(p => p.plan); if (floors.length) warnings.push(`${floors.join(' and ')}: a floor ("at least this much"), not a full measurement; the card says so`);
+  const rl = q => new Promise(r => { const i = readline.createInterface({ input: process.stdin, output: process.stdout }); i.question(q, a => { i.close(); r(a.trim()); }); });
+  let ask = (argv[0] === 'share' ? argv.slice(1) : argv.slice(argv.indexOf('--share') + 1)).filter((a, i, all) => !a.startsWith('--') && !(all[i - 1] === '--ai')).join(' ').trim();
+  const keys = Object.keys(SHARE_TOPICS);
+  if (!ask && tty) { console.log('\n ' + bold(w('What do you want to share?')) + '\n'); keys.forEach((k, i) => console.log(`  ${w(String(i + 1))}  ${pad(fg(C.cl, k), 11)} ${d(SHARE_TOPICS[k].hint)}`)); console.log(d('\n  or type anything: "brag about my streak", "my busiest hours" …\n'));
+    const a = await rl(' › '); ask = keys[+a - 1] || a; }
+  if (!ask) ask = 'allowance';
+  const lc = ask.toLowerCase(); let key = keys.find(k => k === lc || SHARE_TOPICS[k].alias.includes(lc)), rows, text, by = 'built-in';
+  if (key) { rows = SHARE_TOPICS[key].rows; text = SHARE_TOPICS[key].text(D); }
+  else {      // anything else: the agent chooses the blocks and writes the post; its numbers are checked against the data
+    const st = settings().last || {}, agent = F_AI === 'no' ? null : AGENTS.find(a => a.id === (F_AI || st.agent)) || AGENTS[0];
+    const fallback = why => { warnings.push(why + ': using the weekly allowance post instead'); key = 'allowance'; rows = SHARE_TOPICS.allowance.rows; text = SHARE_TOPICS.allowance.text(D); };
+    if (!agent) fallback(`"${ask}" needs an AI agent (none found, or --ai no)`);
+    else { if (tty) console.log(d(`\n  asking ${agent.label} for a post about: ${ask}`));
+      const system = 'You write ONE post for X about a developer\'s own AI coding statistics. Voice: lowercase, casual, first person, no hashtags, no emojis, at most 250 characters, and it ends with "npx worthit". '
+        + 'Use only numbers that appear in the data; never invent or round differently. Reply with one line of JSON and nothing else: {"blocks":["..."],"text":"..."} where blocks are 1 to 3 names from: ' + SHARE_BLOCKS.join(', ') + ' (the card image shows them).';
+      const done = await new Promise(r => feed({ system, user: `What the person wants to share: ${ask}\n\nTheir data (JSON):\n${forModel()}`, agent }, () => {}, () => {}, r));
+      let j = null; try { j = JSON.parse((/\{[\s\S]*\}/.exec(done.raw || '') || [])[0]); } catch { /* not JSON */ }
+      const bl = j && Array.isArray(j.blocks) ? j.blocks.filter(b => SHARE_BLOCKS.includes(b)).slice(0, 3) : [];
+      if (done.err || !j || typeof j.text !== 'string' || !bl.length) fallback(`${agent.cli} gave no usable post${done.err ? ' (' + String(done.err).slice(0, 60) + ')' : ''}`);
+      else { const known = new Set(numbersIn(JSON.stringify(D)).concat(numbersIn(shareLines(bl.map(b => [b])).join('\n')))), bad = numbersIn(j.text).filter(x => !known.has(x));
+        if (bad.length) fallback(`the agent's post used numbers that are not in your data (${bad.slice(0, 3).join(', ')})`); else { key = 'custom'; rows = bl.map(b => [b]); text = j.text.trim().slice(0, 280); by = agent.label; } } }
+  }
+  const proof = D.plans.map(p => `${p.plan} ${p.proof}`).join(' · ');
+  const card = [...LOGO, ' ' + m('what your AI coding subscription is really worth') + d(`  ·  7 days to ${D.week.to}`), '', ...shareLines(rows), '', ' ' + d(proof), ' ' + m('measure yours:  ') + bold(w('npx worthit')), ''];
+  const url = 'https://x.com/intent/post?text=' + encodeURIComponent(text); let image = null, clip = false;
+  const chrome = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(c => fs.existsSync(c));
+  if (chrome && !NO_FILES) { const hp = path.join(os.tmpdir(), `worthit-share-${process.pid}.html`), slug = key === 'custom' ? (ask.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 28) || 'custom') : key, f = path.resolve(`${STAMP}-worthit-share-${slug}.png`); fs.writeFileSync(hp, ansiHtml(card));
+    spawnSync(chrome, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=2', `--window-size=${Math.round(W * 9.05 + 64)},${Math.round(card.length * 18.6 + 60)}`, '--screenshot=' + f, 'file://' + hp], { stdio: 'ignore', timeout: 60000 });
+    fs.rmSync(hp, { force: true }); if (fs.existsSync(f)) image = f; }
+  if (image && tty) {     // best effort: put the image on the clipboard so it can be pasted into the post
+    if (process.platform === 'darwin') clip = spawnSync('osascript', ['-e', `set the clipboard to (read (POSIX file "${image}") as «class PNGf»)`], { stdio: 'ignore' }).status === 0;
+    else if (has('wl-copy')) clip = spawnSync('sh', ['-c', `wl-copy --type image/png < "${image}"`], { stdio: 'ignore' }).status === 0;
+    else if (has('xclip')) clip = spawnSync('xclip', ['-selection', 'clipboard', '-t', 'image/png', '-i', image], { stdio: 'ignore' }).status === 0; }
+  if (!tty) { console.log(JSON.stringify({ topic: key, written_by: by, text, characters: text.length, image, url, data_generated_at: D.generated_at, warnings }, null, 1)); return; }
+  console.log('\n' + card.join('\n')); for (const x of warnings) console.log(fg(C.gold, ' ! ') + m(x));
+  console.log('\n ' + bold(w('Suggested post')) + d(`  ·  ${text.length} characters  ·  ${by}`) + '\n'); for (const l of text.split('\n')) console.log('   ' + w(l));
+  console.log('\n ' + d('image  ') + (image ? m(image) + (clip ? fg(C.cx, '  ✓ copied: paste it into the post') : d('  (attach it to the post)')) : d('not written (Chrome not found)')));
+  console.log(' ' + d('link   ') + m(url) + '\n');
+  const go = flag('--open') ? 'y' : await rl(' Open X with this text now? [y/N] ');
+  if (/^y/i.test(go)) { spawnSync(process.platform === 'darwin' ? 'open' : 'xdg-open', [url], { stdio: 'ignore' }); console.log(d(' opened. ' + (clip ? 'Paste the image (cmd+V), then post.' : 'Attach the image, then post.'))); }
+}
+if (SHARE) { await share(); process.exit(0); }
 console.log('\n' + LOGO.join('\n') + '\n ' + m('what your AI coding subscription is really worth') + d(`  ·  v${VERSION}  ·  ` + (DEMO ? 'demo · sample data' : 'reads your local logs')));
 const fake = () => { const s = new PassThrough(); s.isTTY = true; s.setRawMode = () => s; s.ref = () => s; s.unref = () => s; return s; };   // no keyboard (pipes, tests): a stand-in input
 const stdin = process.stdin.isTTY ? null : fake();

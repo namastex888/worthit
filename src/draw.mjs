@@ -96,7 +96,7 @@ export const blocks = {
     const p = D.plans.find(x => (x.history || []).length > 1) || D.plans[0], cv = p.history, mx = Math.max(...cv), l = [];
     for (let r = 4; r >= 0; r--) l.push(d(r === 4 ? lpad(usd(mx), 6) + ' ' : r === 0 ? '    $0 ' : '       ') + cv.map((v, i) => fg(i === cv.length - 1 ? p.color : mix(C.track, p.color, .6), ' ▁▂▃▄▅▆▇█'[Math.round(Math.max(0, Math.min(1, v / mx * 5 - r)) * 8)].repeat(3))).join(' '));
     l.push('');
-    for (const q of D.plans) l.push(pad(fg(q.color, q.plan.replace(' AI', '')), 13) + bold(w(usd(q.usd_per_full_week))) + '  ' + (q.change_vs_last_week_pct != null ? delta(q.change_vs_last_week_pct) + d(' vs last') : d('first reading')));
+    for (const q of D.plans) l.push(pad(fg(q.color, q.plan.replace(' AI', '')), 13) + bold(w(usd(q.usd_per_full_week))) + '  ' + (q.proof !== 'measured' ? d('floor: not compared') : q.change_vs_last_week_pct != null ? delta(q.change_vs_last_week_pct) + d(' vs last') : d('first reading')));
     return box('DID THE LIMIT MOVE', l, 39, C.cx, cv.length + ' weeks');
   },
 

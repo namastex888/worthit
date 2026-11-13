@@ -211,8 +211,12 @@ export function buildData(report, g, cfg, scanInfo) {
   const plans = [];
   for (const key of ['claude', 'google', 'codex']) {
     const w = report.this_week && report.this_week[key]; if (!w || !w.usd_per_full_week) continue;
-    const byWeek = {}; for (const r of ledger) if (r.provider === key && r.quality === 'clean' && r.usd_per_full_week) { const k = isoWeek(Date.parse(String(r.end).slice(0, 13).padEnd(13, '0') + ':00:00Z') || now); byWeek[k] = Math.max(byWeek[k] || 0, r.usd_per_full_week); }
-    const thisWk = isoWeek(Date.parse(String(w.end || w.meter_end_hour || '').slice(0, 13) + ':00:00Z') || now); delete byWeek[thisWk];
+    const clean = ledger.filter(r => r.provider === key && r.quality === 'clean' && r.usd_per_full_week), inside = (a, b) => a !== b && a.reset === b.reset && String(a.start) >= String(b.start) && String(a.end) <= String(b.end) && (b.usd_measured || 0) >= (a.usd_measured || 0);
+    const acc = {}; for (const r of clean) { if (clean.some(o => inside(r, o))) continue;      // a stretch recorded before two machines' lines were joined sits inside the joined one
+      // weeks are counted back from now in 7-day blocks, the same window "this week" uses: block 0 is this week, 1 the seven days before, and so on
+      const k = Math.floor((now - (Date.parse(String(r.end).slice(0, 13).padEnd(13, '0') + ':00:00Z') || now)) / (7 * DAY)), pts = Array.isArray(r.meter) ? r.meter[1] - r.meter[0] : 0, a = acc[k] = acc[k] || { usd: 0, pts: 0, max: 0 };
+      if (pts > 0 && r.usd_measured) { a.usd += r.usd_measured; a.pts += pts; } a.max = Math.max(a.max, r.usd_per_full_week); }
+    const byWeek = {}; for (const k in acc) if (+k >= 1) byWeek[String(99 - k).padStart(2, '0')] = acc[k].pts >= 15 ? Math.round(acc[k].usd / (acc[k].pts / 100)) : acc[k].max;
     const past = Object.keys(byWeek).sort().slice(-5).map(k => byWeek[k]), pl = (report.pooled || {})[key], v = pl ? pl.usd_per_full_week : w.usd_per_full_week, resets = events.filter(e => e.provider === key && e.type === 'reset' && e.confidence === 'high').length, from = Math.round(w.meter_start_pct), to = Math.round(w.meter_end_pct), per = report.prices.plan_usd_per_week[key];
     plans.push({ key, ...PLAN[key], usd_per_full_week: v, times_plan_price: Math.round(v / per), proof: key === 'claude' && allMachines ? 'measured' : 'floor', plan_usd_per_week: Math.round(per), meter_from: from, meter_to: to,
       meter: pl ? `${pl.stretches} stretches · ${pl.meter_points} points` : key === 'google' ? `no meter · cap after ${w.hours} h` : `meter ${from}% → ${to}% in ${w.hours} h`, priced_usd: pl ? pl.api_usd : w.measured.api_usd, fraction_of_week: pl ? +(pl.meter_points / 100).toFixed(2) : +((to - from) / 100).toFixed(2),

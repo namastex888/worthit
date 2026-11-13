@@ -92,3 +92,7 @@ The human dashboard (`worthit` with no flags) also writes `<date>-worthit.md`, `
 2. Say when it is a floor or an estimate.
 3. For "why" questions, look at `events` for the same dates before guessing.
 4. Never invent a number that no command returned; if the store has no data for the period, say so and offer `worthit --json --days 90`.
+
+## Sharing a stat
+
+`worthit share <topic>` turns the last run into a post for X: it writes a card image, suggests the text and prints a link that opens X with the text filled in (the image must be pasted or attached by the person). Topics: `allowance` (weekly limits and whether they moved), `open`, `models`, `value`, `ranking`, `waste`, or any free text, which the person's agent writes from the data. Piped, it prints JSON: `{topic, text, image, url, warnings}`. It never posts by itself.
