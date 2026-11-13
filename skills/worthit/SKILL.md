@@ -26,7 +26,7 @@ Parts of the last run. Dots walk into objects and arrays (`plans.0.usd_per_full_
 
 | Section | What it holds |
 |---|---|
-| `plans` | Per plan: `usd_per_full_week` (API-list dollars one full weekly limit is worth), `times_plan_price`, `proof` (measured, floor), `stretches`, `meter`, `priced_usd`, `models`, `history` (earlier 7-day blocks, oldest first, then this week), `change_vs_last_week_pct`, and when machines without a meter log were busy in the same hours: `other_machines_usd`, `usd_per_full_week_all_machines` (an upper figure) |
+| `plans` | Per plan: `usd_per_full_week` (API-list dollars one full weekly limit is worth), `times_plan_price`, `proof` (measured, floor), `stretches`, `meter`, `priced_usd`, `models`, `history` (earlier 7-day blocks, oldest first, then this week), `weeks` (the same with dates and gaps: `weeks_ago`, `to`, `usd`, up to 12; a missing week had no meter reading), `change_vs_last_week_pct`, and when machines without a meter log were busy in the same hours: `other_machines_usd`, `usd_per_full_week_all_machines` (an upper figure) |
 | `totals` | Last 7 days against the 7 before: output tokens, API value, changes in % |
 | `tools` | Per tool, last 7 days: requests, output, cached and fresh input, dollars, where the data came from |
 | `months` | Per month and plan: API value used, times the monthly plan price, days tracked |

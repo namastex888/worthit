@@ -100,6 +100,20 @@ export const blocks = {
     return box('DID THE LIMIT MOVE', l, 39, C.cx, cv.length + ' weeks');
   },
 
+  AllowanceHistory(D) {             // every plan, week by week: what one full weekly limit was worth, with gaps where no meter reading exists
+    const N = 12, SL = 6, kk = n => n >= 10000 ? '$' + Math.round(n / 1000) + 'k' : n >= 1000 ? '$' + (n / 1000).toFixed(1) + 'k' : '$' + Math.round(n);
+    if (!D.plans.length) return box('WEEKLY ALLOWANCE HISTORY', [d('needs one finished week')], W, C.cx, '');
+    const l = [], today = Date.parse(D.week.to + 'T00:00:00Z');
+    for (const p of D.plans) { const wk = p.weeks || (p.history || []).map((usd, i, a) => ({ weeks_ago: a.length - 1 - i, usd })), at = {}; for (const x of wk) if (x.weeks_ago < N) at[x.weeks_ago] = x.usd;
+      const mx = Math.max(1, ...Object.values(at)), n = Object.keys(at).length, floor = p.proof !== 'measured';
+      const left = [fg(p.color, p.plan.replace(' AI', '')), d(floor ? 'at least (floor)' : 'measured'), d(n + (n === 1 ? ' week' : ' weeks'))];
+      for (let r = 2; r >= 0; r--) { let row = pad(left[2 - r], 18); for (let a = N - 1; a >= 0; a--) { const v = at[a]; row += v == null ? d(r === 0 ? ' ·    ' : '      ') : fg(a === 0 ? p.color : mix(C.track, p.color, .6), ' ▁▂▃▄▅▆▇█'[Math.round(Math.max(0, Math.min(1, v / mx * 3 - r)) * 8)].repeat(4)) + '  '; } l.push(row); }
+      let vals = pad('', 18); for (let a = N - 1; a >= 0; a--) vals += at[a] == null ? ' '.repeat(SL) : (a === 0 ? bold(w(pad(kk(at[a]), SL))) : m(pad(kk(at[a]), SL))); l.push(vals, ''); }
+    let ax = pad(d('week ending'), 18); for (let a = N - 1; a >= 0; a--) ax += d(pad(new Date(today - a * 7 * 864e5).toISOString().slice(5, 10), SL)); l.push(ax);
+    l.push(d('·  no meter reading that week, so no weekly limit could be measured'));
+    return box('WEEKLY ALLOWANCE HISTORY', l, W, C.cx, '$ of API usage per full weekly limit · 7-day blocks back from today');
+  },
+
   Events(D) {
     const ev = D.events || []; if (!ev.length) return box('EVENTS THIS WEEK', [d('No reset, limit change or launch on record for these 7 days.')], W, C.gold, 'core/events.csv');
     const l = [d(pad('Date', 12) + pad('Provider', 10) + pad('Type', 14) + 'What happened')];
@@ -187,4 +201,4 @@ export const blocks = {
   },
   Note: (D, p) => wrap(p.text || '', W - 2).map(x => ' ' + m(x)),
 };
-export const widths = { Verdict: W, Tiles: W, LevelCard: 41, PlanRanking: 56, Receipts: W, Heatmap: 58, LimitTrend: 39, WasteTable: W, Events: W, Months: W, ModelMix: W, Summary: W, Chart: W, Facts: W, Note: W };
+export const widths = { Verdict: W, Tiles: W, LevelCard: 41, PlanRanking: 56, Receipts: W, Heatmap: 58, LimitTrend: 39, AllowanceHistory: W, WasteTable: W, Events: W, Months: W, ModelMix: W, Summary: W, Chart: W, Facts: W, Note: W };
