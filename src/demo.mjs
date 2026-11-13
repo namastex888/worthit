@@ -22,7 +22,7 @@ export async function demoGit(on) {
   const steps = [[.15, 'usagemeter sync · reading new usage into its local store'], [.4, 'git log · ~/code/acme-api'], [.55, 'git log · ~/code/billing-service'], [.75, 'GitHub · your merged pull requests (gh search)']];
   for (const [pct, detail] of steps) { on({ pct, detail }); await wait(420); }
   on({ pct: 1, detail: 'done' });
-  return { src: { github: 307, meter: 117 }, meter: { version: '3.130.1', downloaded: false } };
+  return { src: { github: 118, meter: 96 }, meter: { version: '3.130.1', downloaded: false } };
 }
 
 export async function demoPricing() { await wait(1100); }
