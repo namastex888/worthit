@@ -31,7 +31,8 @@ Parts of the last run. Dots walk into objects and arrays (`plans.0.usd_per_full_
 | `tools` | Per tool, last 7 days: requests, output, cached and fresh input, dollars, where the data came from |
 | `months` | Per month and plan: API value used, times the monthly plan price, days tracked |
 | `model_mix` | `weeks`, `series` (per model: `share_pct` per week, `change_pts`), `open`, `closed` (share, tokens, dollars, dollars per million output) |
-| `git` | Merged PRs, commits, repos, cost per merged PR, per-day series, `sources` (GitHub, the usagemeter store, and Gitea or GitLab when `tea` or `glab` is logged in) |
+| `git` | Merged PRs, commits, repos, cost per merged PR, per-day series, `sources` (GitHub, the usagemeter store, Gitea when `tea` is logged in, and every GitLab host `glab` is logged in to) |
+| `delivery` | What the merged PRs were, read from each title prefix (`feat:`, `fix:`, `docs:` ...): `kinds` ranked for this week with last week beside it, `features`, `usd_per_feature`, `fix_share_pct`, and `days` (14), `weeks` (12) and `months` with features, fixes, cost and cost per feature. A null cost means that period was not fully scanned. Compare a person with their own earlier weeks, not with other people |
 | `waste` | One row per plan: limit, share used, dollars unused, dollars still open (`at_risk_usd`), and why. Several accounts on one plan are summed into one row (`accounts`, `account_weeks`), named like `ChatGPT Pro 200 (×4)` |
 | `events` | Provider events in the window: resets, limit changes, launches, with source links |
 | `game` | Level, XP, streak, personal bests |

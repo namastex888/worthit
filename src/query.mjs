@@ -24,7 +24,7 @@ export const SCHEMA = {
     day: 'day of the run', provider: 'claude | codex | google', plan: 'plan name', usd_per_full_week: 'API-list dollars per full weekly limit', times_plan_price: 'that value divided by the weekly plan price',
     stretches: 'meter stretches pooled into the number', proof: 'measured | floor | estimate' } },
   month: { about: 'View: day_provider summed per month and tool.', columns: { month: 'YYYY-MM', provider: 'tool', api_usd: 'dollars', output_tokens: 'tokens', requests: 'requests', days: 'days with data in that month' } },
-  gh_pr: { about: 'Merged pull requests already fetched from GitHub.', columns: { key: 'github.com/owner/repo#number', merged_ms: 'merge time, Unix milliseconds' } },
+  pr_kind: { about: 'Merged pull requests you authored, from every forge (GitHub, GitLab hosts, Gitea), kept for 12 weeks.', columns: { key: 'host/owner/repo#number (GitLab: host/group/project!number)', merged_ms: 'merge time, Unix milliseconds', kind: 'from the title prefix: feat | fix | docs | test | chore | ci | refactor | perf | build | style | revert | other (no prefix)' } },
   meta: { about: 'Bookkeeping for incremental fetches.', columns: { k: 'name', v: 'value' } },
 };
 

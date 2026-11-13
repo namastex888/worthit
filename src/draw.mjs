@@ -114,6 +114,25 @@ export const blocks = {
     return box('WEEKLY ALLOWANCE HISTORY', l, W, C.cx, '$ per full weekly limit · weeks counted back from today');
   },
 
+  Delivery(D) {                     // what the merged PRs were (title prefix), ranked; then features and their cost week by week, day by day, month by month
+    const v = D.delivery; if (!v) return [];
+    const KC = { feat: C.cx, fix: C.red, docs: C.cl, test: C.gold, other: C.ink3 }, kc = k => KC[k] || C.ink2, l = [], N = 12, SL = 6, kk = n => n == null ? '' : n >= 10000 ? '$' + Math.round(n / 1000) + 'k' : '$' + Math.round(n);
+    const mxk = Math.max(1, ...v.kinds.map(x => x.prs));
+    for (const x of v.kinds.slice(0, 6)) l.push(pad(fg(kc(x.kind), x.label), 14) + bar(x.prs, mxk, 26, kc(x.kind), kc(x.kind)) + lpad(bold(w(String(x.prs))), 6) + lpad(m(x.share_pct + '%'), 6) + '   ' + delta(x.change_pct, x.kind !== 'fix') + d(' vs prev 7 d'));
+    const rest = v.kinds.slice(6).filter(x => x.prs); if (rest.length) l.push(d('+ ' + rest.map(x => `${x.label} ${x.prs}`).join(' · ')));
+    l.push('', pad(m('cost per feature'), 18) + bold(w(v.usd_per_feature == null ? 'n/a' : '$' + v.usd_per_feature)) + '  ' + delta(v.usd_per_feature_change_pct, false) + d(' vs prev 7 d') + '      ' + m('fixes ') + w((v.fix_share_pct ?? 0) + '%') + m(' of PRs') + (v.fix_share_last_week_pct == null ? '' : d(` (${v.fix_share_last_week_pct}% the week before)`)), '');
+    const at = {}; for (const x of v.weeks) at[x.weeks_ago] = x; const mf = Math.max(1, ...v.weeks.map(x => x.features)), mc = Math.max(1, ...v.weeks.map(x => x.usd_per_feature || 0));
+    const cols = (name, get, mx, color) => { for (let r = 1; r >= 0; r--) { let row = pad(r === 1 ? m(name) : '', 18); for (let a = N - 1; a >= 0; a--) { const val = at[a] ? get(at[a]) : null; row += val == null ? (r === 0 ? d(' ·    ') : '      ') : fg(a === 0 ? color : mix(C.track, color, .6), ' ▁▂▃▄▅▆▇█'[Math.max(r === 0 ? 1 : 0, Math.round(Math.max(0, Math.min(1, val / mx * 2 - r)) * 8))].repeat(4)) + '  '; } l.push(row); } };
+    const vals = (get, fmt) => { let row = pad('', 18); for (let a = N - 1; a >= 0; a--) { const val = at[a] ? get(at[a]) : null; row += val == null ? ' '.repeat(SL) : (a === 0 ? bold(w(pad(fmt(val), SL))) : m(pad(fmt(val), SL))); } l.push(row); };
+    cols('features / week', x => x.features, mf, C.cx); vals(x => x.features, String);
+    cols('$ per feature', x => x.usd_per_feature, mc, C.gold); vals(x => x.usd_per_feature, kk);
+    const today = Date.parse(D.week.to + 'T00:00:00Z'); let ax = pad(d('week ending'), 18); for (let a = N - 1; a >= 0; a--) ax += d(pad(new Date(today - a * 7 * 864e5).toISOString().slice(5, 10), SL)); l.push(ax, '');
+    l.push(pad(m('last 14 days'), 18) + spark(v.days.map(x => x.features), C.cx) + d(' features  ') + spark(v.days.map(x => x.usd_per_feature || 0), C.gold) + d(' $ per feature  ') + spark(v.days.map(x => x.fixes), C.red) + d(' fixes'));
+    const MO = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ');
+    l.push(pad(m('by month'), 18) + v.months.slice(-3).map(x => w(MO[+x.month.slice(5) - 1]) + ' ' + fg(C.cx, x.features + ' feat') + (x.usd_per_feature == null ? '' : d(' · ') + fg(C.gold, '$' + x.usd_per_feature))).join(d('     ')));
+    return box('DELIVERY', l, W, C.cx, `what your merged PRs were, from their title prefix · ${v.typed_pct ?? 0}% carry one`);
+  },
+
   Events(D) {
     const ev = D.events || []; if (!ev.length) return box('EVENTS THIS WEEK', [d('No reset, limit change or launch on record for these 7 days.')], W, C.gold, 'core/events.csv');
     const l = [d(pad('Date', 12) + pad('Provider', 10) + pad('Type', 14) + 'What happened')];
@@ -201,4 +220,4 @@ export const blocks = {
   },
   Note: (D, p) => wrap(p.text || '', W - 2).map(x => ' ' + m(x)),
 };
-export const widths = { Verdict: W, Tiles: W, LevelCard: 41, PlanRanking: 56, Receipts: W, Heatmap: 58, LimitTrend: 39, AllowanceHistory: W, WasteTable: W, Events: W, Months: W, ModelMix: W, Summary: W, Chart: W, Facts: W, Note: W };
+export const widths = { Verdict: W, Tiles: W, LevelCard: 41, PlanRanking: 56, Receipts: W, Heatmap: 58, LimitTrend: 39, AllowanceHistory: W, Delivery: W, WasteTable: W, Events: W, Months: W, ModelMix: W, Summary: W, Chart: W, Facts: W, Note: W };
