@@ -390,6 +390,7 @@ def _bands(rs):
 fitted = {m_: f_ for m_, f_ in ((m_, _bands(rs_)) for m_, rs_ in _by_model.items() if len(rs_) >= 8) if f_}
 other = defaultdict(lambda: {'rows': 0, 'usd_reported': 0.0, 'usd_fitted': 0.0, 'unpriced_output_tokens': 0, 'models': Counter()})
 _OT = {'omp': 'omp', 'dsh-tui': 'dsh'}
+_mm = []
 # hourly activity per tool (priced), and session counts: what the dashboard's totals, sparklines and heatmap are drawn from
 _act = defaultdict(lambda: defaultdict(float))
 for r in MU.values():
@@ -402,7 +403,15 @@ for r in MU.values():
         usd_ = 0.0; o_['unpriced_output_tokens'] += r[7]
     a_ = _act[(time.strftime('%Y-%m-%dT%H', time.gmtime(r[1] / 1000.0)), p_)]
     a_['output'] += r[7]; a_['input_uncached'] += r[4]; a_['cache_read'] += r[5]; a_['requests'] += r[9]; a_['usd'] += usd_
+    _mm.append((time.strftime('%Y-%m-%d', time.gmtime(r[1] / 1000.0)), p_, r[3] or '?', r[7], usd_))
 report['other_tools'] = {k_: dict(v_, usd_reported=round(v_['usd_reported'], 2), usd_fitted=round(v_['usd_fitted'], 2), models=dict(v_['models'].most_common(6))) for k_, v_ in other.items()}
+# per day and model (UTC day): what the model-mix chart and its week-by-week history are built from
+_md = defaultdict(lambda: [0, 0.0])
+for b in B:
+    x_ = _md[(b['hour'][:10], b['provider'], b['model'] or '?')]; x_[0] += b.get('output', 0) + b.get('lc_output', 0); x_[1] += b['usd']
+for d_, p_, m_, o_, u_ in _mm:
+    x_ = _md[(d_, p_, m_)]; x_[0] += o_; x_[1] += u_
+report['model_days'] = [{'day': k_[0], 'provider': k_[1], 'model': k_[2], 'output': int(v_[0]), 'usd': round(v_[1], 2)} for k_, v_ in sorted(_md.items())]
 report['fitted_prices'] = {m_: {'utc_%02d_%02d' % (b * 3, b * 3 + 3): f_ for b, f_ in bs_.items()} for m_, bs_ in fitted.items()}
 for b in B:
     a_ = _act[(b['hour'], b['provider'])]

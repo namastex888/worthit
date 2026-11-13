@@ -70,6 +70,7 @@ const catalog = defineCatalog(schema, { actions: {}, components: {
   LimitTrend: def(none, 'Weekly limit over the last weeks as columns, and for each plan whether the limit moved (the provider\'s doing). Drawn from the data. No props.'),
   Events: def(none, 'Table of this week\'s provider events: resets, limit changes, model launches. Drawn from the data. No props.'),
   Months: def(none, 'Month by month table per plan: days tracked, API value actually used, how many times the monthly plan price that is, the measured weekly limit, merged PRs and commits. Drawn from the data. No props.'),
+  ModelMix: def(none, 'Two line charts: each model\'s share of output tokens week by week (with the change vs last week), and open-weight vs closed models with tokens, API value and dollars per million output. Drawn from the data. No props.'),
   WasteTable: def(none, 'Per account: limit, share used, dollars left unused, and whether that was the cap or the user spending less. Drawn from the data. No props.'),
   Summary: def(text, 'Executive summary panel. You write the text: three short sentences.'),
   Chart: def(z.object({ title: z.string(), subtitle: z.string().optional(), unit: z.string().optional(), note: z.string().optional(),
@@ -86,7 +87,7 @@ const COMMON = [
   'Do not use $state references. Keep ids short.'];
 const SYSTEM = catalog.prompt({ system: 'You compose the "Your week" terminal dashboard for worthit, a tool that tells a developer what their AI coding subscriptions were really worth this week and how productive they were. You place ready-made blocks and write two pieces of text.',
   customRules: [...COMMON,
-    'Use exactly this order: Verdict, Tiles, Row(LevelCard, PlanRanking), Receipts, Row(Heatmap, LimitTrend), WasteTable, Months, Events, Summary.',
+    'Use exactly this order: Verdict, Tiles, Row(LevelCard, PlanRanking), Receipts, Row(Heatmap, LimitTrend), WasteTable, Months, ModelMix, Events, Summary.',
     'Verdict: which plan gave the most this week and by how much. If "plans" is empty, make it about the week\'s output instead.',
     'Summary: three short sentences, direct and a little playful. Say whether the last 7 days were more or less productive than the 7 before, what carried them, and the one thing to do next (use allowance that is about to reset, protect the streak, reach the next level). If the data has no "git" key, do not mention PRs or cost per PR.'] });
 const ASK_SYSTEM = catalog.prompt({ system: 'You answer questions about a developer\'s AI subscription usage for worthit. You always answer visually, by placing blocks.',
@@ -115,8 +116,8 @@ function specLines(spec) {
   return one(r.root);
 }
 function builtin() {                 // the dashboard without any model: data tables only, no written conclusions
-  const E = { root: { type: 'Stack', children: ['t', 'r1', 'rc', 'r2', 'ws', 'mo', 'ev'] },
-    t: { type: 'Tiles' }, r1: { type: 'Row', children: ['l', 'p'] }, l: { type: 'LevelCard' }, p: { type: 'PlanRanking' }, rc: { type: 'Receipts' }, r2: { type: 'Row', children: ['hm', 'lt'] }, hm: { type: 'Heatmap' }, lt: { type: 'LimitTrend' }, ws: { type: 'WasteTable' }, ev: { type: 'Events' }, mo: { type: 'Months' } };
+  const E = { root: { type: 'Stack', children: ['t', 'r1', 'rc', 'r2', 'ws', 'mo', 'mx', 'ev'] },
+    t: { type: 'Tiles' }, r1: { type: 'Row', children: ['l', 'p'] }, l: { type: 'LevelCard' }, p: { type: 'PlanRanking' }, rc: { type: 'Receipts' }, r2: { type: 'Row', children: ['hm', 'lt'] }, hm: { type: 'Heatmap' }, lt: { type: 'LimitTrend' }, ws: { type: 'WasteTable' }, ev: { type: 'Events' }, mo: { type: 'Months' }, mx: { type: 'ModelMix' } };
   for (const e of Object.values(E)) { e.children = e.children || []; e.props = e.props || {}; }
   return { root: 'root', elements: E };
 }
@@ -195,6 +196,8 @@ function writeFiles(spec) {
     ...(DATA.git ? [`- Merged PRs: ${DATA.git.merged_prs} · commits: ${DATA.git.commits} · repos: ${DATA.git.repos}`, `- Cost per merged PR: ${DATA.git.usd_per_merged_pr == null ? 'n/a' : '$' + DATA.git.usd_per_merged_pr.toFixed(2)}`] : []),
     `- Level ${DATA.game.level} (${DATA.game.title}), ${DATA.game.xp.toLocaleString('en-US')} XP, ${DATA.game.streak_days}-day streak`, '',
     '## Month by month', '', '| Month | Plan | Days tracked | API value used | × monthly plan price | Measured weekly limit |', '|---|---|---|---|---|---|', ...(DATA.months || []).map(x => `| ${x.month} | ${x.plan} | ${x.days_tracked} | ${usd(x.api_usd_used)} | ${x.used_times_plan_price}× | ${x.weekly_limit_usd ? usd(x.weekly_limit_usd) : ''} |`), '',
+    ...(DATA.model_mix ? ['## Model mix', '', `Share of output tokens per 7-day block (${DATA.model_mix.weeks.join(', ')}).`, '', '| Model | Weights | ' + DATA.model_mix.weeks.join(' | ') + ' | vs last week |', '|---|---|' + DATA.model_mix.weeks.map(() => '---|').join('') + '---|',
+      ...[...DATA.model_mix.series, DATA.model_mix.open, DATA.model_mix.closed].map(s => `| ${s.model} | ${s.open == null ? '' : s.open ? 'open' : 'closed'} | ${s.share_pct.map(v => v + '%').join(' | ')} | ${s.change_pts == null ? '' : (s.change_pts > 0 ? '+' : '') + s.change_pts + ' pts'} |`), '', DATA.model_mix.open_rule + '.', ''] : []),
     '## Events this week', '', '| Date | Provider | Type | What happened | Source |', '|---|---|---|---|---|', ...(DATA.events || []).map(e => `| ${e.date} | ${e.provider} | ${e.type} | ${e.title} | ${e.source} |`), '',
     '## Subscription waste', '', '| Account | Limit | Used | Unused | Why |', '|---|---|---|---|---|', ...DATA.waste.map(x => `| ${x.account} | ${usd(x.limit_usd)} | ${x.used_pct}% | ${usd(x.unused_usd)} | ${x.why} |`), '', ...(txt('Summary') ? ['## Summary', '', txt('Summary'), ''] : []),
     '## How it is measured', '', 'Every request in your local logs is priced at the provider\'s API list rate (input, cached input, cache writes, output with thinking). A plan\'s number is the priced usage inside one stretch of its weekly meter, scaled to 100% of the week. "Floor" means use of the same account on machines not scanned is missing, so the real value can only be higher. Unused allowance counts as waste only when the week closed without hitting the cap.', '',
