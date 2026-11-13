@@ -1,6 +1,6 @@
 {
   "name": "worthit",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "What your AI coding subscription is really worth: a local, one-command AI coding productivity meter for Claude Code, Codex and Antigravity.",
   "type": "module",
   "bin": {
