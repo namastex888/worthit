@@ -85,6 +85,16 @@ private throwaway copy; leave the checked-out implementation intact.
 uses synthetic meter, local git, gh (two accounts), glab (two hosts), and tea
 commands. A meter sync failure through `--json` preserves both metrics; the next
 good answer replaces them, including a stored day with no current rows. Status,
-discovery, individual account/host, missing repository and git-log failures check
+discovery, individual account/host and git-log failures check
 independent per-metric MAX behavior and named audit failures. Expectations live
 in `expected-data.json`; every root key is exercised.
+
+The same case checks absent gh/glab/tea executables and explicit logged-out
+inventories (skipped without FAILED), malformed inventories and logged-in auth
+errors (failed), older gh login output, and a partial tea page followed by failure.
+Nonzero sync and successful budget-limited sync still read existing PRs and logs
+while keeping stored maxima. A repo whose newest cwd disappeared falls back to
+its older checkout. No-checkout controls pin exact session milliseconds at the
+14-day lower boundary and one millisecond before it, with no FAILED audit label.
+The minimal session/file-context tables use the real meter schema, not checked_ms
+as a proxy for session activity.

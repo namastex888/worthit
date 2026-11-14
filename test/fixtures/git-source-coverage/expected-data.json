@@ -3,15 +3,19 @@
     "prs": false,
     "commits": false,
     "failed": [
-      "usagemeter",
-      "git log"
+      "usagemeter"
     ],
     "counts": [
       9,
       8,
       7,
       6
-    ]
+    ],
+    "live": {
+      "prs": 2,
+      "commits": 2,
+      "repos": 1
+    }
   },
   "good": {
     "prs": true,
@@ -116,19 +120,6 @@
       6
     ]
   },
-  "missing-repo": {
-    "prs": true,
-    "commits": false,
-    "failed": [
-      "git log"
-    ],
-    "counts": [
-      2,
-      8,
-      0,
-      6
-    ]
-  },
   "empty": {
     "prs": true,
     "commits": true,
@@ -165,6 +156,289 @@
     },
     {
       "source": "gh:coder-b",
+      "answered": true,
+      "metrics": [
+        "prs"
+      ]
+    },
+    {
+      "source": "tea",
+      "answered": true,
+      "metrics": [
+        "prs"
+      ]
+    },
+    {
+      "source": "glab:forge-a.test",
+      "answered": true,
+      "metrics": [
+        "prs"
+      ]
+    },
+    {
+      "source": "glab:forge-b.test",
+      "answered": true,
+      "metrics": [
+        "prs"
+      ]
+    }
+  ],
+  "tea-discovery": {
+    "prs": false,
+    "commits": true,
+    "failed": [
+      "tea discovery"
+    ],
+    "counts": [
+      9,
+      2,
+      7,
+      0
+    ]
+  },
+  "tea-malformed": {
+    "prs": false,
+    "commits": true,
+    "failed": [
+      "tea discovery"
+    ],
+    "counts": [
+      9,
+      2,
+      7,
+      0
+    ]
+  },
+  "gh-malformed": {
+    "prs": false,
+    "commits": true,
+    "failed": [
+      "gh discovery"
+    ],
+    "counts": [
+      9,
+      2,
+      7,
+      0
+    ]
+  },
+  "glab-malformed": {
+    "prs": false,
+    "commits": true,
+    "failed": [
+      "glab discovery"
+    ],
+    "counts": [
+      9,
+      2,
+      7,
+      0
+    ]
+  },
+  "gh-auth-error": {
+    "prs": false,
+    "commits": true,
+    "failed": [
+      "gh discovery"
+    ],
+    "counts": [
+      9,
+      2,
+      7,
+      0
+    ]
+  },
+  "glab-auth-error": {
+    "prs": false,
+    "commits": true,
+    "failed": [
+      "glab discovery"
+    ],
+    "counts": [
+      9,
+      2,
+      7,
+      0
+    ]
+  },
+  "meter-budget": {
+    "prs": false,
+    "commits": false,
+    "failed": [
+      "usagemeter"
+    ],
+    "counts": [
+      9,
+      8,
+      7,
+      6
+    ],
+    "live": {
+      "prs": 2,
+      "commits": 2,
+      "repos": 1
+    }
+  },
+  "logged-out": {
+    "prs": true,
+    "commits": true,
+    "failed": [],
+    "counts": [
+      2,
+      2,
+      0,
+      0
+    ],
+    "live": {
+      "prs": 2,
+      "commits": 2,
+      "repos": 1
+    }
+  },
+  "gh-legacy": {
+    "prs": true,
+    "commits": true,
+    "failed": [],
+    "counts": [
+      2,
+      2,
+      0,
+      0
+    ],
+    "live": {
+      "prs": 2,
+      "commits": 2,
+      "repos": 1
+    }
+  },
+  "no-forges": {
+    "prs": true,
+    "commits": true,
+    "failed": [],
+    "counts": [
+      2,
+      2,
+      0,
+      0
+    ],
+    "live": {
+      "prs": 2,
+      "commits": 2,
+      "repos": 1
+    }
+  },
+  "two-cwds": {
+    "prs": true,
+    "commits": true,
+    "failed": [],
+    "counts": [
+      2,
+      2,
+      0,
+      0
+    ],
+    "live": {
+      "prs": 2,
+      "commits": 2,
+      "repos": 1
+    }
+  },
+  "recent-no-checkout": {
+    "prs": true,
+    "commits": false,
+    "failed": [],
+    "counts": [
+      2,
+      8,
+      0,
+      6
+    ],
+    "live": {
+      "prs": 2,
+      "commits": 0,
+      "repos": 0
+    }
+  },
+  "boundary-no-checkout": {
+    "prs": true,
+    "commits": false,
+    "failed": [],
+    "counts": [
+      2,
+      8,
+      0,
+      6
+    ],
+    "live": {
+      "prs": 2,
+      "commits": 0,
+      "repos": 0
+    }
+  },
+  "old-no-checkout": {
+    "prs": true,
+    "commits": true,
+    "failed": [],
+    "counts": [
+      2,
+      0,
+      0,
+      0
+    ],
+    "live": {
+      "prs": 2,
+      "commits": 0,
+      "repos": 0
+    }
+  },
+  "meter_only": [
+    {
+      "source": "usagemeter",
+      "answered": true,
+      "metrics": [
+        "prs",
+        "commits"
+      ]
+    },
+    {
+      "source": "git log",
+      "answered": true,
+      "metrics": [
+        "commits"
+      ]
+    }
+  ],
+  "tea-partial": {
+    "prs": false,
+    "commits": true,
+    "failed": [
+      "tea"
+    ],
+    "counts": [
+      9,
+      2,
+      7,
+      0
+    ]
+  },
+  "legacy_sources": [
+    {
+      "source": "usagemeter",
+      "answered": true,
+      "metrics": [
+        "prs",
+        "commits"
+      ]
+    },
+    {
+      "source": "git log",
+      "answered": true,
+      "metrics": [
+        "commits"
+      ]
+    },
+    {
+      "source": "gh:coder-a",
       "answered": true,
       "metrics": [
         "prs"

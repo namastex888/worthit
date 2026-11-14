@@ -45,15 +45,23 @@ When `machines_retained` has a unit inside this week, that week's totals are a l
 
 `git.coverage` reports `prs` and `commits` booleans and `sources`, an array of
 `{source, answered, metrics}`. Sources are `usagemeter`, `git log`, `gh:<account>`,
-`glab:<host>` and `tea`. Failed account/host discovery is named `gh discovery` or
-`glab discovery` (`gh` names a missing CLI); a successful `gh:@me` fallback cannot
-clear failed discovery. Missing optional tea/glab CLIs are not selected sources.
+`glab:<host>` and `tea`. Absent CLIs and explicit empty login inventories are
+skipped with an audit note, omitted from `sources`, and do not reduce coverage.
+Malformed inventories and command errors remain failures, named `gh discovery`,
+`glab discovery` or `tea discovery`. Both multi-account and older `gh` login
+output are supported. A logged-in source that gives a partial answer is uncovered.
 PR coverage needs the meter and every selected forge answer. Commit coverage needs
 meter repository discovery and every local git log; forge failures do not affect it.
+A nonzero sync or pending meter work leaves meter-fed metrics uncovered, while
+existing meter PRs and local git logs are still read. For each repo, the newest
+existing checkout is used. No checkout left is an audit note, not a failed source;
+commit coverage stays false only if that repo has a session intersecting the
+inclusive interval from now minus 14 days through now. Earlier counts then keep MAX.
 Within git's 14-day window, each metric replaces stored daily counts only with full
 coverage. Otherwise `history.json` and SQLite `day` keep the per-metric MAX, also
-outside the window. Name sources with `answered: false` when reporting incomplete
-counts. The audit log names every source's answer or failure too.
+outside the window. Name sources with `answered: false` when reporting failures;
+use the audit note to explain no-checkout retention. The audit log names each
+source's answer, failure or skip too.
 
 ## `worthit days`
 

@@ -48,8 +48,14 @@ try {
   const meter = new DatabaseSync(meterFile);
   meter.exec('CREATE TABLE pr (repo TEXT, pr INTEGER, merged_ms INTEGER); CREATE TABLE cwd_repo (repo TEXT, cwd TEXT, checked_ms INTEGER)');
   meter.exec("INSERT INTO pr VALUES ('example/project', 1, 1794322800000), ('example/project', 2, 1794322800000)");
-  meter.prepare('INSERT INTO cwd_repo VALUES (?, ?, ?)').run('example/project', repo, 0); meter.close();
-  for (const command of ['usagemeter', 'git', 'gh', 'glab', 'tea']) fs.writeFileSync(path.join(bin, command), `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(path.join(folder, 'commands.mjs'))} ${command} \"$@\"\n`, { mode: 0o755 });
+  meter.prepare('INSERT INTO cwd_repo VALUES (?, ?, ?)').run('example/project', repo, 0);
+  // Real meter shape: exact session timestamps, linked to cwd through the stored file context.
+  meter.exec('CREATE TABLE sessions (harness TEXT, session TEXT, parent_session TEXT, first_ms INTEGER, last_ms INTEGER, PRIMARY KEY(harness, session)); CREATE TABLE files (path TEXT PRIMARY KEY, source TEXT, ctx TEXT)');
+  meter.prepare('INSERT INTO sessions VALUES (?, ?, NULL, ?, ?)').run('claude-code', 'fixture-session', 1794322800000, 1794322800000);
+  meter.prepare('INSERT INTO files VALUES (?, ?, ?)').run('fixture-log', 'claude-code', JSON.stringify({ session: 'fixture-session', cwd: repo }));
+  meter.close();
+  const install = command => fs.writeFileSync(path.join(bin, command), `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(path.join(folder, 'commands.mjs'))} ${command} \"$@\"\n`, { mode: 0o755 });
+  for (const command of ['usagemeter', 'git', 'gh', 'glab', 'tea']) install(command);
   // The CLI --json path uses an empty synthetic scanner home, never the person's store.
   seed(); fs.writeFileSync(env.FIXTURE_MODE, 'meter-sync');
   const failedCLI = run([path.join(root, 'bin/worthit.mjs'), '--json', '--no-files', '--hosts', 'none', '--git', 'yes', '--ai', 'no']);
@@ -61,16 +67,38 @@ try {
       assert.deepEqual(data.git.coverage.sources.filter(x => !x.answered).map(x => x.source), e.failed);
     }
     stored(...e.counts);
+    if (e.live) assert.deepEqual({ prs: data.git.merged_prs, commits: data.git.commits, repos: data.git.repos }, e.live, `${name}: existing data still read`);
   };
   check('meter-sync', failedCLI, false);
   // Same store, same source rows: answering again replaces even the saved day with no new rows.
   const good = collect('good'); check('good', good);
   assert.deepEqual(good.git.coverage.sources, expected.get('all_sources'));
-  for (const mode of ['meter-status', 'glab-host', 'gh-account', 'tea', 'gh-discovery', 'glab-discovery', 'git-log']) {
+  for (const mode of ['meter-status', 'meter-budget', 'glab-host', 'gh-account', 'tea', 'gh-discovery', 'glab-discovery', 'tea-discovery', 'gh-malformed', 'glab-malformed', 'tea-malformed', 'gh-auth-error', 'glab-auth-error', 'git-log', 'tea-partial', 'logged-out', 'gh-legacy']) {
     seed(); const data = collect(mode); check(mode, data);
+    if (mode === 'logged-out') {
+      assert.deepEqual(data.git.coverage.sources, expected.get('meter_only'));
+      assert.ok(!fs.readFileSync(env.FIXTURE_AUDIT, 'utf8').includes('FAILED'));
+    }
+    if (mode === 'gh-legacy') assert.deepEqual(data.git.coverage.sources, expected.get('legacy_sources'));
     if (mode === 'glab-host') assert.equal(data.git.coverage.sources.find(x => x.source === 'glab:forge-a.test').answered, true);
   }
-  seed(); fs.rmdirSync(repo); check('missing-repo', collect('good'));
+  for (const command of ['gh', 'glab', 'tea']) fs.unlinkSync(path.join(bin, command));
+  seed(); const absent = collect('good'); check('no-forges', absent);
+  assert.deepEqual(absent.git.coverage.sources, expected.get('meter_only'));
+  assert.ok(!fs.readFileSync(env.FIXTURE_AUDIT, 'utf8').includes('FAILED'));
+  for (const command of ['gh', 'glab', 'tea']) install(command);
+  const update = sql => { const d = new DatabaseSync(meterFile); d.exec(sql); d.close(); };
+  const missingCwd = path.join(tmp, 'deleted');
+  const d = new DatabaseSync(meterFile); d.prepare('INSERT INTO cwd_repo VALUES (?, ?, ?)').run('example/project', missingCwd, 1); d.close();
+  seed(); check('two-cwds', collect('good'));
+  fs.rmdirSync(repo);
+  for (const [name, last] of [['recent-no-checkout', 1794322800000], ['boundary-no-checkout', 1793448000000], ['old-no-checkout', 1793447999999]]) {
+    update(`UPDATE sessions SET first_ms = ${last}, last_ms = ${last}`);
+    seed(); check(name, collect('good'));
+    const audit = fs.readFileSync(env.FIXTURE_AUDIT, 'utf8');
+    assert.ok(audit.includes('1 repos have no checkout left; their commits from earlier runs are kept'));
+    assert.ok(!audit.includes('FAILED'), 'no checkout is not a failed source');
+  }
   fs.mkdirSync(repo);
   seed(); const db = new DatabaseSync(meterFile); db.exec('DELETE FROM pr'); db.close();
   check('empty', collect('empty'));
