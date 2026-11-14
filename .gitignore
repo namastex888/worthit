@@ -5,3 +5,6 @@ __pycache__/
 *-worthit.png
 *-worthit-audit.log
 .DS_Store
+.herdr/
+.claude/
+*-worthit-share-*.png
