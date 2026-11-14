@@ -1,18 +1,18 @@
 // Synthetic regression for issue #24. Runs with its own HOME, store and fake scanner/SSH.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { machineNotes, blocks, strip, len } from '../../../src/draw.mjs';
+import { isolatedEnvironment } from '../../support/environment.mjs';
+import '../../support/clock.mjs';
 
 const fixture = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(fixture, '../../..');
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'worthit-keep-days-'));
-const python = spawnSync('which', ['python3'], { encoding: 'utf8' }).stdout.trim();
-const env = { ...process.env, HOME: path.join(tmp, 'home'), WORTHIT_HOME: path.join(tmp, 'store'), TZ: 'America/New_York', PYTHONDONTWRITEBYTECODE: '1' };
-delete env.WORTHIT_REUSE; delete env.WORTHIT_RUNNING;
+const isolated = isolatedEnvironment(), { tmp, python } = isolated;
+const support = path.resolve(fixture, '../../support');
+const env = { ...isolated.env, TZ: 'America/New_York', NODE_OPTIONS: `--import=${path.join(support, 'clock.mjs')}`, PYTHONPATH: support };
 const read = p => JSON.parse(fs.readFileSync(p, 'utf8'));
 const write = (p, data) => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, JSON.stringify(data)); };
 const run = (cmd, args, extra = {}) => {
@@ -21,6 +21,7 @@ const run = (cmd, args, extra = {}) => {
   return r.stdout;
 };
 const saved = read(path.join(fixture, 'saved.json')), fresh = read(path.join(fixture, 'fresh.json'));
+const expected = read(path.join(fixture, 'expected-data.json'));
 const copy = v => structuredClone(v);
 const empty = host => ({ ...copy(saved), host, buckets: [], sessions: [] });
 let serial = 0;
@@ -107,6 +108,15 @@ try {
   const slid = merge(slidingSaved, slidingFresh);
   assert.deepEqual(slid.notes, [], 'sliding window must not report a lost day');
   assert.deepEqual(slid.data, slidingFresh, 'intact sliding-window scan stays exactly fresh');
+  // Lost logs inside a moving window retain eligible days without moving the cutoff backwards.
+  const lostSaved = copy(saved), lostFresh = copy(fresh);
+  lostSaved.since = '2026-01-01T00:00:00';
+  lostFresh.since = '2026-01-07T12:00:00';
+  assert.notEqual(lostSaved.since, lostFresh.since, 'cutoffs differ so restoring min(saved, fresh) is detectable');
+  const lost = merge(lostSaved, lostFresh);
+  assert.equal(lost.notes[0].days_kept, expected.sliding_lost_days);
+  assert.equal(lost.data.buckets.length, expected.sliding_lost_days);
+  assert.equal(lost.data.since, lostFresh.since, 'retained units must keep the fresh sliding since');
   for (const side of ['saved', 'fresh']) {
     const old = copy(saved), next = copy(fresh); delete (side === 'saved' ? old : next).since;
     assert.deepEqual(merge(old, next), { data: next, notes: [] }, 'missing ' + side + ' since skips retention');
@@ -126,7 +136,7 @@ try {
   assert.ok(safeReport.hosts['box-a.json'].error, 'weekly still reports the unreadable run file');
 
   // Exercise the real --json -> scan -> merge -> analyse -> history path, with only fake scanner/SSH IO.
-  const bin = path.join(tmp, 'bin'); fs.mkdirSync(bin, { recursive: true });
+  const bin = path.join(tmp, 'fake-bin'); fs.mkdirSync(bin, { recursive: true });
   fs.mkdirSync(env.HOME, { recursive: true });
   const fake = `#!${process.execPath}\nimport fs from 'node:fs'; import path from 'node:path'; import {spawnSync} from 'node:child_process';
 const args=process.argv.slice(2), ssh=process.argv[1].endsWith('/ssh');
@@ -159,6 +169,19 @@ else {const r=spawnSync(${JSON.stringify(python)},args,{stdio:'inherit'});proces
   assert.ok(machineNotes(after).includes('box-a: kept 14 older days'), 'dashboard names machine and distinct days');
   const again = cli(nextDir);
   assert.deepEqual(again.totals, after.totals, 'next scan reuses persisted retained days without double counting');
+  // A successful SSH response with genuinely empty logs must retain the same 14 days.
+  const emptyDir = path.join(tmp, 'empty-answer');
+  write(path.join(emptyDir, 'box-a.json'), recent({ ...empty('box-a'), generated_at: fresh.generated_at, since: fresh.since }));
+  for (const name of ['local.json', 'box-b.json']) write(path.join(emptyDir, name), read(path.join(nextDir, name)));
+  const emptyAnswer = cli(emptyDir);
+  assert.deepEqual(emptyAnswer.machines_missing, [], 'empty successful response is not a missing machine');
+  assert.deepEqual(emptyAnswer.totals, before.totals, 'empty successful response preserves the week');
+  assert.deepEqual({ output_tokens: emptyAnswer.totals.output_tokens, api_value_usd: emptyAnswer.totals.api_value_usd }, expected.week, 'empty answer matches literal expected week');
+  assert.deepEqual(read(path.join(env.WORTHIT_HOME, 'history.json')), oldHistory, 'empty successful response preserves every history row');
+  assert.equal(read(path.join(env.WORTHIT_HOME, 'run-keep/box-a.json')).buckets.length, expected.saved_days, 'empty answer persists all saved days');
+  assert.equal(emptyAnswer.machines_retained[0].machine, 'box-a');
+  assert.equal(emptyAnswer.machines_retained[0].days_kept, expected.saved_days);
+  assert.ok(machineNotes(emptyAnswer).includes('box-a: kept 14 older days'), 'empty answer names retained machine and days');
   const conflictDir = path.join(tmp, 'conflicting-model');
   const conflict = recent(fresh); conflict.buckets[0].model = 'claude-haiku-5-5'; conflict.buckets[0].output = 200000;
   write(path.join(conflictDir, 'box-a.json'), conflict);
@@ -213,6 +236,10 @@ console.log(JSON.stringify(buildData(report,null,cfg,{counts:{},hosts:[{alias:'b
   const floor = proof(after.machines_retained);
   assert.equal(floor.plans.length, 3);
   for (const p of floor.plans) { assert.equal(p.proof, 'floor'); assert.equal(p.change_vs_last_week_pct, null); }
+  for (const p of proof(emptyAnswer.machines_retained).plans) {
+    assert.equal(p.proof, 'floor', 'empty-answer retained current-week units force floor');
+    assert.equal(p.change_vs_last_week_pct, null, 'empty-answer floor has no weekly comparison');
+  }
   assert.equal(proof([{ machine: 'box-a', days_kept: 1, units: [{ day: '2020-01-01', provider: 'claude' }] }]).plans[0].proof, 'measured', 'old retained days outside this week do not taint this week');
   const multi = { ...after, plans: floor.plans, machines_retained: [{ machine: 'box-a-long-alias-for-fixture', days_kept: 14 }, { machine: 'box-b-long-alias-for-fixture', days_kept: 7 }] };
   const multiNotes = machineNotes(multi);
@@ -226,7 +253,7 @@ console.log(JSON.stringify(buildData(report,null,cfg,{counts:{},hosts:[{alias:'b
     write(path.join(out, 'multi-data.json'), multi);
     fs.writeFileSync(path.join(out, 'dashboard.txt'), ['WORTHIT · synthetic saved-days regression', ...machineNotes(after), '', ...blocks.Tiles(after), '', ...blocks.Months(after)].map(strip).join('\n'));
   }
-  console.log('keep-saved-days: ok (14 -> 14, week/history stable, overlaps, persistence, JSON/dashboard, floor proof; R1 sliding window/7-day proof, R2 corrupt files, safe Python imports, folded aliases)');
+  console.log('keep-saved-days: ok (14 -> 14 including empty successful answer, literal week/history stable, retained sliding since, overlaps, persistence, JSON/dashboard, floor proof; intact 7-day CLI and synthetic proof, corrupt files, safe Python imports, folded aliases)');
 } finally {
-  fs.rmSync(tmp, { recursive: true, force: true });
+  isolated.cleanup();
 }

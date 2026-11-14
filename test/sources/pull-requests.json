@@ -1,0 +1,37 @@
+[
+  {
+    "author": "coder-a",
+    "repo": "project-a",
+    "number": 1,
+    "merged_at": "2026-11-10T12:00:00Z",
+    "title": "feat: example feature"
+  },
+  {
+    "author": "coder-a",
+    "repo": "project-a",
+    "number": 2,
+    "merged_at": "2026-11-03T12:00:00Z",
+    "title": "fix: example repair"
+  },
+  {
+    "author": "coder-b",
+    "repo": "project-b",
+    "number": 1,
+    "merged_at": "2026-11-11T12:00:00Z",
+    "title": "feat: another example feature"
+  },
+  {
+    "author": "coder-b",
+    "repo": "project-b",
+    "number": 2,
+    "merged_at": "2026-11-12T12:00:00Z",
+    "title": "fix: another example repair"
+  },
+  {
+    "author": "coder-b",
+    "repo": "project-b",
+    "number": 3,
+    "merged_at": "2026-11-04T12:00:00Z",
+    "title": "feat: previous example feature"
+  }
+]
