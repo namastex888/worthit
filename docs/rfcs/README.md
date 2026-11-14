@@ -33,3 +33,5 @@ cuts a release, so a version number says nothing about what a person gets.
 | # | Title | Status |
 |---|---|---|
 | [0001](0001-how-worthit-ships.md) | How worthit ships | In delivery, 2026-11-12 (#1: versions and releases; deliveries 1-3 open) |
+| [0002](0002-retire-a-machine.md) | Retire a machine | Queued |
+| [0003](0003-weekly-checkpoint.md) | The weekly allowance checkpoint | Queued |
