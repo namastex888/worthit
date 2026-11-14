@@ -80,3 +80,11 @@ Repeated checks against one expectation are allowed. Edit expected values
 only when an intentional contract or fixture change explains the new number.
 Run `make check` before pushing. Deliberate regression experiments belong in a
 private throwaway copy; leave the checked-out implementation intact.
+
+`git-source-coverage` seeds literal daily PR and commit counts in both stores and
+uses synthetic meter, local git, gh (two accounts), glab (two hosts), and tea
+commands. A meter sync failure through `--json` preserves both metrics; the next
+good answer replaces them, including a stored day with no current rows. Status,
+discovery, individual account/host, missing repository and git-log failures check
+independent per-metric MAX behavior and named audit failures. Expectations live
+in `expected-data.json`; every root key is exercised.

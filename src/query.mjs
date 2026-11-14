@@ -16,12 +16,15 @@ const fail = msg => { throw new Error(msg); };
 const open = () => { if (!fs.existsSync(DB)) fail('no local store yet. Run `worthit --json` once to scan and fill it.'); return new DatabaseSync(DB, { readOnly: true }); };
 
 export const SCHEMA = {
+  'git.coverage': { about: 'Last-run JSON field (worthit get git.coverage), not a SQL table. Within the git 14-day window each metric replaces stored daily counts only if every source feeding it answered; otherwise each store keeps the per-metric MAX. Outside that window counts keep MAX. Missing optional tea/glab CLIs are not selected sources.', fields: {
+    prs: 'boolean: usagemeter and every selected forge source answered', commits: 'boolean: usagemeter repository discovery and every local git log answered; independent of forges',
+    sources: 'array of {source, answered, metrics}: source is usagemeter, git log, gh:<account>, glab:<host>, or tea; gh discovery / glab discovery names failed account/host discovery (gh names a missing CLI). answered is boolean; metrics is an array of prs and/or commits. Failed discovery remains incomplete even if a gh @me fallback answers.' } },
   machines_retained: { about: 'Last-run JSON field (also available with worthit get machines_retained), not a SQL table. Older machine/local-day/provider units kept by current API-list USD, then total tokens; fresh wins a full tie. Any retained unit intersecting this week makes every plan a floor with change_vs_last_week_pct null.', fields: {
     machine: 'SSH alias, or "this machine" for local logs', days_kept: 'number of distinct local days with a saved unit selected', units: 'one {day: YYYY-MM-DD, provider: claude | codex | antigravity | omp | dsh} for every unit selected from the saved scan' } },
   day_provider: { about: 'One row per local day and tool. A day only grows: reruns keep the larger value.', columns: {
     day: 'YYYY-MM-DD', provider: 'claude | codex | google (Antigravity) | omp | dsh', api_usd: 'usage priced at API list rates, in dollars', output_tokens: 'output tokens, thinking included', requests: 'model requests' } },
   day_model: { about: 'One row per UTC day, model and tool.', columns: { day: 'YYYY-MM-DD', model: 'model id as logged', provider: 'tool that used it', output_tokens: 'output tokens', api_usd: 'priced dollars' } },
-  day: { about: 'Git activity per local day (only days that were inside a run with git data).', columns: { day: 'YYYY-MM-DD', prs: 'merged pull requests authored by the user', commits: 'commits in local repos' } },
+  day: { about: 'Git activity per local day. Each metric replaces inside the 14-day window only when all its sources answered; otherwise keeps MAX.', columns: { day: 'YYYY-MM-DD', prs: 'merged pull requests authored by the user', commits: 'commits in local repos' } },
   plan_value: { about: 'What one full weekly limit of each plan was worth, as measured on each run day.', columns: {
     day: 'day of the run', provider: 'claude | codex | google', plan: 'plan name', usd_per_full_week: 'API-list dollars per full weekly limit', times_plan_price: 'that value divided by the weekly plan price',
     stretches: 'meter stretches pooled into the number', proof: 'measured | floor | estimate' } },

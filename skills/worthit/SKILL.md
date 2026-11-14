@@ -43,6 +43,18 @@ Parts of the last run. Dots walk into objects and arrays (`plans.0.usd_per_full_
 
 When `machines_retained` has a unit inside this week, that week's totals are a lower bound too.
 
+`git.coverage` reports `prs` and `commits` booleans and `sources`, an array of
+`{source, answered, metrics}`. Sources are `usagemeter`, `git log`, `gh:<account>`,
+`glab:<host>` and `tea`. Failed account/host discovery is named `gh discovery` or
+`glab discovery` (`gh` names a missing CLI); a successful `gh:@me` fallback cannot
+clear failed discovery. Missing optional tea/glab CLIs are not selected sources.
+PR coverage needs the meter and every selected forge answer. Commit coverage needs
+meter repository discovery and every local git log; forge failures do not affect it.
+Within git's 14-day window, each metric replaces stored daily counts only with full
+coverage. Otherwise `history.json` and SQLite `day` keep the per-metric MAX, also
+outside the window. Name sources with `answered: false` when reporting incomplete
+counts. The audit log names every source's answer or failure too.
+
 ## `worthit days`
 
 Sums from the local store over any period.

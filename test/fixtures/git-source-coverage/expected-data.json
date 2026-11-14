@@ -1,0 +1,195 @@
+{
+  "meter-sync": {
+    "prs": false,
+    "commits": false,
+    "failed": [
+      "usagemeter",
+      "git log"
+    ],
+    "counts": [
+      9,
+      8,
+      7,
+      6
+    ]
+  },
+  "good": {
+    "prs": true,
+    "commits": true,
+    "failed": [],
+    "counts": [
+      2,
+      2,
+      0,
+      0
+    ]
+  },
+  "meter-status": {
+    "prs": false,
+    "commits": false,
+    "failed": [
+      "usagemeter",
+      "git log"
+    ],
+    "counts": [
+      9,
+      8,
+      7,
+      6
+    ]
+  },
+  "glab-host": {
+    "prs": false,
+    "commits": true,
+    "failed": [
+      "glab:forge-b.test"
+    ],
+    "counts": [
+      9,
+      2,
+      7,
+      0
+    ]
+  },
+  "gh-account": {
+    "prs": false,
+    "commits": true,
+    "failed": [
+      "gh:coder-b"
+    ],
+    "counts": [
+      9,
+      2,
+      7,
+      0
+    ]
+  },
+  "tea": {
+    "prs": false,
+    "commits": true,
+    "failed": [
+      "tea"
+    ],
+    "counts": [
+      9,
+      2,
+      7,
+      0
+    ]
+  },
+  "gh-discovery": {
+    "prs": false,
+    "commits": true,
+    "failed": [
+      "gh discovery"
+    ],
+    "counts": [
+      9,
+      2,
+      7,
+      0
+    ]
+  },
+  "glab-discovery": {
+    "prs": false,
+    "commits": true,
+    "failed": [
+      "glab discovery"
+    ],
+    "counts": [
+      9,
+      2,
+      7,
+      0
+    ]
+  },
+  "git-log": {
+    "prs": true,
+    "commits": false,
+    "failed": [
+      "git log"
+    ],
+    "counts": [
+      2,
+      8,
+      0,
+      6
+    ]
+  },
+  "missing-repo": {
+    "prs": true,
+    "commits": false,
+    "failed": [
+      "git log"
+    ],
+    "counts": [
+      2,
+      8,
+      0,
+      6
+    ]
+  },
+  "empty": {
+    "prs": true,
+    "commits": true,
+    "failed": [],
+    "counts": [
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "all_sources": [
+    {
+      "source": "usagemeter",
+      "answered": true,
+      "metrics": [
+        "prs",
+        "commits"
+      ]
+    },
+    {
+      "source": "git log",
+      "answered": true,
+      "metrics": [
+        "commits"
+      ]
+    },
+    {
+      "source": "gh:coder-a",
+      "answered": true,
+      "metrics": [
+        "prs"
+      ]
+    },
+    {
+      "source": "gh:coder-b",
+      "answered": true,
+      "metrics": [
+        "prs"
+      ]
+    },
+    {
+      "source": "tea",
+      "answered": true,
+      "metrics": [
+        "prs"
+      ]
+    },
+    {
+      "source": "glab:forge-a.test",
+      "answered": true,
+      "metrics": [
+        "prs"
+      ]
+    },
+    {
+      "source": "glab:forge-b.test",
+      "answered": true,
+      "metrics": [
+        "prs"
+      ]
+    }
+  ]
+}

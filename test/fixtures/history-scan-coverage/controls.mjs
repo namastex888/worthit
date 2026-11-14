@@ -12,7 +12,7 @@ globalThis.Date = class extends RealDate {
 const { buildData, HOME } = await import('../../../src/collect.mjs');
 const activity = (output, usd, requests) => [{ hour, provider: 'claude', output, usd, requests }];
 const report = rows => ({ activity: rows, this_week: {}, prices: { plan_usd_per_week: {} } });
-const g = n => ({ prs: Array(n).fill(Date.parse(hour + ':00:00Z')), commits: Array(n).fill(Date.parse(hour + ':00:00Z')), src: {}, repos: 0 });
+const g = n => ({ coverage: { prs: true, commits: true }, prs: Array(n).fill(Date.parse(hour + ':00:00Z')), commits: Array(n).fill(Date.parse(hour + ':00:00Z')), src: {}, repos: 0 });
 const info = { counts: {}, hosts: [{ alias: 'box-b', ok: true }] }, cfg = { days: ['dst_long', 'dst_short'].includes(name) ? 1 : name.startsWith('git_') ? 21 : 7 };
 // Seed delivery while these older days still lie inside git's 14-day window.
 if (['git_old', 'git_partial', 'git_midnight'].includes(name)) clock -= 7 * 864e5;
