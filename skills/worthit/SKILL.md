@@ -38,6 +38,7 @@ Parts of the last run. Dots walk into objects and arrays (`plans.0.usd_per_full_
 | `game` | Level, XP, streak, personal bests |
 | `heat` | Output tokens per weekday and hour |
 | `week`, `machines`, `days_scanned`, `generated_at` | What the run covered |
+| `machines_missing`, `machines_left_out` | Machines that gave no answer this run (`saved_scan_at` set = their last saved scan was used) and saved machines with usage left out. Either one not empty = the week may be undercounted and every plan is a floor |
 
 ## `worthit days`
 

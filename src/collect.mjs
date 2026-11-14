@@ -81,14 +81,24 @@ export async function scan(cfg, on) {
     p.on('close', async code => { await written; const ok = !code && fs.existsSync(f) && fs.statSync(f).size > 2; if (!ok) fs.rmSync(f, { force: true }); pcts[alias] = 1; audit('run', `ssh ${alias} finished: ${ok ? files + ' files read' : 'no data (exit ' + code + ')'}`); emit(`${alias} · ${ok ? 'done' : 'no answer'}`); res({ alias, ok, files, cached: hcached }); });
   }));
   await local; const hosts = await Promise.all(remote);
+  const head = f => { try { const fd = fs.openSync(f, 'r'), b = Buffer.alloc(400); fs.readSync(fd, b, 0, 400, 0); fs.closeSync(fd); return b.toString(); } catch { return ''; } };
+  const savedAt = f => (/"generated_at"\s*:\s*"([^"]*)"/.exec(head(f)) || [])[1] || null;
+  // a machine that gave no answer keeps its last saved scan, and the run says so: a week never shrinks because one machine was asleep
+  for (const x of hosts) { const k = path.join(keepDir, x.alias + '.json'); if (x.ok || !fs.existsSync(k)) continue;
+    fs.copyFileSync(k, path.join(runDir, x.alias + '.json')); x.ok = true; x.saved_at = savedAt(k) || fs.statSync(k).mtime.toISOString(); audit('note', `${x.alias} gave no answer: its last saved scan (${x.saved_at}) is used`); }
   // two ssh aliases can point at one machine: keep the first answer, drop the repeat so nothing is counted twice
-  const hostOf = f => { try { const fd = fs.openSync(f, 'r'), b = Buffer.alloc(400); fs.readSync(fd, b, 0, 400, 0); fs.closeSync(fd); return (/"host"\s*:\s*"([^"]*)"/.exec(b.toString()) || [])[1] || null; } catch { return null; } };
+  const hostOf = f => (/"host"\s*:\s*"([^"]*)"/.exec(head(f)) || [])[1] || null;
   const seenHost = new Map([[hostOf(path.join(runDir, 'local.json')), 'this machine']]);
-  for (const x of hosts) { if (!x.ok) continue; const f = path.join(runDir, x.alias + '.json'), hn = hostOf(f);
-    if (hn && seenHost.has(hn)) { x.same_as = seenHost.get(hn); x.ok = false; fs.rmSync(f, { force: true }); audit('note', `${x.alias} is the same machine as ${x.same_as} (${hn}): its copy is dropped`); } else if (hn) seenHost.set(hn, x.alias); }
+  for (const x of [...hosts].sort((a, b) => !!a.saved_at - !!b.saved_at)) { if (!x.ok) continue; const f = path.join(runDir, x.alias + '.json'), hn = hostOf(f);   // fresh answers first: a saved copy never wins over one
+    if (hn && seenHost.has(hn)) { x.same_as = seenHost.get(hn); x.ok = false; delete x.saved_at; fs.rmSync(f, { force: true }); audit('note', `${x.alias} is the same machine as ${x.same_as} (${hn}): its copy is dropped`); } else if (hn) seenHost.set(hn, x.alias); }
   on({ pct: 1, detail: 'done', counts });
+  // saved machines the person left out of this run, whose last scan (inside the window) holds usage: the plans' numbers are then "at least"
+  const leftOut = []; for (const h of sshHosts()) { const k = path.join(keepDir, h.alias + '.json'); if (names.includes(h.alias) || !fs.existsSync(k)) continue;
+    const hn = hostOf(k), at = Date.parse(savedAt(k) || ''); if ((hn && seenHost.has(hn)) || !(at > Date.now() - cfg.days * DAY)) continue; if (hn) seenHost.set(hn, h.alias);
+    let used = false; try { used = !/"buckets"\s*:\s*\[\s*\]/.test(fs.readFileSync(k, 'utf8')); } catch { /* unreadable: not counted as use */ } if (used) leftOut.push(h.alias); }
+  if (leftOut.length) audit('note', `saved machines with usage left out of this run: ${leftOut.join(', ')}`);
   fs.writeFileSync(cache, JSON.stringify(counts)); fs.cpSync(runDir, keepDir, { recursive: true, force: true });
-  return { runDir, counts, hosts, cached };
+  return { runDir, counts, hosts, cached, left_out: leftOut };
 }
 
 // ---------------------------------------------------------------- step 2: price every request, read the weekly meters
@@ -154,18 +164,23 @@ export async function git(cfg, on) {
     on({ pct: .75, detail: 'GitHub · your merged pull requests (gh search)' }); audit('net', 'api.github.com/search/issues (through your gh login)');
     const iso = t => new Date(t).toISOString().slice(0, 19) + 'Z';
     // one search answers at most 1,000 rows, so the time is asked in slices of a week (and a full slice is asked again in halves)
-    const range = async (a, b) => { audit('run', `gh api search/issues q="is:pr is:merged author:@me merged:${iso(a)}..${iso(b)}" --paginate`);
-      const o = await runOut('gh', ['api', '-X', 'GET', 'search/issues', '-f', `q=is:pr is:merged author:@me merged:${iso(a)}..${iso(b)}`, '-f', 'per_page=100', '--paginate', '-q', '.items[] | [.repository_url, .number, .pull_request.merged_at, .title] | @tsv'], 90000);
+    // every github.com account logged in to gh is you (the active one first): each is asked, and each keeps its own mark of how far back it got
+    const st = spawnSync('gh', ['auth', 'status', '--hostname', 'github.com'], { encoding: 'utf8', timeout: 10000 }), logins = [...((st.stdout || '') + (st.stderr || '')).matchAll(/Logged in to github\.com account (\S+)[^\n]*\n\s*- Active account: (true|false)/g)];
+    const authors = [...new Set(logins.sort((a, b) => (b[2] === 'true') - (a[2] === 'true')).map(x => x[1]))]; if (!authors.length) authors.push('@me');
+    for (const [ai, au] of authors.entries()) { const kFrom = 'gh_kind_from_ms' + (ai ? ':' + au : ''), kAt = 'gh_kind_fetched_ms' + (ai ? ':' + au : '');
+    const range = async (a, b) => { audit('run', `gh api search/issues q="is:pr is:merged author:${au} merged:${iso(a)}..${iso(b)}" --paginate`);
+      const o = await runOut('gh', ['api', '-X', 'GET', 'search/issues', '-f', `q=is:pr is:merged author:${au} merged:${iso(a)}..${iso(b)}`, '-f', 'per_page=100', '--paginate', '-q', '.items[] | [.repository_url, .number, .pull_request.merged_at, .title] | @tsv'], 90000);
       const rows = []; for (const l of o.out.split('\n')) { const [url, n, at, ...ti] = l.split('\t'); if (!url || !at) continue; rows.push([('github.com/' + url.split('/repos/')[1] + '#' + n).toLowerCase(), Date.parse(at), kindOf(ti.join(' '))]); }
       if (o.code === 0 && rows.length >= 1000 && b - a > DAY) { const mid = a + Math.floor((b - a) / 2), x = await range(a, mid), y = await range(mid, b); return x && y; }
       if (o.code !== 0) return false; keep(rows); return true; };
     const slices = async (from, to) => { let done = to; for (let b = to; b > from; b -= 7 * DAY) { const a = Math.max(from, b - 7 * DAY); if (!await range(a, b)) break; done = a; } return done; };   // newest first; returns how far back it got
-    const cov = mv('gh_kind_from_ms'), fetched = mv('gh_kind_fetched_ms'), now0 = Date.now();
+    const cov = mv(kFrom), fetched = mv(kAt), now0 = Date.now();
     const recentFrom = cov != null && fetched ? Math.max(cov, fetched - DAY) : since, got = await slices(recentFrom, now0);
-    if (got <= recentFrom) { sv('gh_kind_fetched_ms', now0); let from = cov != null && fetched ? cov : recentFrom;
-      if (from > histFrom) { on({ pct: .8, detail: 'GitHub · earlier weeks of merged pull requests (asked once, then kept)' }); from = await slices(histFrom, from); }   // an unanswered slice (rate limit) is asked again on the next run
-      sv('gh_kind_from_ms', from); }
-    else audit('note', 'gh search did not answer: using the pull requests already stored');
+    if (got <= recentFrom) { sv(kAt, now0); let from = cov != null && fetched ? cov : recentFrom;
+      if (from > histFrom) { on({ pct: .8, detail: `GitHub · earlier weeks of merged pull requests${ai ? ' by ' + au : ''} (asked once, then kept)` }); from = await slices(histFrom, from); }   // an unanswered slice (rate limit) is asked again on the next run
+      sv(kFrom, from); }
+    else audit('note', `gh search did not answer for ${au}: using the pull requests already stored`);
+    }
   } else audit('note', 'gh CLI not found: GitHub PRs not counted');
   // Gitea (tea) and GitLab (glab) are optional: not installed, logged out or not answering means skipped with a note, never an error.
   // A few bounded calls per forge (your own merged pull requests), not one per repository; later runs only ask for what changed since the last one.
@@ -229,7 +244,9 @@ export function buildData(report, g, cfg, scanInfo) {
   let pk = [0, 0, 0]; heat.forEach((r, i) => r.forEach((v, hh) => { if (v > pk[2]) pk = [i, hh, v]; })); const dsum = heat.map(r => r.reduce((s, v) => s + v, 0)), quiet = dsum.indexOf(Math.min(...dsum));
 
   // plans: this week's measured value of one full weekly limit
-  const hs = scanInfo.hosts || [], allMachines = hs.length ? hs.every(x => x.ok || x.same_as) : !sshHosts().length;   // saved ssh machines left out = use elsewhere may be missing
+  // measured needs every machine's answer from this run: one that gave no answer (even with a saved scan standing in) or a saved machine with usage left out means use elsewhere may be missing
+  const hs = scanInfo.hosts || [], missing = hs.filter(x => x.saved_at || !(x.ok || x.same_as)).map(x => ({ machine: x.alias, saved_scan_at: x.saved_at || null })), leftOut = scanInfo.left_out || [];
+  const allMachines = !missing.length && !leftOut.length && (hs.length > 0 || !sshHosts().length);
   let ledger = []; try { ledger = fs.readFileSync(path.join(HOME, 'weeks', 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch { /* first run */ }
   const day0 = new Date(w1).toISOString().slice(0, 10), events = loadEvents().filter(e => e.date_utc >= day0).map(e => ({ date: e.date_utc, provider: e.provider, type: e.type, title: e.title, confidence: e.confidence, source: e.source_url }));
   const plans = [];
@@ -268,7 +285,7 @@ export function buildData(report, g, cfg, scanInfo) {
 
   const tools = ['claude', 'codex', 'antigravity', 'omp', 'dsh'].filter(p => p !== 'omp' && p !== 'dsh' || (report.other_tools || {})[p]).map(p => { const r = cur.filter(a => a.provider === p), ot = (report.other_tools || {})[p];
     return { tool: TOOL[p], key: p, found: ot ? true : (scanInfo.counts[p] || 0) > 0, files: scanInfo.counts[p] || 0, source: ot ? 'usagemeter store' : 'session logs', priced: ot ? (ot.usd_fitted ? 'cost reported by omp; dsh priced at the rates those costs imply' : 'cost reported by the tool') : 'API list price', unpriced_output_tokens: ot ? ot.unpriced_output_tokens : 0, sessions: (report.sessions_by_provider || {})[p] || 0, requests: sum(r, 'requests'), output: sum(r, 'output'), cached: sum(r, 'cache_read'), fresh: sum(r, 'input_uncached'), usd: Math.round(sum(r, 'usd')) }; });
-  const D = { generated_at: new Date(now).toISOString(), week: { from: new Date(w1).toISOString().slice(0, 10), to: new Date(now).toISOString().slice(0, 10) }, machines: 1 + (scanInfo.hosts || []).filter(x => x.ok).length, days_scanned: cfg.days,
+  const D = { generated_at: new Date(now).toISOString(), week: { from: new Date(w1).toISOString().slice(0, 10), to: new Date(now).toISOString().slice(0, 10) }, machines: 1 + (scanInfo.hosts || []).filter(x => x.ok).length, machines_missing: missing, machines_left_out: leftOut, days_scanned: cfg.days,
     plans, events, months: [], tools, waste, waste_hidden: hidden, totals: { output_tokens: sum(cur, 'output'), output_tokens_change_pct: pctChange(sum(cur, 'output'), sum(prev, 'output')), api_value_usd: Math.round(sum(cur, 'usd')), api_value_change_pct: pctChange(sum(cur, 'usd'), sum(prev, 'usd')),
       tokens_per_day: perDay(act, 'output'), value_per_day: perDay(act, 'usd').map(Math.round) },
     heat: { days: names, rows: heat, note: pk[2] ? `peak ${names[pk[0]]} ${String(pk[1]).padStart(2, '0')}:00 · quiet ${names[quiet]}` : 'no activity' } };
@@ -283,7 +300,8 @@ export function buildData(report, g, cfg, scanInfo) {
   const hf = path.join(HOME, 'history.json'); let hist = { days: {} }; try { hist = JSON.parse(fs.readFileSync(hf, 'utf8')); } catch { /* first run */ }
   const agg = {}; for (const a of act) { const k = dayKey(a.t), o = agg[k] = agg[k] || { out: 0, usd: 0, prs: 0, commits: 0 }; o.out += a.output || 0; o.usd += a.usd || 0; }
   if (g) { for (const t of g.prs) (agg[dayKey(t)] = agg[dayKey(t)] || { out: 0, usd: 0, prs: 0, commits: 0 }).prs++; for (const t of g.commits) (agg[dayKey(t)] = agg[dayKey(t)] || { out: 0, usd: 0, prs: 0, commits: 0 }).commits++; }
-  for (const [k, o] of Object.entries(agg)) hist.days[k] = { out: Math.round(o.out), usd: Math.round(o.usd), prs: g ? o.prs : (hist.days[k] || {}).prs || 0, commits: g ? o.commits : (hist.days[k] || {}).commits || 0 };
+  const keepHigh = missing.length > 0, was = (k, f) => keepHigh ? (hist.days[k] || {})[f] || 0 : 0;   // a run with a machine missing never lowers a day already kept
+  for (const [k, o] of Object.entries(agg)) hist.days[k] = { out: Math.max(Math.round(o.out), was(k, 'out')), usd: Math.max(Math.round(o.usd), was(k, 'usd')), prs: g ? o.prs : (hist.days[k] || {}).prs || 0, commits: g ? o.commits : (hist.days[k] || {}).commits || 0 };
   fs.mkdirSync(HOME, { recursive: true }); fs.writeFileSync(hf, JSON.stringify(hist)); audit('write', tilde(hf) + `  (${Object.keys(hist.days).length} daily rows)`);
   // delivery: what the merged pull requests were (title prefix), ranked, and how features and their cost moved day by day, week by week, month by month
   if (g && g.kinds && g.kinds.length) {
