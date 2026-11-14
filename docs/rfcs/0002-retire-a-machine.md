@@ -16,17 +16,17 @@ A week that starts on or after the retirement can be measured again.
 ## Motivation
 
 worthit keeps the last scan of each ssh machine (`run-keep/<machine>.json`). When a machine gives no
-answer, that saved scan stands in for it (`src/collect.mjs:87`). A plan's weekly value is measured only
+answer, that saved scan stands in for it (`src/collect.mjs:88`). A plan's weekly value is measured only
 when every machine answered in this run. A machine that answered from its saved scan counts as missing
-(`src/collect.mjs:248`). A saved machine with usage that is not in the selection counts as left out
-(`src/collect.mjs:96`). Either one turns the plan into a floor (`src/collect.mjs:249`). A floor is never
+(`src/collect.mjs:253`). A saved machine with usage that is not in the selection counts as left out
+(`src/collect.mjs:101`). Either one turns the plan into a floor (`src/collect.mjs:259`). A floor is never
 compared week to week.
 
 A machine that is gone for good (sold, wiped, reinstalled) therefore answers from its saved scan forever.
 Every week stays a floor, and the weekly allowance check can never say whether a plan moved. Leaving the
 machine out of `--hosts` does not help: it then counts as left out.
 
-Today only Claude's plan can be measured (`src/collect.mjs:262`). This RFC unblocks that one, and any
+Today only Claude's plan can be measured (`src/collect.mjs:272`). This RFC unblocks that one, and any
 plan that becomes measurable later.
 
 ## Design
@@ -56,7 +56,8 @@ worthit hosts unretire <machine>
   already guarantees that a fresh scan cannot shrink it).
 - It never appears in `machines_missing` or `machines_left_out`.
 - The proof rule becomes: a plan is **measured** when every machine that is not retired answered, no
-  machine is left out, and the week window starts on or after the `retired_at` of every retired machine.
+  machine is left out, no `machines_retained` unit (#24) falls inside the week, and the week window
+  starts on or after the `retired_at` of every retired machine.
   If the window starts before a retirement, the plan stays a **floor**. The run then names the machine
   and the first day a measured week is possible.
 - `--json` gets a new field: `machines_retired: [{ machine, retired_at, last_scan_at, days_kept }]`.
