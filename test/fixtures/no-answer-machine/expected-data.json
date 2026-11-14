@@ -1,0 +1,219 @@
+{
+  "never_answered": {
+    "week": {
+      "from": "2026-11-07",
+      "to": "2026-11-14"
+    },
+    "machines": 1,
+    "missing": [
+      {
+        "machine": "box-b",
+        "saved": null
+      }
+    ],
+    "left_out": [],
+    "totals": {
+      "output_tokens": 1500000,
+      "api_value_usd": 18,
+      "output_tokens_change_pct": 0,
+      "api_value_change_pct": 0
+    },
+    "tools": [
+      {
+        "key": "claude",
+        "requests": 3,
+        "output": 300000,
+        "usd": 3
+      },
+      {
+        "key": "codex",
+        "requests": 3,
+        "output": 300000,
+        "usd": 3
+      },
+      {
+        "key": "antigravity",
+        "requests": 3,
+        "output": 300000,
+        "usd": 3
+      },
+      {
+        "key": "omp",
+        "requests": 3,
+        "output": 300000,
+        "usd": 3
+      },
+      {
+        "key": "dsh",
+        "requests": 3,
+        "output": 300000,
+        "usd": 6
+      }
+    ],
+    "plans": [
+      {
+        "key": "claude",
+        "proof": "floor",
+        "usd_per_full_week": 3,
+        "change_allowed": false
+      }
+    ],
+    "stored_weeks": [
+      {
+        "week": "current",
+        "output_tokens": 1500000,
+        "api_usd": 18,
+        "requests": 15
+      },
+      {
+        "week": "previous",
+        "output_tokens": 1500000,
+        "api_usd": 18,
+        "requests": 15
+      }
+    ]
+  },
+  "answered": {
+    "week": {
+      "from": "2026-11-07",
+      "to": "2026-11-14"
+    },
+    "machines": 2,
+    "missing": [],
+    "left_out": [],
+    "totals": {
+      "output_tokens": 4500000,
+      "api_value_usd": 54,
+      "output_tokens_change_pct": 0,
+      "api_value_change_pct": 0
+    },
+    "tools": [
+      {
+        "key": "claude",
+        "requests": 6,
+        "output": 900000,
+        "usd": 9
+      },
+      {
+        "key": "codex",
+        "requests": 6,
+        "output": 900000,
+        "usd": 9
+      },
+      {
+        "key": "antigravity",
+        "requests": 6,
+        "output": 900000,
+        "usd": 9
+      },
+      {
+        "key": "omp",
+        "requests": 6,
+        "output": 900000,
+        "usd": 9
+      },
+      {
+        "key": "dsh",
+        "requests": 6,
+        "output": 900000,
+        "usd": 18
+      }
+    ],
+    "plans": [
+      {
+        "key": "claude",
+        "proof": "measured",
+        "usd_per_full_week": 9,
+        "change_allowed": true
+      }
+    ],
+    "stored_weeks": [
+      {
+        "week": "current",
+        "output_tokens": 4500000,
+        "api_usd": 54,
+        "requests": 30
+      },
+      {
+        "week": "previous",
+        "output_tokens": 4500000,
+        "api_usd": 54,
+        "requests": 30
+      }
+    ]
+  },
+  "no_answer": {
+    "week": {
+      "from": "2026-11-07",
+      "to": "2026-11-14"
+    },
+    "machines": 2,
+    "missing": [
+      {
+        "machine": "box-b",
+        "saved": "<saved scan>"
+      }
+    ],
+    "left_out": [],
+    "totals": {
+      "output_tokens": 4500000,
+      "api_value_usd": 54,
+      "output_tokens_change_pct": 0,
+      "api_value_change_pct": 0
+    },
+    "tools": [
+      {
+        "key": "claude",
+        "requests": 6,
+        "output": 900000,
+        "usd": 9
+      },
+      {
+        "key": "codex",
+        "requests": 6,
+        "output": 900000,
+        "usd": 9
+      },
+      {
+        "key": "antigravity",
+        "requests": 6,
+        "output": 900000,
+        "usd": 9
+      },
+      {
+        "key": "omp",
+        "requests": 6,
+        "output": 900000,
+        "usd": 9
+      },
+      {
+        "key": "dsh",
+        "requests": 6,
+        "output": 900000,
+        "usd": 18
+      }
+    ],
+    "plans": [
+      {
+        "key": "claude",
+        "proof": "floor",
+        "usd_per_full_week": 9,
+        "change_allowed": false
+      }
+    ],
+    "stored_weeks": [
+      {
+        "week": "current",
+        "output_tokens": 4500000,
+        "api_usd": 54,
+        "requests": 30
+      },
+      {
+        "week": "previous",
+        "output_tokens": 4500000,
+        "api_usd": 54,
+        "requests": 30
+      }
+    ]
+  }
+}

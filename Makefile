@@ -18,7 +18,7 @@ check: node_modules
 	node scripts/version.mjs check
 	for f in bin/*.mjs src/*.mjs scripts/*.mjs; do node --check "$$f"; done
 	python3 -m py_compile core/extract_usage.py core/weekly.py core/pricing.py core/merge_scans.py
-	node test/fixtures/keep-saved-days/check.mjs
+	node test/run-fixtures.mjs
 	node bin/worthit.mjs --version
 	node bin/worthit.mjs schema > /dev/null
 	node bin/worthit.mjs --skill > /dev/null
