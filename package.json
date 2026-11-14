@@ -1,6 +1,6 @@
 {
   "name": "worthit",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "Is your AI coding plan worth it? One command prices every request in your local Claude Code, Codex and Antigravity logs at API rates: what a weekly limit is really worth, cost per model and per merged PR, unused allowance, open vs closed models. Local, no account.",
   "type": "module",
   "bin": {
