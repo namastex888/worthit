@@ -40,6 +40,10 @@ const delta = (pct, goodWhenUp = true) => { if (pct == null) return d('no earlie
 function wrap(text, n) { const out = []; let l = ''; for (const word of String(text).split(/\s+/)) { if ((l + ' ' + word).trim().length > n) { out.push(l); l = word; } else l = (l + ' ' + word).trim(); } if (l) out.push(l); return out; }
 
 // ---------------------------------------------------------------- blocks
+// what this run is missing, in words (each line fits the ranking box): machines that gave no answer, and saved machines left out
+export const machineNotes = D => { const out = [], few = a => a[0].slice(0, 16) + (a.length > 1 ? ' +' + (a.length - 1) : ''), miss = D.machines_missing || [], sv = miss.filter(x => x.saved_scan_at).map(x => x.machine), no = miss.filter(x => !x.saved_scan_at).map(x => x.machine), lo = D.machines_left_out || [];
+  if (sv.length) out.push(`${few(sv)}: no answer, last saved scan used`); if (no.length) out.push(`${few(no)}: no answer, not counted`); if (lo.length) out.push(`${few(lo)}: has usage, left out of this run`); return out; };
+
 export const blocks = {
   Verdict: (D, p) => [fg(C.gold, '→') + ' ' + bold(w(clip(String(p.text || ''), W - 3)))],
 
@@ -66,6 +70,7 @@ export const blocks = {
     if (!D.plans.length) return box('WHICH PLAN GAVE MORE', [m('No finished weekly limit in your logs yet.'), d('A plan is ranked once its weekly meter runs to the cap,'), d('or closes, inside the scanned days.')], 56, C.ink, '$ per full weekly limit', 9);
     const ps = [...D.plans].sort((a, b) => b.usd_per_full_week - a.usd_per_full_week), mx = ps[0].usd_per_full_week;
     const l = ps.map((p, i) => bold(w(String(i + 1))) + ' ' + pad(fg(p.color, p.plan), 16) + lpad(bold(w(usd(p.usd_per_full_week))), 7) + ' ' + bar(p.usd_per_full_week, mx, 13, dark(p.color), p.color, false) + lpad(w(p.times_plan_price + '×'), 4) + ' ' + d(p.proof));
+    l.push(...machineNotes(D).map(t => fg(C.gold, '! ') + m(t)));
     while (l.length < 7) l.push('');
     l.push(d('measured  meter + every machine on the account'), d('floor     use elsewhere not counted: value ≥ shown'));
     return box('WHICH PLAN GAVE MORE', l, 56, C.ink, '$ per full weekly limit');
