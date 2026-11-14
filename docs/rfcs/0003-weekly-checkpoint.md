@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Queued |
+| Status | Accepted, 2026-11-14 |
 | Created | 2026-11-14 |
 | Issue | #27 |
 | Depends on | #24 (PR 33, for `machines_retained`); RFC 0002 for `machines_retired` |
@@ -128,11 +128,10 @@ Fixture cases from issue 25:
 |---|---|---|
 | 1 | `worthit weekly`, the `weekly` table, exit codes, fixture cases | open (#27) |
 
-## Open questions (for the owner)
+## Decisions (owner, 2026-11-14)
 
-1. **Name.** `worthit weekly` (recommended) or `worthit share allowance --json`? `share` reads the last
-   run and never scans. Keeping `share` that way and adding one command that scans keeps both easy to
-   explain.
-2. **Text by template or by the AI agent?** Recommended: the fixed template. A scheduled run should give
-   the same text for the same data. The post in the owner's voice is written from the JSON afterwards.
-3. **The `moved` threshold.** Recommended: 5%. Larger or smaller?
+1. **Name.** `worthit weekly`. `share` keeps reading the last run without scanning, and `weekly` is the
+   one command that scans. That keeps both easy to explain.
+2. **Text by template or by the AI agent?** The fixed template. A scheduled run gives the same text for
+   the same data. The post in the owner's voice is written from the JSON afterwards.
+3. **The `moved` threshold.** 5%.

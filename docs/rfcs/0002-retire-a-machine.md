@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Queued |
+| Status | Accepted, 2026-11-14 |
 | Created | 2026-11-14 |
 | Issue | #26 |
 | Depends on | #24 (a fresh scan never erases days a saved scan had); #44 (a run never lowers a history day it did not fully scan) |
@@ -49,7 +49,7 @@ worthit hosts unretire <machine>
 
 - `retire` records the machine in `hosts.json` under a new key:
   `"retired": [{ "machine": "<alias>", "retired_at": "<ISO time>", "last_scan_at": "<ISO time>" }]`.
-  `retired_at` is now unless `--since` is given (see the open questions). `last_scan_at` is the time of
+  `retired_at` is now unless `--since` is given (decision 2). `last_scan_at` is the time of
   the saved scan that will stand for the machine from now on.
 - `retire` refuses a machine that has no saved scan, because there would be nothing to keep. It says so
   and suggests leaving the machine out of the selection instead.
@@ -61,7 +61,7 @@ worthit hosts unretire <machine>
 ### What a run does with a retired machine
 
 - It is never asked over ssh. It is never in `--hosts all` or the saved selection. The machine picker
-  lists it as retired and does not offer it (open question 1).
+  lists it as retired and does not offer it (decision 1).
 - **Its snapshot.** `retire` moves `run-keep/<alias>.json` to `run-keep/retired/<alias>.json`. No run
   writes to that folder, so the snapshot stays frozen until `unretire`. It is identified by its alias and
   by the host name the scan reports (its `host` field). That is the same key the duplicate check uses
@@ -127,15 +127,14 @@ Two more cases:
 |---|---|---|
 | 1 | `worthit hosts` and `hosts retire` / `unretire`, the proof rule, `machines_retired`, the fixture case | open (#26) |
 
-## Open questions (for the owner)
+## Decisions (owner, 2026-11-14)
 
-1. **Command, picker, or both?** Recommended: the command now, and the picker lists retired machines
-   without offering them. Retiring is rare and hard to undo by accident from a command. An arrow-key
+1. **Command, picker, or both?** The command now. The machine picker lists retired machines but does
+   not offer them. Retiring is rare and hard to undo by accident from a command, while an arrow-key
    picker makes it easy to hit by mistake.
-2. **May `retired_at` be set back in time?** Without `--since`, the first measured week comes seven days
-   after the command runs. With `--since <date>`, the person states that nothing ran on the machine
-   after that date. The date may not be earlier than `last_scan_at`. That moves the first measured week
-   earlier, but the claim is the person's, not the data's. Recommended: allow `--since`, and have every
-   run that relies on it say "retired since <date>, as stated by you" next to the measured plan.
-3. **Should worthit suggest retiring?** For example, a hint after a machine has given no answer for 14
-   days. Recommended: a one-line hint in the machine notes only. Never retire anything automatically.
+2. **May `retired_at` be set back in time?** Yes, with `--since <date>`. The date may not be earlier than
+   `last_scan_at`. Without `--since`, the first measured week comes seven days after the command runs.
+   With it, the person states that nothing ran on the machine after that date. Every run that relies on
+   that statement says "retired since <date>, as stated by you" next to the measured plan.
+3. **Should worthit suggest retiring?** Only as a one-line hint in the machine notes, for example after
+   a machine has given no answer for 14 days. worthit never retires anything automatically.
