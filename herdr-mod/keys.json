@@ -1,0 +1,5 @@
+{
+  "global": {
+    "ctrl-alt-w": "mod.open:worthit"
+  }
+}
