@@ -5,7 +5,7 @@
 | Status | Queued |
 | Created | 2026-11-14 |
 | Issue | #27 |
-| Depends on | #24; RFC 0002 for the `machines_retired` field |
+| Depends on | #24 (PR 33, for `machines_retained`); RFC 0002 for `machines_retired` |
 
 ## Summary
 
@@ -51,6 +51,7 @@ worthit weekly [--hosts all|none|a,b] [--allow-partial] [--no-files]
   "machines_missing": [],
   "machines_left_out": [],
   "machines_retired": [],
+  "machines_retained": [],
   "compared_with": { "generated_at": "ISO time", "week_to": "YYYY-MM-DD",
                      "plans": [{ "plan": "Claude Max", "usd_per_full_week": 0, "proof": "measured" }] },
   "moved": [{ "plan": "Claude Max", "from": 0, "to": 0, "pct": 0 }],
@@ -63,8 +64,14 @@ worthit weekly [--hosts all|none|a,b] [--allow-partial] [--no-files]
   one. It is `null` on the first run.
 - `moved` lists measured plans whose value changed more than 5% against `compared_with`. A floor is
   never in `moved`, because a floor is never compared week to week.
-- `safe_to_post` is true when `machines_missing` and `machines_left_out` are both empty. A floor does not
-  make a week unsafe: the text and the card already say "at least".
+- `safe_to_post` is true when three things hold:
+  - `machines_missing` is empty;
+  - `machines_left_out` is empty;
+  - no entry of `machines_retained` (#24) has a unit inside this week. A retained unit means that machine
+    lost logs this week: the week's totals are only a lower bound, and their change against last week
+    can mislead.
+
+  A floor does not make a week unsafe: the text and the card already say "at least".
 - `reasons` names each machine that made the week unsafe, and why.
 
 ### Exit codes
