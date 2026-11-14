@@ -1,4 +1,4 @@
-// worthit: what your AI coding plans were worth this week, in a side panel.
+// worthit: what your AI coding plans were worth this week, in a dialog opened with ctrl-alt-w.
 // Reads ~/.worthit/last.json (written by `npx worthit`); the buttons run worthit itself.
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
