@@ -7,14 +7,15 @@ const env = process.env;
 fs.appendFileSync(env.FIXTURE_TRACE, JSON.stringify({ command, args }) + '\n');
 const die = message => { fs.appendFileSync(env.FIXTURE_TRACE, JSON.stringify({ unexpected: message }) + '\n'); console.error(message); process.exit(86); };
 if (command === 'ssh') {
-  if (args.at(-2) !== 'box-b' || !/^env .*python3 - \d+$/.test(args.at(-1))) die('unexpected fixture SSH arguments');
+  const machine = args.at(-2);
+  if (!['box-b', 'box-c'].includes(machine) || !/^env .*python3 - \d+$/.test(args.at(-1))) die('unexpected fixture SSH arguments');
   let script = ''; for await (const chunk of process.stdin) script += chunk;
   if (env.FIXTURE_OFFLINE === '1') process.exit(255);
-  const home = path.join(env.FIXTURE_TMP, 'box-b');
+  const home = path.join(env.FIXTURE_TMP, machine);
   const r = spawnSync(env.FIXTURE_PYTHON, ['-', args.at(-1).split(' ').at(-1)], {
     input: script, encoding: 'utf8', maxBuffer: 16 << 20,
     env: { ...env, HOME: home, CODEX_HOME: path.join(home, '.codex'), CLAUDE_CONFIG_DIR: path.join(home, '.claude'),
-      METER_STATE_DIR: path.join(home, '.meter'), XDG_STATE_HOME: path.join(home, '.local/state'), FIXTURE_MACHINE: 'box-b' },
+      METER_STATE_DIR: path.join(home, '.meter'), XDG_STATE_HOME: path.join(home, '.local/state'), FIXTURE_MACHINE: machine },
   });
   process.stdout.write(r.stdout || ''); process.stderr.write(r.stderr || ''); process.exit(r.status ?? 1);
 } else if (command === 'usagemeter') {

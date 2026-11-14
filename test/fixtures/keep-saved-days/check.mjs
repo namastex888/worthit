@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { machineNotes, blocks, strip, len } from '../../../src/draw.mjs';
 import { isolatedEnvironment } from '../../support/environment.mjs';
+import { expectedData } from '../../support/expected-data.mjs';
 import '../../support/clock.mjs';
 
 const fixture = path.dirname(fileURLToPath(import.meta.url));
@@ -21,7 +22,7 @@ const run = (cmd, args, extra = {}) => {
   return r.stdout;
 };
 const saved = read(path.join(fixture, 'saved.json')), fresh = read(path.join(fixture, 'fresh.json'));
-const expected = read(path.join(fixture, 'expected-data.json'));
+const expected = expectedData(path.join(fixture, 'expected-data.json'));
 const copy = v => structuredClone(v);
 const empty = host => ({ ...copy(saved), host, buckets: [], sessions: [] });
 let serial = 0;
@@ -114,8 +115,8 @@ try {
   lostFresh.since = '2026-01-07T12:00:00';
   assert.notEqual(lostSaved.since, lostFresh.since, 'cutoffs differ so restoring min(saved, fresh) is detectable');
   const lost = merge(lostSaved, lostFresh);
-  assert.equal(lost.notes[0].days_kept, expected.sliding_lost_days);
-  assert.equal(lost.data.buckets.length, expected.sliding_lost_days);
+  assert.equal(lost.notes[0].days_kept, expected.get('sliding_lost_days'));
+  assert.equal(lost.data.buckets.length, expected.get('sliding_lost_days'));
   assert.equal(lost.data.since, lostFresh.since, 'retained units must keep the fresh sliding since');
   for (const side of ['saved', 'fresh']) {
     const old = copy(saved), next = copy(fresh); delete (side === 'saved' ? old : next).since;
@@ -144,7 +145,8 @@ if(ssh){process.stdin.resume();process.stdin.on('end',()=>process.stdout.write(f
 else if(args[0]?.endsWith('extract_usage.py'))process.stdout.write(fs.readFileSync(path.join(process.env.FIXTURE_SCAN_DIR,'local.json')));
 else {const r=spawnSync(${JSON.stringify(python)},args,{stdio:'inherit'});process.exit(r.status??1);}\n`;
   for (const name of ['python3', 'ssh']) fs.writeFileSync(path.join(bin, name), fake, { mode: 0o755 });
-  env.PATH = bin + path.delimiter + process.env.PATH;
+  env.PATH = bin + path.delimiter + env.PATH;
+  assert.ok(env.PATH.split(path.delimiter).every(dir => dir.startsWith(tmp + path.sep)), 'scanner command PATH stays inside fixture scratch');
   // Keep the literal fixture readable; shift its dates into the current rolling window only in scratch.
   const anchor = Date.UTC(2026, 0, 15), today = new Date().toISOString().slice(0, 10), shift = Date.parse(today) - anchor;
   const recent = scan => JSON.parse(JSON.stringify(scan).replace(/202[56]-\d\d-\d\d/g, d => new Date(Date.parse(d) + shift).toISOString().slice(0, 10)));
@@ -176,11 +178,11 @@ else {const r=spawnSync(${JSON.stringify(python)},args,{stdio:'inherit'});proces
   const emptyAnswer = cli(emptyDir);
   assert.deepEqual(emptyAnswer.machines_missing, [], 'empty successful response is not a missing machine');
   assert.deepEqual(emptyAnswer.totals, before.totals, 'empty successful response preserves the week');
-  assert.deepEqual({ output_tokens: emptyAnswer.totals.output_tokens, api_value_usd: emptyAnswer.totals.api_value_usd }, expected.week, 'empty answer matches literal expected week');
+  assert.deepEqual({ output_tokens: emptyAnswer.totals.output_tokens, api_value_usd: emptyAnswer.totals.api_value_usd }, expected.get('week'), 'empty answer matches literal expected week');
   assert.deepEqual(read(path.join(env.WORTHIT_HOME, 'history.json')), oldHistory, 'empty successful response preserves every history row');
-  assert.equal(read(path.join(env.WORTHIT_HOME, 'run-keep/box-a.json')).buckets.length, expected.saved_days, 'empty answer persists all saved days');
+  assert.equal(read(path.join(env.WORTHIT_HOME, 'run-keep/box-a.json')).buckets.length, expected.get('saved_days'), 'empty answer persists all saved days');
   assert.equal(emptyAnswer.machines_retained[0].machine, 'box-a');
-  assert.equal(emptyAnswer.machines_retained[0].days_kept, expected.saved_days);
+  assert.equal(emptyAnswer.machines_retained[0].days_kept, expected.get('saved_days'));
   assert.ok(machineNotes(emptyAnswer).includes('box-a: kept 14 older days'), 'empty answer names retained machine and days');
   const conflictDir = path.join(tmp, 'conflicting-model');
   const conflict = recent(fresh); conflict.buckets[0].model = 'claude-haiku-5-5'; conflict.buckets[0].output = 200000;
@@ -253,6 +255,7 @@ console.log(JSON.stringify(buildData(report,null,cfg,{counts:{},hosts:[{alias:'b
     write(path.join(out, 'multi-data.json'), multi);
     fs.writeFileSync(path.join(out, 'dashboard.txt'), ['WORTHIT · synthetic saved-days regression', ...machineNotes(after), '', ...blocks.Tiles(after), '', ...blocks.Months(after)].map(strip).join('\n'));
   }
+  expected.done();
   console.log('keep-saved-days: ok (14 -> 14 including empty successful answer, literal week/history stable, retained sliding since, overlaps, persistence, JSON/dashboard, floor proof; intact 7-day CLI and synthetic proof, corrupt files, safe Python imports, folded aliases)');
 } finally {
   isolated.cleanup();

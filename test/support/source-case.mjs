@@ -4,11 +4,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { isolatedEnvironment } from './environment.mjs';
+import { expectedData } from './expected-data.mjs';
 
 const support = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(support, '../..');
 const sources = path.join(root, 'test/sources');
-const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
 
 export function sourceCase(folder, scenario) {
@@ -43,12 +43,13 @@ export function sourceCase(folder, scenario) {
         kinds: data.delivery.kinds.map(k => ({ kind: k.kind, prs: k.prs, last_week: k.last_week })).sort((a, b) => a.kind.localeCompare(b.kind)) } } : {}),
   });
   try {
-    for (const [machine, machineHome] of [['box-a', home], ['box-b', path.join(tmp, 'box-b')]]) run(python, [path.join(support, 'materialize.py'), path.join(sources, machine), machineHome]);
-    fs.mkdirSync(path.join(home, '.ssh')); fs.writeFileSync(path.join(home, '.ssh/config'), 'Host box-b\n  HostName box-b.invalid\n');
+    for (const machine of ['box-a', 'box-b', 'box-c']) run(python, [path.join(support, 'materialize.py'), path.join(sources, machine), machine === 'box-a' ? home : path.join(tmp, machine)]);
+    fs.mkdirSync(path.join(home, '.ssh')); fs.writeFileSync(path.join(home, '.ssh/config'), 'Host box-b\n  HostName box-b.invalid\nHost box-c\n  HostName box-c.invalid\n');
     for (const command of ['ssh', 'gh', 'usagemeter']) fs.writeFileSync(path.join(bin, command), `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(path.join(support, 'commands.mjs'))} ${command} "$@"\n`, { mode: 0o755 });
-    const expected = read(path.join(folder, 'expected-data.json'));
-    const check = (name, data, store = 'store') => assert.deepEqual(snapshot(data, store), expected[name], `${path.basename(folder)} / ${name}: week's data differs from expected-data.json`);
+    const expected = expectedData(path.join(folder, 'expected-data.json'));
+    const check = (name, data, store = 'store') => assert.deepEqual(snapshot(data, store), expected.get(name), `${path.basename(folder)} / ${name}: week's data differs from expected-data.json`);
     scenario({ cli, check, query, trace: () => fs.existsSync(trace) ? fs.readFileSync(trace, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : [] });
+    expected.done();
     const commands = fs.existsSync(trace) ? fs.readFileSync(trace, 'utf8') : '';
     assert.ok(!commands.includes('"unexpected"'), `unstubbed external command: ${commands}`);
     console.log(`${path.basename(folder)}: expected weekly data matches`);

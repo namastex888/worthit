@@ -18,9 +18,10 @@ for (const name of required) if (!folders.includes(name)) fail(name, 'missing fi
 if (!folders.length) fail('discovery', 'no fixture folders');
 for (const name of folders) {
   const check = path.join(fixtures, name, 'check.mjs');
-  if (!fs.existsSync(check) || !fs.statSync(check).isFile()) { fail(name, 'missing check.mjs'); continue; }
   let isolated;
   try {
+    if (!fs.existsSync(check) || !fs.statSync(check).isFile()) { fail(name, 'missing check.mjs'); continue; }
+    if (!fs.readFileSync(check, 'utf8').trim()) { fail(name, 'empty check.mjs'); continue; }
     isolated = isolatedEnvironment();
     console.log(`fixture ${name}: RUN`);
     ran++;
