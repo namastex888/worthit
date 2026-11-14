@@ -8,7 +8,7 @@ import { isolatedEnvironment } from './support/environment.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const fixtures = path.join(root, 'test/fixtures');
 // These regression cases must not silently disappear from CI. Extra folders are discovered too.
-const required = ['no-answer-machine', 'left-out-machine', 'second-code-host-account', 'keep-saved-days'];
+const required = ['no-answer-machine', 'left-out-machine', 'second-code-host-account', 'keep-saved-days', 'history-scan-coverage'];
 let failed = 0, ran = 0;
 const fail = (name, reason) => { failed++; console.error(`fixture ${name}: FAIL (${reason})`); };
 let folders = [];
