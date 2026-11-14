@@ -1,0 +1,49 @@
+{
+  "host": "box-a",
+  "generated_at": "2026-01-16T00:00:00Z",
+  "days": 21,
+  "since": "2025-12-25T00:00:00",
+  "accounts": {},
+  "buckets": [
+    {
+      "provider": "claude",
+      "account": "account-a",
+      "model": "claude-sonnet-5-5",
+      "effort": "",
+      "hour": "2026-01-14T12",
+      "session": "session-fresh",
+      "login": "account-a",
+      "input_uncached": 1000,
+      "cache_read": 200,
+      "cache_write": 0,
+      "output": 1000,
+      "requests": 1
+    }
+  ],
+  "meters": [],
+  "events": [],
+  "sessions": [
+    {
+      "provider": "claude",
+      "id": "session-fresh",
+      "first": "2026-01-14T12:00:00Z",
+      "last": "2026-01-14T12:00:00Z",
+      "tokens": 2200,
+      "account": "account-a"
+    }
+  ],
+  "meter_readings": [],
+  "meter_usage": [],
+  "meter_fields": [
+    "ts",
+    "session",
+    "label",
+    "model",
+    "week_pct",
+    "week_reset",
+    "five_h_pct",
+    "five_h_reset"
+  ],
+  "stats": {},
+  "errors": []
+}
