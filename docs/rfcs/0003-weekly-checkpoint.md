@@ -62,8 +62,15 @@ worthit weekly [--hosts all|none|a,b] [--allow-partial] [--no-files]
 
 - `compared_with` is the most recent earlier checkpoint whose week ends at least six days before this
   one. It is `null` on the first run.
-- `moved` lists measured plans whose value changed more than 5% against `compared_with`. A floor is
-  never in `moved`, because a floor is never compared week to week.
+- **A change needs a measured plan at both ends.** A percentage is computed only when the same plan is
+  measured both in this checkpoint and in `compared_with`. That covers `moved`,
+  `plans[].change_vs_last_week_pct`, the text and the card. Otherwise the change is `null`, and the text
+  and the card say "at least" with no change.
+  - worthit does not search further back for a measured week, because every output labels the change
+    "last week".
+  - `weekly` never uses the change a plain run computes from the meter ledger. That baseline carries no
+    machine check. So on the first checkpoint every change is `null`.
+- `moved` lists the plans whose change, under that rule, is more than 5%.
 - `safe_to_post` is true when three things hold:
   - `machines_missing` is empty;
   - `machines_left_out` is empty;
@@ -72,7 +79,8 @@ worthit weekly [--hosts all|none|a,b] [--allow-partial] [--no-files]
     can mislead.
 
   A floor does not make a week unsafe: the text and the card already say "at least".
-- `reasons` names each machine that made the week unsafe, and why.
+- `reasons` names each machine that made the week unsafe, and why. A retained unit is named by machine,
+  day and provider.
 
 ### Exit codes
 
@@ -80,7 +88,7 @@ worthit weekly [--hosts all|none|a,b] [--allow-partial] [--no-files]
 |---|---|
 | 0 | Safe to post, or `--allow-partial` was given (then `safe_to_post` may still be false) |
 | 1 | No result: the scan failed, or there is no data for the week |
-| 3 | Not safe: a machine is missing or left out. The JSON is still printed, with `reasons` |
+| 3 | Not safe: the run succeeded but `safe_to_post` is false (a machine missing, left out, or with a retained unit inside this week) and `--allow-partial` was not given. The JSON is still printed, with `reasons` |
 
 ### The store
 
@@ -104,7 +112,14 @@ Fixture cases from issue 25:
 - a full week: exit 0, `safe_to_post: true`;
 - a machine missing: exit 3, with the machine named in `reasons`;
 - the same run with `--allow-partial`: exit 0, `safe_to_post: false`;
-- two checkpoints a week apart: `compared_with` is set, and `moved` holds only measured plans.
+- a machine whose retained unit falls inside this week: exit 3, with the unit named in `reasons`;
+- a retained unit only in earlier weeks: exit 0, `safe_to_post: true`;
+- a retained unit inside the week, with `--allow-partial`: exit 0, `safe_to_post: false`;
+- two checkpoints a week apart, both measured: `compared_with` is set, and the change appears in `moved`,
+  `plans[]`, the text and the card;
+- a measured week after a floor checkpoint: every change is `null`, and nothing is in `moved`;
+- mixed plans (one measured at both ends, one a floor at either end): only the first gets a change;
+- the first checkpoint: every change is `null`, even when the meter ledger has earlier weeks.
 
 ## Deliveries
 
