@@ -42,7 +42,9 @@ function wrap(text, n) { const out = []; let l = ''; for (const word of String(t
 // ---------------------------------------------------------------- blocks
 // what this run is missing, in words (each line fits the ranking box): machines that gave no answer, and saved machines left out
 export const machineNotes = D => { const out = [], few = a => a[0].slice(0, 16) + (a.length > 1 ? ' +' + (a.length - 1) : ''), miss = D.machines_missing || [], sv = miss.filter(x => x.saved_scan_at).map(x => x.machine), no = miss.filter(x => !x.saved_scan_at).map(x => x.machine), lo = D.machines_left_out || [];
-  if (sv.length) out.push(`${few(sv)}: no answer, last saved scan used`); if (no.length) out.push(`${few(no)}: no answer, not counted`); if (lo.length) out.push(`${few(lo)}: has usage, left out of this run`); return out; };
+  if (sv.length) out.push(`${few(sv)}: no answer, last saved scan used`); if (no.length) out.push(`${few(no)}: no answer, not counted`); if (lo.length) out.push(`${few(lo)}: has usage, left out of this run`);
+  for (const x of D.machines_retained || []) out.push(`${x.machine}: kept older scans for ${x.days_kept} day${x.days_kept === 1 ? '' : 's'}`);
+  return out; };
 
 export const blocks = {
   Verdict: (D, p) => [fg(C.gold, '→') + ' ' + bold(w(clip(String(p.text || ''), W - 3)))],

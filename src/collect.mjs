@@ -91,6 +91,11 @@ export async function scan(cfg, on) {
   const seenHost = new Map([[hostOf(path.join(runDir, 'local.json')), 'this machine']]);
   for (const x of [...hosts].sort((a, b) => !!a.saved_at - !!b.saved_at)) { if (!x.ok) continue; const f = path.join(runDir, x.alias + '.json'), hn = hostOf(f);   // fresh answers first: a saved copy never wins over one
     if (hn && seenHost.has(hn)) { x.same_as = seenHost.get(hn); x.ok = false; delete x.saved_at; fs.rmSync(f, { force: true }); audit('note', `${x.alias} is the same machine as ${x.same_as} (${hn}): its copy is dropped`); } else if (hn) seenHost.set(hn, x.alias); }
+  // Merge only the deduplicated machines (including local), before pricing and persisting run-keep.
+  const merged = spawnSync(py, [path.join(ROOT, 'core', 'merge_scans.py'), runDir, keepDir], { env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' }, encoding: 'utf8', maxBuffer: 64 << 20 });
+  if (merged.status) throw new Error('keeping saved scan days failed: ' + String(merged.stderr).trim().split('\n').pop());
+  const retained = JSON.parse(merged.stdout);
+  for (const x of retained) for (const u of x.units) audit('note', `${x.machine}: older ${u.day} ${u.provider} scan kept (higher API value, then tokens)`);
   on({ pct: 1, detail: 'done', counts });
   // saved machines the person left out of this run, whose last scan (inside the window) holds usage: the plans' numbers are then "at least"
   const leftOut = []; for (const h of sshHosts()) { const k = path.join(keepDir, h.alias + '.json'); if (names.includes(h.alias) || !fs.existsSync(k)) continue;
@@ -98,7 +103,7 @@ export async function scan(cfg, on) {
     let used = false; try { used = !/"buckets"\s*:\s*\[\s*\]/.test(fs.readFileSync(k, 'utf8')); } catch { /* unreadable: not counted as use */ } if (used) leftOut.push(h.alias); }
   if (leftOut.length) audit('note', `saved machines with usage left out of this run: ${leftOut.join(', ')}`);
   fs.writeFileSync(cache, JSON.stringify(counts)); fs.cpSync(runDir, keepDir, { recursive: true, force: true });
-  return { runDir, counts, hosts, cached, left_out: leftOut };
+  return { runDir, counts, hosts, cached, left_out: leftOut, retained };
 }
 
 // ---------------------------------------------------------------- step 2: price every request, read the weekly meters
@@ -246,7 +251,12 @@ export function buildData(report, g, cfg, scanInfo) {
   // plans: this week's measured value of one full weekly limit
   // measured needs every machine's answer from this run: one that gave no answer (even with a saved scan standing in) or a saved machine with usage left out means use elsewhere may be missing
   const hs = scanInfo.hosts || [], missing = hs.filter(x => x.saved_at || !(x.ok || x.same_as)).map(x => ({ machine: x.alias, saved_scan_at: x.saved_at || null })), leftOut = scanInfo.left_out || [];
-  const allMachines = !missing.length && !leftOut.length && (hs.length > 0 || !sshHosts().length);
+  const retainedThisWeek = (scanInfo.retained || []).some(x => x.units.some(u => {
+    const start = new Date(u.day + 'T00:00:00'), end = new Date(start); end.setDate(end.getDate() + 1);
+    return +start <= now && +end > w1;
+  }));
+  // A saved unit cannot account for lost hours after that scan, even when its machine answered.
+  const allMachines = !missing.length && !leftOut.length && !retainedThisWeek && (hs.length > 0 || !sshHosts().length);
   let ledger = []; try { ledger = fs.readFileSync(path.join(HOME, 'weeks', 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch { /* first run */ }
   const day0 = new Date(w1).toISOString().slice(0, 10), events = loadEvents().filter(e => e.date_utc >= day0).map(e => ({ date: e.date_utc, provider: e.provider, type: e.type, title: e.title, confidence: e.confidence, source: e.source_url }));
   const plans = [];
@@ -285,7 +295,7 @@ export function buildData(report, g, cfg, scanInfo) {
 
   const tools = ['claude', 'codex', 'antigravity', 'omp', 'dsh'].filter(p => p !== 'omp' && p !== 'dsh' || (report.other_tools || {})[p]).map(p => { const r = cur.filter(a => a.provider === p), ot = (report.other_tools || {})[p];
     return { tool: TOOL[p], key: p, found: ot ? true : (scanInfo.counts[p] || 0) > 0, files: scanInfo.counts[p] || 0, source: ot ? 'usagemeter store' : 'session logs', priced: ot ? (ot.usd_fitted ? 'cost reported by omp; dsh priced at the rates those costs imply' : 'cost reported by the tool') : 'API list price', unpriced_output_tokens: ot ? ot.unpriced_output_tokens : 0, sessions: (report.sessions_by_provider || {})[p] || 0, requests: sum(r, 'requests'), output: sum(r, 'output'), cached: sum(r, 'cache_read'), fresh: sum(r, 'input_uncached'), usd: Math.round(sum(r, 'usd')) }; });
-  const D = { generated_at: new Date(now).toISOString(), week: { from: new Date(w1).toISOString().slice(0, 10), to: new Date(now).toISOString().slice(0, 10) }, machines: 1 + (scanInfo.hosts || []).filter(x => x.ok).length, machines_missing: missing, machines_left_out: leftOut, days_scanned: cfg.days,
+  const D = { generated_at: new Date(now).toISOString(), week: { from: new Date(w1).toISOString().slice(0, 10), to: new Date(now).toISOString().slice(0, 10) }, machines: 1 + (scanInfo.hosts || []).filter(x => x.ok).length, machines_missing: missing, machines_left_out: leftOut, machines_retained: scanInfo.retained || [], days_scanned: cfg.days,
     plans, events, months: [], tools, waste, waste_hidden: hidden, totals: { output_tokens: sum(cur, 'output'), output_tokens_change_pct: pctChange(sum(cur, 'output'), sum(prev, 'output')), api_value_usd: Math.round(sum(cur, 'usd')), api_value_change_pct: pctChange(sum(cur, 'usd'), sum(prev, 'usd')),
       tokens_per_day: perDay(act, 'output'), value_per_day: perDay(act, 'usd').map(Math.round) },
     heat: { days: names, rows: heat, note: pk[2] ? `peak ${names[pk[0]]} ${String(pk[1]).padStart(2, '0')}:00 · quiet ${names[quiet]}` : 'no activity' } };

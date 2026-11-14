@@ -16,6 +16,8 @@ const fail = msg => { throw new Error(msg); };
 const open = () => { if (!fs.existsSync(DB)) fail('no local store yet. Run `worthit --json` once to scan and fill it.'); return new DatabaseSync(DB, { readOnly: true }); };
 
 export const SCHEMA = {
+  machines_retained: { about: 'Last-run JSON field (also available with worthit get machines_retained), not a SQL table. Older machine/local-day/provider units kept by current API-list USD, then total tokens; fresh wins a full tie. Any retained unit intersecting this week makes every plan a floor with change_vs_last_week_pct null.', fields: {
+    machine: 'SSH alias, or "this machine" for local logs', days_kept: 'number of distinct local days with a saved unit selected', units: 'one {day: YYYY-MM-DD, provider: tool id} for every unit selected from the saved scan' } },
   day_provider: { about: 'One row per local day and tool. A day only grows: reruns keep the larger value.', columns: {
     day: 'YYYY-MM-DD', provider: 'claude | codex | google (Antigravity) | omp | dsh', api_usd: 'usage priced at API list rates, in dollars', output_tokens: 'output tokens, thinking included', requests: 'model requests' } },
   day_model: { about: 'One row per UTC day, model and tool.', columns: { day: 'YYYY-MM-DD', model: 'model id as logged', provider: 'tool that used it', output_tokens: 'output tokens', api_usd: 'priced dollars' } },
