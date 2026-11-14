@@ -61,6 +61,8 @@ def _fit(rows):
     if min(k) < -1e-6 or tot <= 0 or err / tot > 0.05: return None
     return {'input_per_m': round(max(k[0], 0), 4), 'cached_input_per_m': round(max(k[1], 0), 4), 'output_per_m': round(max(k[2], 0), 4), 'rows': len(rows), 'fit_error_pct': round(100 * err / tot, 2)}
 def _price(f_, r): return (f_['input_per_m'] * r[4] + f_['cached_input_per_m'] * r[5] + f_['output_per_m'] * r[7]) / 1e6
+# Some providers charge by time of day (seen: DeepSeek, exact base rate 16-24 UTC, higher in other hours), so the fit is done per 3-hour UTC band.
+# A band the fit cannot explain within 5% takes the model's best band scaled by that band's reported / base-priced ratio.
 def _bands(rs):
     by = defaultdict(list)
     for r in rs: by[time.gmtime(r[1] / 1000.0).tm_hour // 3].append(r)

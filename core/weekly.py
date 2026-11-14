@@ -13,6 +13,7 @@ Claude : no log names the account a request used, and switches swap accounts und
 """
 import sys, os, json, glob, time, calendar, statistics, subprocess
 from collections import defaultdict, Counter
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pricing import price, agy_model, fit_meter_prices, meter_price
 
 D = os.path.dirname(os.path.abspath(__file__))

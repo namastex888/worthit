@@ -4,6 +4,7 @@ import json
 import os
 import sys
 from collections import defaultdict
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pricing import price, fit_meter_prices, meter_price
 
 
@@ -18,6 +19,8 @@ def tokens(b):
 
 
 def merge(saved, fresh, prices, meter_prices=None):
+    if not saved.get('since') or not fresh.get('since'):
+        return fresh, []
     def rows(scan):
         units = defaultdict(lambda: defaultdict(list))
         for field, stamp in (('buckets', 'hour'), ('meters', 'hour'), ('events', 'ts')):
@@ -38,6 +41,9 @@ def merge(saved, fresh, prices, meter_prices=None):
                 sum(tokens(b) for b in bs) + sum(sum(r[4:8]) for r in mu))
 
     old, new = rows(saved), rows(fresh)
+    # Only days the fresh scan fully covers can be compared; older days left its window, they were not lost.
+    cut = dt.datetime.fromisoformat(fresh['since'][:19] + '+00:00')
+    old = {k: v for k, v in old.items() if dt.datetime.fromisoformat(k[0]).astimezone() >= cut}
     result = dict(fresh)
     for field in ('buckets', 'meters', 'events', 'meter_readings', 'meter_usage', 'sessions'):
         result[field] = []
@@ -70,7 +76,6 @@ def merge(saved, fresh, prices, meter_prices=None):
     if not kept:
         return fresh, []
     result['sessions'] = list(sessions.values())
-    result['since'] = min(saved['since'], fresh['since'])
     result['days'] = max(saved.get('days', 0), fresh.get('days', 0))
     # Keep the account metadata needed to interpret retained Claude meter rows after log rotation.
     result['accounts'] = {**saved.get('accounts', {}), **fresh.get('accounts', {})}
@@ -98,11 +103,15 @@ def main(run_dir, keep_dir):
             continue
         saved = None
         if os.path.exists(prior):
-            with open(prior) as f:
-                saved = json.load(f)
+            try:
+                with open(prior) as f: saved = json.load(f)
+            except (OSError, ValueError):
+                saved = None          # unreadable saved scan: nothing to keep, the fresh scan stands
         current = os.path.join(run_dir, name)
-        with open(current) as f:
-            fresh = json.load(f)
+        try:
+            with open(current) as f: fresh = json.load(f)
+        except (OSError, ValueError):
+            continue                  # weekly.py reports the unreadable file, as before
         scans[name] = (saved, fresh)
     # Fit once from this run's candidate rows across machines, with fresh rows winning ID ties.
     # A model with no reported price stays unpriced, exactly as in weekly.py (tokens break its tie).

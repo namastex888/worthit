@@ -20,3 +20,15 @@ Selection is per machine, local day and provider: higher API-list USD at this ru
 wins, then total tokens; fresh wins a full tie. The winning unit's rows stay together. The script
 can write synthetic `data.json` and dashboard text with `WORTHIT_FIXTURE_ARTIFACT_DIR=<scratch>`.
 Issue #25 can adopt this folder as its fourth regression case.
+
+Only saved days fully covered by the fresh scan's `since` cutoff are compared. Older days have
+left the sliding window; they are not reported as lost. This minimal rule also drops the partially
+covered cutoff day from saved data, even if logs were lost during that day. It keeps the fresh
+`since` unchanged and does not clip individual hours or extend the scan window.
+
+The regression covers an intact sliding window, including `--days 7` with measured proof and an
+eligible ledger comparison. `truncated-saved.json` is deliberately incomplete: a real CLI run
+must recover using fresh data and report no retained machines. Missing `since` skips retention;
+an unreadable run file stays untouched for the weekly report to flag. Synthetic runs also verify
+both Python entrypoints with `-I` and `PYTHONSAFEPATH=1`, plus folded long-alias notes that fit the
+ranking panel. `dashboard.png` shows the folded note with a distinct-day range for two machines.

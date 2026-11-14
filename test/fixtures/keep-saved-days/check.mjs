@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { machineNotes, blocks, strip } from '../../../src/draw.mjs';
+import { machineNotes, blocks, strip, len } from '../../../src/draw.mjs';
 
 const fixture = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(fixture, '../../..');
@@ -24,10 +24,10 @@ const saved = read(path.join(fixture, 'saved.json')), fresh = read(path.join(fix
 const copy = v => structuredClone(v);
 const empty = host => ({ ...copy(saved), host, buckets: [], sessions: [] });
 let serial = 0;
-const merge = (old, next) => {
+const merge = (old, next, options = {}) => {
   const dir = path.join(tmp, 'case-' + serial++), keep = path.join(dir, 'keep'), current = path.join(dir, 'run');
   write(path.join(keep, 'box-a.json'), old); write(path.join(current, 'box-a.json'), next);
-  const notes = JSON.parse(run(python, ['core/merge_scans.py', current, keep]));
+  const notes = JSON.parse(run(python, [...(options.pythonArgs || []), 'core/merge_scans.py', current, keep], { env: { ...env, ...options.env } }));
   return { data: read(path.join(current, 'box-a.json')), notes };
 };
 
@@ -100,6 +100,31 @@ try {
   assert.equal(localDay.data.buckets.length, 1);
   assert.deepEqual(localDay.notes[0].units, [{ day: '2026-01-13', provider: 'claude' }]);
 
+  // Intact logs: yesterday's extra edge-day bucket slid out of today's fully covered days.
+  const slidingFresh = copy(fresh); slidingFresh.since = '2026-01-14T12:00:00';
+  slidingFresh.buckets[0].hour = '2026-01-15T12';
+  const slidingSaved = { ...copy(slidingFresh), since: '2026-01-13T12:00:00', buckets: [{ ...saved.buckets[0], hour: '2026-01-14T10' }, ...slidingFresh.buckets] };
+  const slid = merge(slidingSaved, slidingFresh);
+  assert.deepEqual(slid.notes, [], 'sliding window must not report a lost day');
+  assert.deepEqual(slid.data, slidingFresh, 'intact sliding-window scan stays exactly fresh');
+  for (const side of ['saved', 'fresh']) {
+    const old = copy(saved), next = copy(fresh); delete (side === 'saved' ? old : next).since;
+    assert.deepEqual(merge(old, next), { data: next, notes: [] }, 'missing ' + side + ' since skips retention');
+  }
+  assert.equal(merge(saved, fresh, { pythonArgs: ['-I'] }).notes[0].days_kept, 14, 'merge imports pricing under isolated Python');
+  assert.equal(merge(saved, fresh, { env: { PYTHONSAFEPATH: '1' } }).notes[0].days_kept, 14, 'merge imports pricing under safe-path Python');
+  const badDir = path.join(tmp, 'bad-run'), badKeep = path.join(tmp, 'bad-keep');
+  fs.mkdirSync(badDir); write(path.join(badKeep, 'box-a.json'), saved);
+  fs.writeFileSync(path.join(badDir, 'box-a.json'), '{');
+  write(path.join(badDir, 'local.json'), { ...saved, host: 'box-b' });
+  assert.deepEqual(JSON.parse(run(python, ['core/merge_scans.py', badDir, badKeep])), [], 'unreadable run file skips its pair');
+  assert.equal(fs.readFileSync(path.join(badDir, 'box-a.json'), 'utf8'), '{', 'bad run is untouched for weekly reporting');
+  const safeOut = path.join(tmp, 'safe-weekly');
+  run(python, ['-I', 'core/weekly.py', badDir], { env: { ...env, WORTHIT_OUT: safeOut } });
+  run(python, ['core/weekly.py', badDir], { env: { ...env, WORTHIT_OUT: safeOut, PYTHONSAFEPATH: '1' } });
+  const safeReport = read(path.join(safeOut, 'weeks', fs.readdirSync(path.join(safeOut, 'weeks')).filter(n => /^\d{4}-/.test(n)).sort().at(-1), 'report.json'));
+  assert.ok(safeReport.hosts['box-a.json'].error, 'weekly still reports the unreadable run file');
+
   // Exercise the real --json -> scan -> merge -> analyse -> history path, with only fake scanner/SSH IO.
   const bin = path.join(tmp, 'bin'); fs.mkdirSync(bin, { recursive: true });
   fs.mkdirSync(env.HOME, { recursive: true });
@@ -131,7 +156,7 @@ else {const r=spawnSync(${JSON.stringify(python)},args,{stdio:'inherit'});proces
   assert.equal(after.machines_retained[0].days_kept, 14);
   assert.equal(read(path.join(env.WORTHIT_HOME, 'run-keep/box-a.json')).buckets.length, 14, 'retained days persisted');
   assert.deepEqual(read(path.join(env.WORTHIT_HOME, 'run-keep/local.json')).buckets, read(path.join(nextDir, 'local.json')).buckets, 'box-a does not alter box-b');
-  assert.ok(machineNotes(after).includes('box-a: kept older scans for 14 days'), 'dashboard names machine and distinct days');
+  assert.ok(machineNotes(after).includes('box-a: kept 14 older days'), 'dashboard names machine and distinct days');
   const again = cli(nextDir);
   assert.deepEqual(again.totals, after.totals, 'next scan reuses persisted retained days without double counting');
   const conflictDir = path.join(tmp, 'conflicting-model');
@@ -155,27 +180,53 @@ else {const r=spawnSync(${JSON.stringify(python)},args,{stdio:'inherit'});proces
   assert.equal(local.machines_retained[0].machine, 'this machine');
   assert.equal(local.machines_retained[0].days_kept, 14);
 
+  const corruptStore = path.join(tmp, 'corrupt-store');
+  fs.mkdirSync(path.join(corruptStore, 'run-keep'), { recursive: true });
+  fs.copyFileSync(path.join(fixture, 'truncated-saved.json'), path.join(corruptStore, 'run-keep/local.json'));
+  const recovered = JSON.parse(run(process.execPath, ['bin/worthit.mjs', '--json', '--git', 'no', '--hosts', 'none'], { env: { ...env, WORTHIT_HOME: corruptStore, FIXTURE_SCAN_DIR: localDir } }));
+  assert.deepEqual(recovered.machines_retained, [], 'truncated saved file does not abort the real run');
+  assert.deepEqual(read(path.join(corruptStore, 'run-keep/local.json')), read(path.join(localDir, 'local.json')), 'fresh replaces truncated saved file');
+
+  const sevenStore = path.join(tmp, 'seven-store'), sevenDir = path.join(tmp, 'seven-fresh');
+  const cut = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 19);
+  const sevenFresh = { ...recent(fresh), days: 7, since: cut };
+  const sevenSaved = { ...copy(sevenFresh), since: new Date(Date.parse(cut + 'Z') - 864e5).toISOString().slice(0, 19), buckets: [{ ...sevenFresh.buckets[0], hour: cut.slice(0, 13) }, ...sevenFresh.buckets] };
+  write(path.join(sevenStore, 'run-keep/local.json'), sevenSaved); write(path.join(sevenDir, 'local.json'), sevenFresh);
+  const seven = JSON.parse(run(process.execPath, ['bin/worthit.mjs', '--json', '--git', 'no', '--hosts', 'none', '--days', '7'], { env: { ...env, WORTHIT_HOME: sevenStore, FIXTURE_SCAN_DIR: sevenDir } }));
+  assert.deepEqual(seven.machines_retained, [], '--days 7 intact window is not falsely retained');
+  assert.deepEqual(read(path.join(sevenStore, 'run-keep/local.json')), sevenFresh, '--days 7 persists fresh window unchanged');
+
   // Give buildData clean meter-derived plans: current retained units must force EVERY plan to floor.
   const proofScript = `import fs from 'node:fs';import {buildData} from './src/collect.mjs';
 const prices=JSON.parse(fs.readFileSync('core/prices.json'));
 const w={usd_per_full_week:20,meter_start_pct:0,meter_end_pct:100,hours:1,measured:{api_usd:20,output_tokens:1000,cached_input_tokens:10,model_mix_by_usd:{}}};
 const report={prices,this_week:{claude:w,codex:w,google:w}};
-const retained=JSON.parse(process.env.FIXTURE_RETAINED),cfg={days:21};
+const retained=JSON.parse(process.env.FIXTURE_RETAINED),cfg={days:+process.env.FIXTURE_DAYS||21};
 console.log(JSON.stringify(buildData(report,null,cfg,{counts:{},hosts:[{alias:'box-a',ok:true}],retained})));`;
-  const proof = rows => JSON.parse(run(process.execPath, ['--input-type=module', '-e', proofScript], { env: { ...env, FIXTURE_RETAINED: JSON.stringify(rows) } }));
+  const proof = (rows, days = 21) => JSON.parse(run(process.execPath, ['--input-type=module', '-e', proofScript], { env: { ...env, FIXTURE_RETAINED: JSON.stringify(rows), FIXTURE_DAYS: String(days) } }));
   const pastEnd = new Date(Date.now() - 8 * 864e5).toISOString().slice(0, 13);
   fs.writeFileSync(path.join(env.WORTHIT_HOME, 'weeks/ledger.jsonl'), JSON.stringify({ provider: 'claude', quality: 'clean', reset: 'reset-a', start: pastEnd, end: pastEnd, usd_measured: 10, usd_per_full_week: 10, meter: [0, 100] }) + '\n');
   assert.equal(proof([]).plans[0].change_vs_last_week_pct, 100, 'comparison exists with fresh complete data');
+  const sevenProof = proof(seven.machines_retained, 7).plans[0];
+  assert.equal(sevenProof.proof, 'measured', '--days 7 sliding edge must not force floor');
+  assert.equal(sevenProof.change_vs_last_week_pct, 100, '--days 7 with ledger keeps comparison eligible');
   const floor = proof(after.machines_retained);
   assert.equal(floor.plans.length, 3);
   for (const p of floor.plans) { assert.equal(p.proof, 'floor'); assert.equal(p.change_vs_last_week_pct, null); }
   assert.equal(proof([{ machine: 'box-a', days_kept: 1, units: [{ day: '2020-01-01', provider: 'claude' }] }]).plans[0].proof, 'measured', 'old retained days outside this week do not taint this week');
+  const multi = { ...after, plans: floor.plans, machines_retained: [{ machine: 'box-a-long-alias-for-fixture', days_kept: 14 }, { machine: 'box-b-long-alias-for-fixture', days_kept: 7 }] };
+  const multiNotes = machineNotes(multi);
+  assert.deepEqual(multiNotes, ['box-a-long-alias +1: kept 7–14 older days each']);
+  assert.ok(len(multiNotes[0]) + 2 <= 52, 'folded retained note fits PlanRanking inner width');
+  assert.ok(blocks.PlanRanking(multi).map(strip).some(l => l.includes(multiNotes[0])), 'ranking draws the complete note without clipping');
+  assert.deepEqual(machineNotes({ machines_retained: [{ machine: 'box-a', days_kept: 14 }, { machine: 'box-b', days_kept: 14 }] }), ['box-a +1: kept 14 older days each'], 'equal distinct-day counts stay exact');
   if (process.env.WORTHIT_FIXTURE_ARTIFACT_DIR) {
     const out = process.env.WORTHIT_FIXTURE_ARTIFACT_DIR; fs.mkdirSync(out, { recursive: true });
     write(path.join(out, 'data.json'), after);
+    write(path.join(out, 'multi-data.json'), multi);
     fs.writeFileSync(path.join(out, 'dashboard.txt'), ['WORTHIT · synthetic saved-days regression', ...machineNotes(after), '', ...blocks.Tiles(after), '', ...blocks.Months(after)].map(strip).join('\n'));
   }
-  console.log('keep-saved-days: ok (14 -> 14, week/history stable, overlaps, providers, local days, persistence, machine isolation, JSON/dashboard, floor proof)');
+  console.log('keep-saved-days: ok (14 -> 14, week/history stable, overlaps, persistence, JSON/dashboard, floor proof; R1 sliding window/7-day proof, R2 corrupt files, safe Python imports, folded aliases)');
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }

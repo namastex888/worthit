@@ -41,6 +41,8 @@ Parts of the last run. Dots walk into objects and arrays (`plans.0.usd_per_full_
 | `machines_missing`, `machines_left_out` | Machines that gave no answer this run (`saved_scan_at` set = their last saved scan was used) and saved machines with usage left out. Either one not empty = the week may be undercounted and every plan is a floor |
 | `machines_retained` | Older scans kept for machines that answered with less data. Each row names `machine` (SSH alias or `this machine`), `days_kept` (distinct local days) and `units` (`day`, `provider`). Each machine/local-day/provider keeps the whole scan unit with higher API-list USD at this run's prices, then total tokens; fresh wins a full tie. Mention the named machines and days kept. Any retained unit intersecting this week makes every plan a floor and `change_vs_last_week_pct` null: later lost hours remain unknown |
 
+When `machines_retained` has a unit inside this week, that week's totals are a lower bound too.
+
 ## `worthit days`
 
 Sums from the local store over any period.
