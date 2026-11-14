@@ -15,14 +15,15 @@ what was delivered with it and what it cost. It has three goals, in this order:
   (`type(scope): description`).
 - Every merge into `dev` cuts a release `v0.N.0` on its own (`.github/workflows/release.yml`), unless
   the commits since the last release are only `ci`, `docs`, `test` or `chore(release)`. Never edit a
-  version by hand: `node scripts/version.mjs`.
+  version by hand: CI sets it (`node scripts/version.mjs set`);
+  `node scripts/version.mjs check` finds drift.
 - npm is the owner's step: `make publish` publishes the newest release as `worthit` and `usagemeter`.
   `make status` shows whether npm is behind.
 - `make check` is the gate CI and the release run. Run it before every push.
 - A design decision that sets a public contract (a data field, a command, a file the store keeps) gets
   an RFC first: `docs/rfcs/README.md`. A scoped bug or a small feature ships as a plain issue and PR.
-- worthit reads; it never uploads. What leaves the machine is listed in the README and in the audit log
-  of every run. A change that adds a network request names it in both.
+- worthit has no server and uploads nothing to one. What leaves the machine is listed in the README
+  and in the audit log of every run. A change that adds a network request names it in both.
 - A number is either **measured** (the plan's own meter, every machine answered) or a **floor**
   ("at least"). A floor is never compared week to week. A change that blurs the two is a bug.
 - The data a run prints must say which machines it read: `machines_missing` and `machines_left_out`.
@@ -30,8 +31,9 @@ what was delivered with it and what it cost. It has three goals, in this order:
   a field that changes there changes in both, in the same PR.
 - No real person's numbers, machine names, account names or repository names in the repo, in an issue,
   in a PR or in a public image. Screenshots, the demo and the Herdr mod's preview use `worthit --demo`.
-- The Herdr mod lives in `herdr-mod/`. That folder never holds `layouts/` (herdr.dev would skip the
-  whole repository). After any change: `herdr-app check herdr-mod/mods/worthit`.
+- Herdr is a desktop workspace; herdr.dev is its mod catalog. The Herdr mod lives in `herdr-mod/`.
+  That folder never holds `layouts/`: herdr.dev treats it as a workspace layout and skips the whole
+  repository. After any change: `herdr-app check herdr-mod/mods/worthit`.
 
 ## Testing
 

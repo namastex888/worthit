@@ -2,21 +2,21 @@
 
 | Field | Value |
 |---|---|
-| Status | In delivery (versions and releases: in use since v0.1.0; review, dogfood and tests: open) |
+| Status | In delivery, 2026-11-12 (#1: versions and releases; deliveries 1-3 open) |
 | Created | 2026-11-14 |
 
 ## Summary
 
-worthit ships through one loop of three steps: make it, use it like a stranger, fix what broke. Every
-merge into `dev` is a release. A number never reaches a person unless a check on fixture data stands
-behind it.
+worthit ships through one loop of four steps: make it, review it, use it like a stranger, fix what broke.
+Every merge into `dev` that ships code is a release. A number never reaches a person unless a check on
+fixture data stands behind it.
 
 ## Motivation
 
 In its first three days worthit shipped 16 releases. Every data error in that time was found by reading
 real output after the release: a run that could not reach every machine reported a smaller week without
 saying so, and pull requests from a second account were left out. The gate (`make check`) only proves
-the files parse. Nothing proved the numbers.
+the files parse and the commands start. Nothing proved the numbers.
 
 ## Design
 
@@ -56,12 +56,15 @@ On merge, the PR's branch (local and remote) and its worktree are removed by who
 
 | # | Delivery | State |
 |---|---|---|
+| 0 | Versions and releases: `release.yml`, `scripts/version.mjs`, `make publish` | merged (#1, 2026-11-12) |
 | 1 | Fixture store and a data check in `make check` | open |
 | 2 | The dogfood checklist as a file in the repo, run after each release | open |
 | 3 | Independent review recorded on each PR before merge | open |
 
 ## Open questions
 
+These questions do not block delivery 1.
+
 1. Should `make publish` be offered after every release, or only when a release changes what
-   `npx worthit` does (a Herdr-mod-only or docs-only release changes nothing on npm)?
+   `npx worthit` does (a Herdr-mod-only release changes nothing on npm)?
 2. Should merged branches be deleted by GitHub automatically?
