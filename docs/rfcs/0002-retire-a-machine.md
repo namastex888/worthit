@@ -5,7 +5,7 @@
 | Status | Queued |
 | Created | 2026-11-14 |
 | Issue | #26 |
-| Depends on | #24 (a fresh scan never erases days a saved scan had) |
+| Depends on | #24 (a fresh scan never erases days a saved scan had); #44 (a run never lowers a history day it did not fully scan) |
 
 ## Summary
 
@@ -26,11 +26,13 @@ A machine that is gone for good (sold, wiped, reinstalled) keeps every plan at f
 
 - While it stays in the saved selection, or in any run with `--hosts all`, its saved scan stands in on
   every run, so it is missing forever. The weekly checkpoint (RFC 0003) runs with `--hosts all`.
-- When the person leaves it out of the selection, it counts as left out while its saved scan is younger
-  than the run's window (`--days`, 21 by default) and holds usage (`src/collect.mjs:101-103`).
+- When the person leaves it out of the selection, it counts as left out until its saved scan ages out
+  of the run's window (`--days`, 21 by default; `src/collect.mjs:101-103`). The window is counted from
+  when the scan was taken, not from when the machine was left out. The check applies only while the
+  alias is still in the ssh config and no live answer reports the same host.
 
-So the weekly allowance check cannot say whether a plan moved for at least three weeks, and never under
-`--hosts all`.
+So the weekly allowance check cannot say whether a plan moved until that saved scan ages out, and never
+under `--hosts all`.
 
 Today only Claude's plan can be measured (`src/collect.mjs:272`). This RFC unblocks that one, and any
 plan that becomes measurable later.
@@ -76,8 +78,15 @@ worthit hosts unretire <machine>
     - units are never summed, so one session cannot count twice.
 
     The run notes "<alias> is retired but answers as <other alias>".
-- **Days before the window** are not read. A run rewrites only the days inside its window
-  (`src/collect.mjs:313`), so the retired machine's older days stay in the history as they are.
+- **Days before the window** are not read from the snapshot. They stay in the history because of #44's
+  rule: a run replaces a history day only when it scanned the whole day with every machine, and any
+  other day can only go up. Today's code does not hold that rule. It rewrites every day that has
+  activity, a merged PR or a commit in the run (`src/collect.mjs:311-314`). So this RFC's delivery
+  cannot ship before #44.
+- **The partially covered oldest day.** #24 compares only days the fresh scan fully covers
+  (`core/merge_scans.py`). A retired snapshot's units on the fresh scan's partial first day are
+  therefore not merged. That day's history row is protected by #44's rule, not by the merge. This RFC
+  does not change #24's unit rule.
 - It never appears in `machines_missing` or `machines_left_out`.
 - The proof rule becomes: a plan is **measured** when every machine that is not retired answered, no
   machine is left out, no `machines_retained` unit (#24) falls inside the week, and the week window
@@ -108,6 +117,9 @@ Two more cases:
 - **Retire, then unretire.** Retire, then run on several days while the window moves, then unretire.
   The snapshot does not change while the machine is retired. The first run after unretire merges it with
   #24's rule, and the history rows before the window keep their values.
+- **A short window and git.** With `--days 7`, git rows (merged PRs) on days outside the window, and a
+  saved and fresh overlap on the partial first day. After retirement and after unretirement, no history
+  day's `out` or `usd` goes down.
 
 ## Deliveries
 

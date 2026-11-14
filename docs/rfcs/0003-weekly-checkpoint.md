@@ -64,8 +64,9 @@ worthit weekly [--hosts all|none|a,b] [--allow-partial] [--no-files]
   one. It is `null` on the first run.
 - **A change needs a measured plan at both ends.** A percentage is computed only when the same plan is
   measured both in this checkpoint and in `compared_with`. That covers `moved`,
-  `plans[].change_vs_last_week_pct`, the text and the card. Otherwise the change is `null`, and the text
-  and the card say "at least" with no change.
+  `plans[].change_vs_last_week_pct`, the text and the card. Otherwise the change is `null`. The label
+  still comes from the plan's own proof this week: a measured plan with no eligible baseline says
+  "measured" with no change; a floor says "at least" (as `src/card.mjs` does today).
   - worthit does not search further back for a measured week, because every output labels the change
     "last week".
   - `weekly` never uses the change a plain run computes from the meter ledger. That baseline carries no
