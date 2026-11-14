@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | In delivery, 2026-11-12 (#1: versions and releases; deliveries 1-3 open) |
+| Status | In delivery, 2026-11-14 (#1: versions and releases; #43: tests on fixture data; deliveries 2-3 open) |
 | Created | 2026-11-14 |
 
 ## Summary
@@ -57,7 +57,7 @@ On merge, the PR's branch (local and remote) and its worktree are removed by who
 | # | Delivery | State |
 |---|---|---|
 | 0 | Versions and releases: `release.yml`, `scripts/version.mjs`, `make publish` | merged (#1, 2026-11-12) |
-| 1 | Fixture store and a data check in `make check` | open |
+| 1 | Fixture store and a data check in `make check` | merged (#43, 2026-11-14) |
 | 2 | The dogfood checklist as a file in the repo, run after each release | open |
 | 3 | Independent review recorded on each PR before merge | open |
 
