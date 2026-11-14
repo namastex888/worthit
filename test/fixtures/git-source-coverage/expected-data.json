@@ -343,54 +343,6 @@
       "repos": 1
     }
   },
-  "recent-no-checkout": {
-    "prs": true,
-    "commits": false,
-    "failed": [],
-    "counts": [
-      2,
-      8,
-      0,
-      6
-    ],
-    "live": {
-      "prs": 2,
-      "commits": 0,
-      "repos": 0
-    }
-  },
-  "boundary-no-checkout": {
-    "prs": true,
-    "commits": false,
-    "failed": [],
-    "counts": [
-      2,
-      8,
-      0,
-      6
-    ],
-    "live": {
-      "prs": 2,
-      "commits": 0,
-      "repos": 0
-    }
-  },
-  "old-no-checkout": {
-    "prs": true,
-    "commits": true,
-    "failed": [],
-    "counts": [
-      2,
-      0,
-      0,
-      0
-    ],
-    "live": {
-      "prs": 2,
-      "commits": 0,
-      "repos": 0
-    }
-  },
   "meter_only": [
     {
       "source": "usagemeter",
@@ -465,5 +417,194 @@
         "prs"
       ]
     }
-  ]
+  ],
+  "mtime-recent-no-checkout": {
+    "prs": true,
+    "commits": false,
+    "failed": [],
+    "counts": [
+      2,
+      8,
+      0,
+      6
+    ],
+    "live": {
+      "prs": 2,
+      "commits": 0,
+      "repos": 0
+    }
+  },
+  "mtime-boundary-no-checkout": {
+    "prs": true,
+    "commits": false,
+    "failed": [],
+    "counts": [
+      2,
+      8,
+      0,
+      6
+    ],
+    "live": {
+      "prs": 2,
+      "commits": 0,
+      "repos": 0
+    }
+  },
+  "mtime-old-no-checkout": {
+    "prs": true,
+    "commits": true,
+    "failed": [],
+    "counts": [
+      2,
+      0,
+      0,
+      0
+    ],
+    "live": {
+      "prs": 2,
+      "commits": 0,
+      "repos": 0
+    }
+  },
+  "session-recent-no-checkout": {
+    "prs": true,
+    "commits": false,
+    "failed": [],
+    "counts": [
+      2,
+      8,
+      0,
+      6
+    ],
+    "live": {
+      "prs": 2,
+      "commits": 0,
+      "repos": 0
+    }
+  },
+  "session-boundary-no-checkout": {
+    "prs": true,
+    "commits": false,
+    "failed": [],
+    "counts": [
+      2,
+      8,
+      0,
+      6
+    ],
+    "live": {
+      "prs": 2,
+      "commits": 0,
+      "repos": 0
+    }
+  },
+  "session-old-no-checkout": {
+    "prs": true,
+    "commits": true,
+    "failed": [],
+    "counts": [
+      2,
+      0,
+      0,
+      0
+    ],
+    "live": {
+      "prs": 2,
+      "commits": 0,
+      "repos": 0
+    }
+  },
+  "glab-self-hosted": {
+    "prs": true,
+    "commits": true,
+    "failed": [],
+    "counts": [
+      2,
+      2,
+      0,
+      0
+    ],
+    "live": {
+      "prs": 2,
+      "commits": 2,
+      "repos": 1
+    }
+  },
+  "glab-no-instances": {
+    "prs": true,
+    "commits": true,
+    "failed": [],
+    "counts": [
+      2,
+      2,
+      0,
+      0
+    ],
+    "live": {
+      "prs": 2,
+      "commits": 2,
+      "repos": 1
+    }
+  },
+  "self_hosted_sources": [
+    {
+      "source": "usagemeter",
+      "answered": true,
+      "metrics": [
+        "prs",
+        "commits"
+      ]
+    },
+    {
+      "source": "git log",
+      "answered": true,
+      "metrics": [
+        "commits"
+      ]
+    },
+    {
+      "source": "gh:coder-a",
+      "answered": true,
+      "metrics": [
+        "prs"
+      ]
+    },
+    {
+      "source": "gh:coder-b",
+      "answered": true,
+      "metrics": [
+        "prs"
+      ]
+    },
+    {
+      "source": "tea",
+      "answered": true,
+      "metrics": [
+        "prs"
+      ]
+    },
+    {
+      "source": "glab:forge-a.test",
+      "answered": true,
+      "metrics": [
+        "prs"
+      ]
+    }
+  ],
+  "missing-query-table": {
+    "prs": true,
+    "commits": false,
+    "failed": [],
+    "counts": [
+      2,
+      8,
+      0,
+      6
+    ],
+    "live": {
+      "prs": 2,
+      "commits": 2,
+      "repos": 1
+    }
+  }
 }

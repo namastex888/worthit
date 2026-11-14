@@ -1,0 +1,14 @@
+forge-a.test
+  ✓ Logged in to forge-a.test as coder-a (keyring)
+  ✓ Git operations for forge-a.test configured to use ssh protocol.
+  ✓ API calls for forge-a.test are made over https protocol.
+  ✓ REST API Endpoint: https://forge-a.test/api/v4/
+  ✓ GraphQL Endpoint: https://forge-a.test/api/graphql/
+  ✓ Token found in operating system keyring: **************************
+forge-b.test
+  ✓ Logged in to forge-b.test as coder-b (keyring)
+  ✓ Git operations for forge-b.test configured to use ssh protocol.
+  ✓ API calls for forge-b.test are made over https protocol.
+  ✓ REST API Endpoint: https://forge-b.test/api/v4/
+  ✓ GraphQL Endpoint: https://forge-b.test/api/graphql/
+  ✓ Token found in operating system keyring: **************************

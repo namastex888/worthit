@@ -32,9 +32,9 @@ if (command === 'usagemeter') {
   if (args.join(' ') === 'auth status') {
     if (mode === 'glab-discovery') fail();
     if (mode === 'glab-malformed') { console.log('unrecognized inventory'); process.exit(0); }
-    if (mode === 'logged-out') { console.error('You are not logged into any GitLab hosts. Run glab auth login to authenticate.'); fail(); }
-    console.log('forge-a.test\n  Logged in to forge-a.test\nforge-b.test\n  Logged in to forge-b.test');
-    if (mode === 'glab-auth-error') fail();
+    const file = mode === 'logged-out' ? 'glab-logged-out.txt' : mode === 'glab-self-hosted' ? 'glab-self-hosted.txt' : mode === 'glab-auth-error' ? 'glab-auth-error.txt' : mode === 'glab-no-instances' ? 'glab-no-instances.txt' : 'glab-authenticated.txt';
+    process.stderr.write(fs.readFileSync(new URL(file, import.meta.url), 'utf8'));
+    if (file !== 'glab-authenticated.txt') fail();
   } else if (args[0] === 'api' && args[1] === '--hostname' && ['forge-a.test', 'forge-b.test'].includes(args[2]) && args[3].startsWith('merge_requests?scope=created_by_me&state=merged&updated_after=')) {
     if (mode === 'glab-host' && args[2] === 'forge-b.test') fail();
     console.log('[]');

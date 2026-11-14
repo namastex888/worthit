@@ -49,10 +49,13 @@ try {
   meter.exec('CREATE TABLE pr (repo TEXT, pr INTEGER, merged_ms INTEGER); CREATE TABLE cwd_repo (repo TEXT, cwd TEXT, checked_ms INTEGER)');
   meter.exec("INSERT INTO pr VALUES ('example/project', 1, 1794322800000), ('example/project', 2, 1794322800000)");
   meter.prepare('INSERT INTO cwd_repo VALUES (?, ?, ?)').run('example/project', repo, 0);
-  // Real meter shape: exact session timestamps, linked to cwd through the stored file context.
-  meter.exec('CREATE TABLE sessions (harness TEXT, session TEXT, parent_session TEXT, first_ms INTEGER, last_ms INTEGER, PRIMARY KEY(harness, session)); CREATE TABLE files (path TEXT PRIMARY KEY, source TEXT, ctx TEXT)');
+  // Published meter: a main Claude transcript stores cwd alone; sub-agents also store session context.
+  meter.exec('CREATE TABLE sessions (harness TEXT, session TEXT, parent_session TEXT, first_ms INTEGER, last_ms INTEGER, PRIMARY KEY(harness, session)); CREATE TABLE files (path TEXT PRIMARY KEY, source TEXT, mtime_ms INTEGER NOT NULL, ctx TEXT)');
   meter.prepare('INSERT INTO sessions VALUES (?, ?, NULL, ?, ?)').run('claude-code', 'fixture-session', 1794322800000, 1794322800000);
-  meter.prepare('INSERT INTO files VALUES (?, ?, ?)').run('fixture-log', 'claude-code', JSON.stringify({ session: 'fixture-session', cwd: repo }));
+  const mainLog = path.join(tmp, 'fixture-session.jsonl'), subLog = path.join(tmp, 'fixture-session/subagents/agent-sub.jsonl');
+  meter.prepare('INSERT INTO files VALUES (?, ?, ?, ?)').run(mainLog, 'claude-code', 1794322800000, JSON.stringify({ cwd: repo }));
+  meter.prepare('INSERT INTO sessions VALUES (?, ?, ?, ?, ?)').run('claude-code', 'agent-sub', 'fixture-session', 1794322800000, 1794322800000);
+  meter.prepare('INSERT INTO files VALUES (?, ?, ?, ?)').run(subLog, 'claude-code', 1793447999999, JSON.stringify({ session: 'agent-sub', parent_session: 'fixture-session', cwd: repo, parent_cwd: repo }));
   meter.close();
   const install = command => fs.writeFileSync(path.join(bin, command), `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(path.join(folder, 'commands.mjs'))} ${command} \"$@\"\n`, { mode: 0o755 });
   for (const command of ['usagemeter', 'git', 'gh', 'glab', 'tea']) install(command);
@@ -73,11 +76,21 @@ try {
   // Same store, same source rows: answering again replaces even the saved day with no new rows.
   const good = collect('good'); check('good', good);
   assert.deepEqual(good.git.coverage.sources, expected.get('all_sources'));
-  for (const mode of ['meter-status', 'meter-budget', 'glab-host', 'gh-account', 'tea', 'gh-discovery', 'glab-discovery', 'tea-discovery', 'gh-malformed', 'glab-malformed', 'tea-malformed', 'gh-auth-error', 'glab-auth-error', 'git-log', 'tea-partial', 'logged-out', 'gh-legacy']) {
-    seed(); const data = collect(mode); check(mode, data);
+  const trace = () => fs.readFileSync(env.FIXTURE_TRACE, 'utf8').trim().split('\n').map(JSON.parse);
+  for (const mode of ['meter-status', 'meter-budget', 'glab-host', 'gh-account', 'tea', 'gh-discovery', 'glab-discovery', 'tea-discovery', 'gh-malformed', 'glab-malformed', 'tea-malformed', 'gh-auth-error', 'glab-auth-error', 'git-log', 'tea-partial', 'logged-out', 'glab-self-hosted', 'glab-no-instances', 'gh-legacy']) {
+    seed(); const traceStart = trace().length, data = collect(mode); check(mode, data);
     if (mode === 'logged-out') {
       assert.deepEqual(data.git.coverage.sources, expected.get('meter_only'));
       assert.ok(!fs.readFileSync(env.FIXTURE_AUDIT, 'utf8').includes('FAILED'));
+    }
+    if (mode === 'glab-self-hosted') {
+      assert.deepEqual(data.git.coverage.sources, expected.get('self_hosted_sources'));
+      const audit = fs.readFileSync(env.FIXTURE_AUDIT, 'utf8');
+      assert.ok(audit.includes('glab gitlab.com has no token: skipped as a source'));
+      assert.ok(!audit.includes('FAILED'));
+      const calls = trace().slice(traceStart);
+      assert.ok(calls.some(x => x.command === 'glab' && x.args[0] === 'api' && x.args[2] === 'forge-a.test'));
+      assert.ok(!calls.some(x => x.command === 'glab' && x.args[0] === 'api' && x.args[2] === 'gitlab.com'));
     }
     if (mode === 'gh-legacy') assert.deepEqual(data.git.coverage.sources, expected.get('legacy_sources'));
     if (mode === 'glab-host') assert.equal(data.git.coverage.sources.find(x => x.source === 'glab:forge-a.test').answered, true);
@@ -87,20 +100,38 @@ try {
   assert.deepEqual(absent.git.coverage.sources, expected.get('meter_only'));
   assert.ok(!fs.readFileSync(env.FIXTURE_AUDIT, 'utf8').includes('FAILED'));
   for (const command of ['gh', 'glab', 'tea']) install(command);
-  const update = sql => { const d = new DatabaseSync(meterFile); d.exec(sql); d.close(); };
   const missingCwd = path.join(tmp, 'deleted');
   const d = new DatabaseSync(meterFile); d.prepare('INSERT INTO cwd_repo VALUES (?, ?, ?)').run('example/project', missingCwd, 1); d.close();
   seed(); check('two-cwds', collect('good'));
   fs.rmdirSync(repo);
-  for (const [name, last] of [['recent-no-checkout', 1794322800000], ['boundary-no-checkout', 1793448000000], ['old-no-checkout', 1793447999999]]) {
-    update(`UPDATE sessions SET first_ms = ${last}, last_ms = ${last}`);
+  for (const [name, mtime, sessionAt] of [
+    ['mtime-recent-no-checkout', 1794322800000, 1793447999999],
+    ['mtime-boundary-no-checkout', 1793448000000, 1793447999999],
+    ['mtime-old-no-checkout', 1793447999999, 1793447999999],
+    ['session-recent-no-checkout', 1793447999999, 1794322800000],
+    ['session-boundary-no-checkout', 1793447999999, 1793448000000],
+    ['session-old-no-checkout', 1793447999999, 1793447999999],
+  ]) {
+    // Make the other path stale in every control: only mtime OR only the exact session can retain.
+    const d = new DatabaseSync(meterFile);
+    d.exec('UPDATE files SET mtime_ms = 1793447999999; UPDATE sessions SET first_ms = 1793447999999, last_ms = 1793447999999');
+    d.prepare('UPDATE files SET mtime_ms = ? WHERE path = ?').run(mtime, path.join(tmp, 'fixture-session.jsonl'));
+    d.prepare('UPDATE sessions SET first_ms = ?, last_ms = ? WHERE session = ?').run(sessionAt, sessionAt, 'agent-sub');
+    assert.deepEqual(JSON.parse(d.prepare('SELECT ctx FROM files WHERE path = ?').get(path.join(tmp, 'fixture-session.jsonl')).ctx), { cwd: repo });
+    d.close();
     seed(); check(name, collect('good'));
     const audit = fs.readFileSync(env.FIXTURE_AUDIT, 'utf8');
-    assert.ok(audit.includes('1 repos have no checkout left; their commits from earlier runs are kept'));
+    assert.ok(audit.includes('1 repos have no checkout left; their commits from earlier runs are kept while the repo had a session in the last 14 days'));
     assert.ok(!audit.includes('FAILED'), 'no checkout is not a failed source');
   }
   fs.mkdirSync(repo);
-  seed(); const db = new DatabaseSync(meterFile); db.exec('DELETE FROM pr'); db.close();
+  // An older meter can lack a query table. Keep the readable repo's live logs and protect commits.
+  const oldMeter = new DatabaseSync(meterFile);
+  oldMeter.prepare('INSERT INTO cwd_repo VALUES (?, ?, ?)').run('example/missing', path.join(tmp, 'missing-repo'), 0);
+  oldMeter.exec('DROP TABLE sessions'); oldMeter.close();
+  seed(); check('missing-query-table', collect('good'));
+  assert.ok(fs.readFileSync(env.FIXTURE_AUDIT, 'utf8').includes('no-checkout recency query unavailable'));
+  seed(); const db = new DatabaseSync(meterFile); db.exec("DELETE FROM cwd_repo WHERE repo = 'example/missing'; DELETE FROM pr"); db.close();
   check('empty', collect('empty'));
   expected.done();
   assert.ok(!fs.readFileSync(env.FIXTURE_TRACE, 'utf8').includes('"unexpected"'), 'all source calls were stubbed');

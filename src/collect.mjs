@@ -171,14 +171,22 @@ export async function git(cfg, on) {
       }
       const missing = [...candidates].filter(repo => !seen.has(repo));
       if (missing.length) {
-        audit('note', `${missing.length} repos have no checkout left; their commits from earlier runs are kept`);
-        // Meter sessions keep exact event milliseconds; file context ties a session to its cwd.
-        // The inclusive lower bound is the same now - 14 days used by this collector, not checked_ms.
-        const recent = d.prepare(`SELECT DISTINCT c.repo FROM sessions s JOIN files f
-          ON f.source = s.harness AND COALESCE(json_extract(f.ctx, '$.session'), json_extract(f.ctx, '$.codex.thread')) = s.session
-          JOIN cwd_repo c ON c.cwd = COALESCE(json_extract(f.ctx, '$.cwd'), json_extract(f.ctx, '$.codex.cwd'))
-          WHERE s.last_ms >= ? AND s.first_ms <= ?`).all(since, Date.now());
-        recentNoCheckout = recent.some(r => missing.includes(r.repo));
+        audit('note', `${missing.length} repos have no checkout left; their commits from earlier runs are kept while the repo had a session in the last 14 days`);
+        // Exact sessions cover known context IDs; main Claude transcripts may hold only cwd.
+        // Their file mtime is an additional conservative witness of recent repo use.
+        try {
+          const recent = d.prepare(`SELECT DISTINCT c.repo FROM sessions s JOIN files f
+            ON f.source = s.harness AND COALESCE(json_extract(f.ctx, '$.session'), json_extract(f.ctx, '$.codex.thread')) = s.session
+            JOIN cwd_repo c ON c.cwd = COALESCE(json_extract(f.ctx, '$.cwd'), json_extract(f.ctx, '$.codex.cwd'))
+            WHERE s.last_ms >= ? AND s.first_ms <= ?
+            UNION SELECT c.repo FROM files f JOIN cwd_repo c
+            ON c.cwd = COALESCE(json_extract(f.ctx, '$.cwd'), json_extract(f.ctx, '$.codex.cwd'))
+            WHERE f.mtime_ms >= ?`).all(since, Date.now(), since);
+          recentNoCheckout = recent.some(r => missing.includes(r.repo));
+        } catch {
+          recentNoCheckout = true;
+          audit('note', 'no-checkout recency query unavailable; stored commits kept conservatively, readable checkouts still counted');
+        }
       }
       storeOK = true; meterOK = sync.code === 0 && !pending;
     } finally { d.close(); }
@@ -255,12 +263,30 @@ export async function git(cfg, on) {
     }
   }
   let glHosts = [];
-  if (optional('glab')) { const st = spawnSync('glab', ['auth', 'status'], { encoding: 'utf8', timeout: 20000 }), txt = (st.stdout || '') + '\n' + (st.stderr || '');   // host names sit unindented, each followed by its login lines
-    let cur = null; for (const l of txt.split('\n')) { const h = /^([a-z0-9][a-z0-9.-]*\.[a-z]{2,})\s*$/i.exec(l); if (h) cur = h[1].toLowerCase(); else if (cur && /Logged in to/.test(l) && !glHosts.includes(cur)) glHosts.push(cur); }
-    const loggedOut = st.status != null && !glHosts.length && /You are not logged into any GitLab hosts/i.test(txt);
-    if (loggedOut) audit('note', 'glab has no logged-in host: source skipped');
-    else if (st.status !== 0 || !glHosts.length) answer('glab discovery', false, ['prs']);
-    audit('run', 'glab auth status' + `   (GitLab hosts you are logged in to: ${glHosts.join(', ') || 'none'})`); }
+  if (optional('glab')) {
+    const st = spawnSync('glab', ['auth', 'status'], { encoding: 'utf8', timeout: 20000 });
+    const txt = ((st.stdout || '') + '\n' + (st.stderr || '')).replace(/\x1b\[[0-9;]*m/g, '');
+    const blocks = new Map(); let cur = null;
+    for (const line of txt.split('\n')) {
+      const h = /^([a-z0-9][a-z0-9.-]*\.[a-z]{2,}(?::\d+)?)\s*$/i.exec(line);
+      if (h) { cur = h[1].toLowerCase(); if (!blocks.has(cur)) blocks.set(cur, ''); }
+      else if (cur) blocks.set(cur, blocks.get(cur) + '\n' + line);
+    }
+    // glab can exit 1 because its default gitlab.com host has no token, while other hosts answer.
+    // Classify each host's actual auth result; the aggregate process exit cannot select sources.
+    let failed = !!st.error || st.signal != null || st.status == null ||
+      (!blocks.size && !/no GitLab instances have been authenticated with glab/i.test(txt));
+    for (const [host, block] of blocks) {
+      const loggedIn = /Logged in to\s+/i.test(block), noToken = /No token found/i.test(block);
+      const error = /API call failed:|could not read the token:|failed to initialize api client:/i.test(block);
+      if (noToken && !loggedIn) audit('note', `glab ${host} has no token: skipped as a source`);
+      else if (error || !loggedIn || noToken) failed = true;
+      else glHosts.push(host);
+    }
+    if (!blocks.size && !failed) audit('note', 'glab has no authenticated instance: skipped as a source');
+    if (failed) answer('glab discovery', false, ['prs']);
+    audit('run', 'glab auth status' + `   (GitLab hosts you are logged in to: ${glHosts.join(', ') || 'none'}; discovery may contact gitlab.com even without a token)`);
+  }
   for (const host of glHosts) await forge('GitLab', 'glab', 'gitlab:' + host, (page, from) => ['api', '--hostname', host, `merge_requests?scope=created_by_me&state=merged&updated_after=${from}&per_page=100&page=${page}`],
     x => x.merged_at ? [(host + '/' + ((x.references && x.references.full) || x.web_url)).toLowerCase(), Date.parse(x.merged_at), kindOf(x.title)] : null, 100);
   // every forge row of the last 12 weeks (stored + this run); the last 14 days of them join the usagemeter rows

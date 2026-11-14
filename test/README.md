@@ -96,5 +96,12 @@ Nonzero sync and successful budget-limited sync still read existing PRs and logs
 while keeping stored maxima. A repo whose newest cwd disappeared falls back to
 its older checkout. No-checkout controls pin exact session milliseconds at the
 14-day lower boundary and one millisecond before it, with no FAILED audit label.
-The minimal session/file-context tables use the real meter schema, not checked_ms
-as a proxy for session activity.
+Main Claude files use the published meter shape `{cwd}` and `<session>.jsonl`;
+a separate sub-agent row has session context. Additive mtime and exact-session
+controls each make the other path stale, pinning the boundary and one millisecond
+before it independently. The minimal tables include the published `files.mtime_ms`,
+not checked_ms as a proxy. A missing-query-table case keeps conservative commit MAX
+and still counts another readable checkout. Literal glab 1.123.0 output shapes
+cover token-less gitlab.com alone, a self-hosted login beside it, token-bearing
+host errors, and the no-authenticated-instances message. Only synthetic identities
+are used; source references are recorded with the PR.

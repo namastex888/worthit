@@ -82,7 +82,7 @@ Flags for a scan (`worthit` or `worthit --json`):
 
 | Flag | What it does |
 |---|---|
-| `--git yes\|no` | count commits and merged PRs (each logged-in `gh` account, Gitea when `tea` is logged in, and every logged-in `glab` host; absent or logged-out CLIs are skipped), and read what each PR was from its title prefix |
+| `--git yes\|no` | count commits and merged PRs (each logged-in `gh` account, Gitea when `tea` is logged in, and every logged-in `glab` host; absent or logged-out CLIs are skipped as a source), and read what each PR was from its title prefix |
 | `--ai claude\|codex\|omp\|dsh\|no` | which agent writes the summary; `no` = tables only |
 | `--ask "question"` | answer one question about the data, then exit |
 | `--hosts all\|none\|a,b` | also read your saved ssh machines, in parallel |
@@ -90,7 +90,7 @@ Flags for a scan (`worthit` or `worthit --json`):
 | `--fresh` | rewrite the summary even if nothing changed |
 | `--no-files` | do not write the `.md`, `.png` and audit log |
 
-What leaves your machine: with `--git yes`, paginated requests for your merged pull requests through logged-in `gh` accounts, the selected `tea` login and each logged-in `glab` host; absent or explicitly logged-out CLIs are skipped. The meter may download its lane build if it is missing, and syncs locally with `--no-publish`; with an AI agent, the week's numbers go to your own Claude, Codex, omp or dsh login to write the summary. With `--git no --ai no`, nothing does. Every file read and command run is listed in the audit log.
+What leaves your machine: with `--git yes`, paginated requests for your merged pull requests through logged-in `gh` accounts, the selected `tea` login and each logged-in `glab` host; absent or explicitly logged-out CLIs are skipped as a source. Auth discovery can itself contact code hosts: `glab auth status` can request `gitlab.com/api/v4/user` even without a token. A token-less host is skipped as a source while authenticated hosts are queried. The meter may download its lane build if it is missing, and syncs locally with `--no-publish`; with an AI agent, the week's numbers go to your own Claude, Codex, omp or dsh login to write the summary. With `--git no --ai no`, nothing does. Every file read and command run is listed in the audit log.
 
 A normal run writes `./<date>-worthit.md`, `./<date>-worthit.png` and `./<date>-worthit-audit.log`. Its store is `~/.worthit/`.
 
