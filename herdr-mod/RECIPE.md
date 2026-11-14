@@ -18,7 +18,7 @@ A dialog 380px wide and 640px tall, on the theme's `popover` color, 16px padding
 5. **Buttons.** `Measure` (primary: `solid` on `solid_foreground`), `Full report` and `Share` (on `raised`), 12px semibold, 6px corners, wrapping if the column is narrow.
 6. **Footer.** 10px `dim`: `updated 12 min ago · from your own local logs`.
 
-With no data yet the panel shows one paragraph explaining what worthit does and a single `Measure now` button.
+With no data yet the dialog shows one paragraph explaining what worthit does and a single `Measure now` button.
 
 ## How it behaves
 
@@ -42,16 +42,16 @@ With no data yet the panel shows one paragraph explaining what worthit does and 
 - Do not dock it into the layout (`"place": "right"`): a docked block has no way to be closed by the person. Keep it an overlay.
 - A scan gives no progress through `exec`; without the elapsed time and the note it looks stuck for minutes.
 - `toLocaleString("en-US")` does not add thousands separators in the mod runtime: format numbers by hand.
-- `herdr-app check` renders the empty state only, because the file is read asynchronously. Look at the panel in the app with real data before calling it done.
+- `herdr-app check` renders the empty state only, because the file is read asynchronously. Look at the dialog in the app with real data before calling it done.
 - A floor (`proof` other than `measured`) is "at least": never show a week-over-week change for it.
 - A first `Measure` on a machine with months of logs can take several minutes; later ones are cached and take seconds. It uses whatever scan settings worthit saved last (other machines, git).
 - worthit needs Node 22.5+ and Python 3 on the machine.
-- The panel shows this computer's file only; it does not read a remote space's home.
+- The dialog shows this computer's file only; it does not read a remote space's home.
 
 ## Done when
 
 - `herdr-app check mods/worthit` passes.
-- With no `~/.worthit/last.json`, the panel shows the explanation and `Measure now`.
+- With no `~/.worthit/last.json`, the dialog shows the explanation and `Measure now`.
 - With a run on disk, each plan shows its name in its color, a value with thousands separators, a bar, and `measured` or `at least`; the highest plan's bar is full width.
 - `ctrl-alt-w` opens the dialog; Esc and × close it.
 - `Measure` shows the spinner with a growing elapsed time, and the footer reads `updated 1 min ago` after it ends.
