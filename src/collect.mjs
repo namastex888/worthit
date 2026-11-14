@@ -314,12 +314,14 @@ export function buildData(report, g, cfg, scanInfo) {
   // The scanner cuts at now - days (UTC), while history groups local calendar days.
   // Use a conservative cutoff and the scan start: even a run crossing midnight cannot lower its partial day.
   const scanFrom = now - cfg.days * DAY, scanTo = scanInfo.started_at ?? now;
-  const was = (k, f) => {
+  const complete = k => {
     const start = new Date(k + 'T00:00:00'), end = new Date(start); end.setDate(end.getDate() + 1);
-    const complete = !missing.length && !leftOut.length && +start >= scanFrom && +end <= scanTo;
-    return complete ? 0 : (hist.days[k] || {})[f] || 0;
+    return !missing.length && !leftOut.length && +start >= scanFrom && +end <= scanTo;
   };
-  for (const [k, o] of Object.entries(agg)) hist.days[k] = { out: Math.max(Math.round(o.out), was(k, 'out')), usd: Math.max(Math.round(o.usd), was(k, 'usd')), prs: g ? o.prs : (hist.days[k] || {}).prs || 0, commits: g ? o.commits : (hist.days[k] || {}).commits || 0 };
+  // Git has its own 14-day window; usage coverage and machine selection do not govern delivery counts.
+  const gitCovered = k => !!g && +new Date(k + 'T00:00:00') >= now - 14 * DAY;
+  const was = (k, f, covered) => covered ? 0 : (hist.days[k] || {})[f] || 0;
+  for (const [k, o] of Object.entries(agg)) hist.days[k] = { out: Math.max(Math.round(o.out), was(k, 'out', complete(k))), usd: Math.max(Math.round(o.usd), was(k, 'usd', complete(k))), prs: Math.max(o.prs, was(k, 'prs', gitCovered(k))), commits: Math.max(o.commits, was(k, 'commits', gitCovered(k))) };
   fs.mkdirSync(HOME, { recursive: true }); fs.writeFileSync(hf, JSON.stringify(hist)); audit('write', tilde(hf) + `  (${Object.keys(hist.days).length} daily rows)`);
   // delivery: what the merged pull requests were (title prefix), ranked, and how features and their cost moved day by day, week by week, month by month
   if (g && g.kinds && g.kinds.length) {
@@ -349,13 +351,15 @@ export function buildData(report, g, cfg, scanInfo) {
       CREATE TABLE IF NOT EXISTS plan_value (day TEXT, provider TEXT, plan TEXT, usd_per_full_week INTEGER, times_plan_price INTEGER, stretches INTEGER, proof TEXT, PRIMARY KEY (day, provider));
       CREATE VIEW IF NOT EXISTS month AS SELECT substr(day, 1, 7) AS month, provider, ROUND(SUM(api_usd)) AS api_usd, SUM(output_tokens) AS output_tokens, SUM(requests) AS requests, COUNT(DISTINCT day) AS days FROM day_provider GROUP BY 1, 2;`);
     const dp = {}; for (const a of act) { const k = dayKey(a.t) + '|' + (a.provider === 'antigravity' ? 'google' : a.provider), o = dp[k] = dp[k] || { usd: 0, out: 0, req: 0 }; o.usd += a.usd || 0; o.out += a.output || 0; o.req += a.requests || 0; }
-    // a day only grows: the first scanned day is partial, and a later run may include fewer machines
+    // Both stores replace covered days and keep per-field maxima outside each source's coverage.
+    const replaceP = db.prepare('INSERT OR REPLACE INTO day_provider VALUES (?, ?, ?, ?, ?)');
     const upP = db.prepare('INSERT INTO day_provider VALUES (?, ?, ?, ?, ?) ON CONFLICT (day, provider) DO UPDATE SET api_usd = MAX(api_usd, excluded.api_usd), output_tokens = MAX(output_tokens, excluded.output_tokens), requests = MAX(requests, excluded.requests)');
+    const replaceD = db.prepare('INSERT OR REPLACE INTO day VALUES (?, ?, ?)');
     const upD = db.prepare('INSERT INTO day VALUES (?, ?, ?) ON CONFLICT (day) DO UPDATE SET prs = MAX(prs, excluded.prs), commits = MAX(commits, excluded.commits)');
     const upV = db.prepare('INSERT OR REPLACE INTO plan_value VALUES (?, ?, ?, ?, ?, ?, ?)');
     db.exec('BEGIN');
-    for (const [k, o] of Object.entries(dp)) { const [day, provider] = k.split('|'); upP.run(day, provider, +o.usd.toFixed(2), Math.round(o.out), o.req); }
-    for (const [k, o] of Object.entries(hist.days)) upD.run(k, o.prs || 0, o.commits || 0);
+    for (const [k, o] of Object.entries(dp)) { const [day, provider] = k.split('|'); (complete(day) ? replaceP : upP).run(day, provider, +o.usd.toFixed(2), Math.round(o.out), o.req); }
+    for (const [k, o] of Object.entries(hist.days)) (gitCovered(k) ? replaceD : upD).run(k, o.prs || 0, o.commits || 0);
     for (const p of plans) upV.run(dayKey(now), p.key, p.plan, p.usd_per_full_week, p.times_plan_price, p.stretches || 1, p.proof);
     db.exec('COMMIT');
     const lim = {}; for (const r of db.prepare('SELECT substr(day, 1, 7) AS month, provider, ROUND(AVG(usd_per_full_week)) AS v, COUNT(*) AS n FROM plan_value GROUP BY 1, 2').all()) lim[r.month + '|' + r.provider] = r;

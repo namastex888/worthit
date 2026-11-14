@@ -50,7 +50,7 @@ try {
   check('stored_days', query('SELECT * FROM day ORDER BY day'));
   // buildData controls isolate history replacement from the earlier saved-scan merge.
   // Exercise UTC/local midnight, both DST day lengths, current-day protection, per-field MAX,
-  // missing/cached hosts, and unchanged PR/commit semantics with literal expectations.
+  // missing/cached hosts, and the separate git-coverage rule with literal expectations.
   for (const [name, tz, now, hour] of [
     ['complete', 'UTC', '2026-11-14T12:00:00Z', '2026-11-10T15'],
     ['today', 'UTC', '2026-11-14T12:00:00Z', '2026-11-14T09'],
@@ -62,6 +62,10 @@ try {
     ['dst_short', 'America/Los_Angeles', '2026-03-09T07:30:00Z', '2026-03-09T06'],
     ['missing', 'UTC', '2026-11-14T12:00:00Z', '2026-11-10T15'],
     ['cached', 'UTC', '2026-11-14T12:00:00Z', '2026-11-10T15'],
+    ['git_old', 'UTC', '2026-11-14T12:00:00Z', '2026-10-25T15'],
+    ['git_partial', 'UTC', '2026-11-14T12:00:00Z', '2026-10-31T15'],
+    ['git_midnight', 'UTC', '2026-11-14T00:00:00Z', '2026-10-31T00'],
+    ['git_no', 'UTC', '2026-11-14T12:00:00Z', '2026-11-10T15'],
   ]) {
     const actual = JSON.parse(run(process.execPath, [path.join(folder, 'controls.mjs'), name, now, hour],
       { ...env, TZ: tz, WORTHIT_HOME: path.join(tmp, name) }));
