@@ -7,6 +7,15 @@ in `test/run-fixtures.mjs` are required, so deleting a folder or its check fails
 whitespace-only scripts fail with the folder's name while other checks still run. Add another
 folder with a `check.mjs` to add a case; no registration or framework is needed.
 
+`share-delivery-fallback` invokes the actual `share delivery --ai no --no-files` CLI
+against a literal synthetic saved run. Missing delivery or an unavailable cost must
+name the weekly allowance fallback in `warnings`, report `topic: allowance`, and
+keep the saved run unchanged. Aliases and the bundled demo follow the same rule.
+Usable delivery retains its topic with complete, partial or absent Git coverage,
+including a zero cost and floor plan proof. The case pins the existing JSON shape
+and PR #77's partial-count wording and comparison guard. The allowance card spec
+is unchanged; this case does not launch Chrome or call a model or network service.
+
 `day-model-complete-day` copies the application source into scratch and reprices the
 same literal Claude requests from two synthetic machines from $20/M to $10/M output
 tokens. The complete Nov 10 UTC day falls from $6 to $3 through the real scanner,

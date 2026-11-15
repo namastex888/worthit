@@ -496,9 +496,10 @@ async function makeShare(D, ask, { agent = null, clipOk = false, files = true, s
   const floors = D.plans.filter(p => p.proof !== 'measured').map(p => p.plan); if (floors.length) warnings.push(`${floors.join(' and ')}: a floor ("at least this much"), not a full measurement; the card says so`);
   if (D.git && !D.git.coverage?.prs) warnings.push('merged PRs and features: at least (git source coverage is incomplete); costs use a partial count');
   const lc = ask.toLowerCase(); let key = keys.find(k => k === lc || SHARE_TOPICS[k].alias.includes(lc)), spec, text, by = 'built-in';
-  if (key) { spec = cardSpec(key, D); text = SHARE_TOPICS[key].text(D); }
+  const fallback = why => { warnings.push(why + ': using the weekly allowance post instead'); key = 'allowance'; spec = cardSpec('allowance', D); text = SHARE_TOPICS.allowance.text(D); };
+  if (key === 'delivery' && D.delivery?.usd_per_feature == null) fallback(D.delivery ? 'delivery has no cost per feature in this run' : 'delivery data is unavailable in this run');
+  else if (key) { spec = cardSpec(key, D); text = SHARE_TOPICS[key].text(D); }
   else {      // anything else: the agent chooses the blocks and writes the post; its numbers are checked against the data
-    const fallback = why => { warnings.push(why + ': using the weekly allowance post instead'); key = 'allowance'; spec = cardSpec('allowance', D); text = SHARE_TOPICS.allowance.text(D); };
     if (!agent) fallback(`"${ask}" needs an AI agent (none found, or --ai no)`);
     else { say(`asking ${agent.label} for a post about: ${ask}`);
       const system = 'You write ONE post for X about a developer\'s own AI coding statistics. Voice: lowercase, casual, first person, no hashtags, no emojis, at most 250 characters, and it ends with "npx worthit". '
