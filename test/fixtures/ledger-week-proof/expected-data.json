@@ -1,0 +1,7 @@
+{
+  "floor_then_measured": {"before": "floor", "before_usd": 3, "after": "measured", "after_usd": 9, "change": null},
+  "both_measured": {"before": "measured", "before_usd": 9, "after": "measured", "after_usd": 9, "change": 0},
+  "stored_denominator": 50,
+  "ineligible": ["six-days", "eight-days", "wrong-provider", "wrong-plan", "zero", "unknown", "overwritten-floor", "no-proof"],
+  "local_day": "2026-11-06"
+}

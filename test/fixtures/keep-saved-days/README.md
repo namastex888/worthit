@@ -34,8 +34,9 @@ covered cutoff day from saved data, even if logs were lost during that day. It k
 
 The real CLI check for an intact `--days 7` sliding window asserts no false retention and an
 unchanged fresh window in the store. A separate synthetic `buildData` report receives that empty
-retained list and `days: 7`; it verifies that those inputs do not force a floor or suppress an
-otherwise eligible ledger comparison. It does not prove meter-derived measured proof end to end.
+retained list and `days: 7`; it verifies that those inputs do not force a floor. Its ledger-only
+baseline has no saved measured observation, so the change is null. It does not prove
+meter-derived measured proof end to end.
 A lost-logs sliding-window check uses different saved and fresh `since` values, retains seven
 eligible days, and asserts the merged `since` equals the fresh cutoff.
 `truncated-saved.json` is deliberately incomplete: a real CLI run

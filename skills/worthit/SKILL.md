@@ -149,8 +149,15 @@ week start >= every `retired_at`. A pre-retirement week stays floor. Machine not
 the machine and the first possible measured week end (retired_at + seven days).
 `plans[].weeks[].proof`: week 0 gets its actual proof; a ledger week gets `floor`
 when retirement or a retained unit blocks it; otherwise the key is absent.
-Ledger weeks carry no machine check. Ordinary comparisons retain their existing
-retirement/retained eligibility checks; this field does not certify ledger coverage. Weekly baseline proof is likewise
+Ledger weeks carry no machine check: keep their values, but never label them measured
+or use them for a change. `plans[].change_vs_last_week_pct` compares this run's measured
+value with the measured `plan_value` observation recorded exactly seven days earlier:
+the row at the local day of `now - 7 days`, with the same provider and plan and positive
+stored USD. That exact stored USD is the denominator, even if the ledger pool differs.
+Otherwise the change is null: no nearby-date or floor fallback. Same-day runs replace
+that daily observation; it does not record an exact run time or rolling period.
+Known retirement/retained floors at either endpoint still suppress the change.
+Weekly baseline proof is likewise
 checked against current retirements without rewriting saved checkpoints or searching
 past a floor. `worthit hosts unretire <machine>` restores the full frozen scan, removes
 retirement and reselects the alias. Its next answer merges normally. There is no
