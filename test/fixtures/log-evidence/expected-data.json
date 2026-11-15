@@ -42,6 +42,7 @@
   "removed_alias_old_scan":["box-b"],
   "unreadable_saved":["box-b"],
   "ignored_temporary":["box-b"],
+  "removed_dot_tmp_aliases":[".box",".tmp","fixture.tmp","tmp"],
   "fresh_equivalent":[],
   "fallback_not_equivalent":["box-b"],
   "retired_alias":[]

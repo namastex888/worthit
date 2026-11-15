@@ -16,7 +16,9 @@ corrections separately raise USD, tokens and request counts while other fields f
 each stored field keeps its own MAX. Meter-only remote usage exercises structural
 saved JSON parsing. Removing its actual SSH config entry preserves left-out status,
 even beyond the old generated-at cutoff. Corrupt saved JSON remains unknown;
-temporary files and retired snapshots are excluded. Fresh equivalent-machine
+actual atomic `.tmp` files and retired subdirectories are excluded. Legitimate
+`tmp`, `fixture.tmp`, `.box` and `.tmp` aliases survive actual SSH config removal.
+Fresh equivalent-machine
 answers suppress duplicates; saved fallbacks do not. Explicit retirement preserves
 snapshot bytes and stored usage. No scanInfo, left-out or proof flags are manufactured.
 All expected values are literal synthetic values, not application-generated oracles.

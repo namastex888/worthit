@@ -57,12 +57,12 @@ function savedLeftOut(keepDir, selected, retired, freshHosts) {
   // Saved aliases remain known after SSH config changes, until explicitly retired.
   const aliases = new Set(sshHosts().map(h => h.alias));
   if (fs.existsSync(keepDir)) for (const entry of fs.readdirSync(keepDir, { withFileTypes: true })) {
-    if (entry.isFile() && entry.name.endsWith('.json') && !entry.name.startsWith('.') && !/^(local|tmp)\.json$|\.tmp\.json$/.test(entry.name)) aliases.add(entry.name.slice(0, -5));
+    if (entry.isFile() && entry.name.endsWith('.json') && entry.name !== 'local.json') aliases.add(entry.name.slice(0, -5));
   }
   const leftOut = [];
   for (const alias of aliases) {
     const file = path.join(keepDir, alias + '.json');
-    if (alias === 'local' || alias === 'tmp' || retired.some(r => r.machine === alias) || selected.includes(alias) || !fs.existsSync(file)) continue;
+    if (alias === 'local' || retired.some(r => r.machine === alias) || selected.includes(alias) || !fs.existsSync(file)) continue;
     const saved = readScan(file);
     // Only a fresh equivalent machine answers for an omitted alias; a fallback cannot.
     if (saved?.host && freshHosts.has(saved.host)) continue;

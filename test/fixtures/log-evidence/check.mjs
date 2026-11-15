@@ -128,11 +128,22 @@ INSERT INTO usage VALUES('fixture-omp',1794409200000,'omp','fixture-meter',0,0,0
   check('unreadable_saved', scan(21, 'none', later).machines_left_out);
   fs.writeFileSync(savedFile, savedBytes);
   // Temporary files and retired subdirectories are not saved aliases.
-  fs.writeFileSync(path.join(meter.WORTHIT_HOME, 'run-keep/tmp.json'), '{broken');
-  fs.writeFileSync(path.join(meter.WORTHIT_HOME, 'run-keep/fixture.tmp.json'), '{broken');
+  fs.writeFileSync(path.join(meter.WORTHIT_HOME, 'run-keep/box-b.json.123.fixture.tmp'), '{broken');
   fs.mkdirSync(path.join(meter.WORTHIT_HOME, 'run-keep/retired'), { recursive: true });
   fs.writeFileSync(path.join(meter.WORTHIT_HOME, 'run-keep/retired/not-an-active-alias.json'), '{broken');
   check('ignored_temporary', scan(21, 'none', later).machines_left_out);
+
+  // Dot names and names containing tmp are legitimate aliases, scanned from actual config.
+  const aliasNames = ['tmp', 'fixture.tmp', '.box', '.tmp'];
+  const aliases = { ...separate('aliases'), FIXTURE_SSH_ALIASES: JSON.stringify(aliasNames) };
+  for (const alias of aliasNames) fs.cpSync(path.join(remote, '.meter'), path.join(tmp, alias, '.meter'), { recursive: true });
+  fs.mkdirSync(path.join(aliases.HOME, '.ssh'));
+  const aliasConfig = path.join(aliases.HOME, '.ssh/config');
+  fs.writeFileSync(aliasConfig, aliasNames.map(alias => `Host ${alias}\n  HostName fixture.invalid\n`).join(''));
+  scan(21, 'all', aliases);
+  for (const alias of aliasNames) assert.ok(fs.existsSync(path.join(aliases.WORTHIT_HOME, 'run-keep', alias + '.json')));
+  fs.writeFileSync(aliasConfig, '');
+  check('removed_dot_tmp_aliases', scan(21, 'none', aliases).machines_left_out);
 
   // An actual fresh equivalent answer suppresses the saved alias; its fallback does not.
   const dup = { ...meter, WORTHIT_HOME: path.join(tmp, 'duplicate-store'), FIXTURE_HOST_NAMES: '{"box-c":"box-b"}' };
