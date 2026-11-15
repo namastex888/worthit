@@ -325,5 +325,5 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
   const schema = JSON.parse(run(process.execPath, [path.join(root, 'bin/worthit.mjs'), 'schema']));
   assert.ok(schema.weekly.columns.json && schema['weekly.result'].fields.compared_with && schema['weekly.result'].fields.audit_log);
   assert.match(run(process.execPath, [path.join(root, 'bin/worthit.mjs'), '--skill']), /worthit weekly/);
-  assert.ok(trace().every(c => ['ssh', 'headless-chrome'].includes(c.command)), 'weekly runs no git, AI, UI or clipboard commands');
+  assert.ok(trace().every(c => ['ssh', 'headless-chrome', 'merge-scans', 'audit-written'].includes(c.command)), 'weekly runs no git, AI, UI or clipboard commands');
 });
