@@ -38,6 +38,11 @@ export function chromeMain() {
     fs.writeFileSync(png, bytes);
     if (mode === 'old') fs.utimesSync(png, 1, 1);
   }
-  if (mode === 'signal') process.kill(process.pid, 'SIGTERM');
+  if (mode === 'timeout') {
+    // The preload fires the parent's real timeout callback only after this image
+    // is complete. Keep the executable alive until killed, with a bounded fallback.
+    fs.writeFileSync(path.join(path.dirname(png), 'ready'), 'ready');
+    setTimeout(() => process.exit(88), 5000);
+  } else if (mode === 'signal') process.kill(process.pid, 'SIGTERM');
   else process.exit(mode === 'exit2' || mode === 'none' ? 2 : 0);
 }

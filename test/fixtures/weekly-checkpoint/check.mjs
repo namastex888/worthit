@@ -80,6 +80,9 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
         .filter(file => fs.existsSync(file)).map(file => fs.realpathSync(file));
       assert.ok(writes.includes(fs.realpathSync(data.image)), 'audit includes card write by file identity');
       assert.ok(writes.includes(fs.realpathSync(data.audit_log)), 'audit includes its own write by file identity');
+      const display = file => '~' + file.slice(env.HOME.length);
+      assert.ok(audit.includes('  write ' + display(data.image)), 'audit includes card write with tilde path');
+      assert.ok(audit.includes('  write ' + display(data.audit_log)), 'audit includes its own write with tilde path');
       assert.deepEqual(fs.readdirSync(output).sort(), [path.basename(data.audit_log), path.basename(data.image)].sort());
     } else {
       assert.equal(data.image, null);

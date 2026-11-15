@@ -44,19 +44,25 @@ export async function renderCardImage(spec, destination) {
         '--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-component-update',
         '--disable-sync', '--disable-default-apps', '--metrics-recording-only', '--host-resolver-rules=MAP * ~NOTFOUND',
         '--user-data-dir=' + path.join(scratch, 'profile'), '--window-size=1600,900', '--screenshot=' + png, 'file://' + html], { stdio: 'ignore' });
-      let error = null;
-      const timer = setTimeout(() => child.kill(), 60000);
-      child.on('error', e => { error = e; });
-      child.on('close', (code, signal) => { clearTimeout(timer); resolve({ code, signal, error }); });
+      let settled = false, timedOut = false;
+      const settle = (code, signal, error = null) => {
+        if (settled) return;
+        settled = true; clearTimeout(timer);
+        resolve({ code, signal, error, timedOut });
+      };
+      const timer = setTimeout(() => { timedOut = true; child.kill(); }, 60000);
+      child.on('error', error => settle(null, null, error));
+      child.on('close', (code, signal) => settle(code, signal));
     });
     if (result.error) return failure(result.error.code === 'ENOENT' ? 'Chrome not found (ENOENT)' : `Chrome could not start (${result.error.code || result.error.message})`);
-    const outcome = result.signal ? `Chrome terminated by ${result.signal}` : `Chrome exited ${result.code}`;
+    const outcome = result.timedOut ? `Chrome killed after the 60 s timeout (${result.signal || 'exit ' + result.code})`
+      : result.signal ? `Chrome terminated by ${result.signal}` : `Chrome exited ${result.code}`;
     if (!fs.existsSync(png)) return failure(`${outcome}: no PNG was written`);
     const stat = fs.lstatSync(png);
     if (!stat.isFile() || stat.mtimeMs < started || stat.size > 32 * 1024 * 1024 || !validCardPng(fs.readFileSync(png)))
       return failure(`${outcome}: render did not produce a fresh valid 1600x900 PNG`);
     const image = path.resolve(destination); fs.copyFileSync(png, image);
-    return { image, error: null, note: result.code === 0 && !result.signal ? null : `${outcome} after writing a valid PNG; image accepted` };
+    return { image, error: null, note: result.code === 0 && !result.signal && !result.timedOut ? null : `${outcome} after writing a valid PNG; image accepted` };
   } catch (e) { return failure(`Chrome render failed: ${e.message}`); }
   finally { fs.rmSync(scratch, { recursive: true, force: true }); }
 }

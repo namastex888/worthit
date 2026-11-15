@@ -123,7 +123,14 @@ Valid 1600x900 images survive exit 2 or a teardown signal with a named diagnosti
 Missing, stale, invalid, truncated and wrong-size outputs fail, even beside an
 existing destination. The fixture checks absolute image identity, private profile
 and network flags, scratch cleanup, and weekly checkpoint/unsafe exit semantics.
-No production spawn monkeypatch, browser, real store or network is used.
+Ordinary cases use the executable override for both CLI commands, including
+external signals, stale scratch files and exact ENOENT/EACCES diagnostics.
+A dedicated test-only preload injects EMFILE without a close event and fires the
+real 60-second timeout callback as soon as the synthetic PNG is ready. Both CLIs
+must settle, clear the deadline and name the timeout distinctly from an external
+signal, without a real 60-second wait or production test configuration. The
+weekly audit fixture checks tilde privacy and canonical file identity together.
+No browser, real store or network is used.
 
 `git-source-coverage` seeds literal daily PR and commit counts in both stores and
 uses synthetic meter, local git, gh (two accounts), glab (two hosts), and tea
