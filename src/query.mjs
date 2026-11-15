@@ -16,6 +16,8 @@ const fail = msg => { throw new Error(msg); };
 const open = () => { if (!fs.existsSync(DB)) fail('no local store yet. Run `worthit --json` once to scan and fill it.'); return new DatabaseSync(DB, { readOnly: true }); };
 
 export const SCHEMA = {
+  'scan.result': { about: 'worthit --json: fresh headless scan, git on by default, no AI, Markdown, PNG or Chrome. The usual last-run data plus output metadata; saved last.json and get/days/sql query results are unchanged.', fields: {
+    audit_log: 'root field: absolute <date>-worthit-audit.log path in the current working directory, using the shared scan audit format; null with --no-files or --demo. --no-files still updates the store; demo reads and writes no store or output files. Exit 1 after activity attempts to retain the audit and names its path on stderr, with no success JSON.' } },
   'weekly.result': { about: 'worthit weekly [--hosts all|none|a,b] [--allow-partial] [--no-files]: fresh headless allowance scan; hosts default all, git/AI off. Fixed allowance template, no questions, browser UI, clipboard or posting. Exit 0 safe or explicitly allowed partial, 1 scan/no-data/render/audit/store failure, 3 unsafe with JSON still printed. Chrome/Chromium renders the PNG unless --no-files.', fields: {
     week: '{from, to}: YYYY-MM-DD rolling seven-day window', generated_at: 'ISO checkpoint time', text: 'fixed SHARE_TOPICS.allowance post', image: 'absolute <date>-worthit-share-allowance.png path, or null with --no-files; --demo uses synthetic data with null baseline/image and never reads or writes a store or files',
     audit_log: 'absolute <date>-worthit-audit.log path beside the PNG, same audit format as a plain scan; null with --no-files or --demo; checkpoint store still updated with --no-files',

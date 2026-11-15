@@ -154,7 +154,16 @@ What leaves your machine:
 
 The audit log records session-log reads and cache hits, collector commands, network activity, agent calls, sent data and output writes. It does not list executable lookup (`which`), hardware probes, the `zstd` decompressor used for `.zst` logs, the account ids read from Claude and Codex login files (`.claude.json`, `auth.json`; hashed), `~/.ssh/config`, or worthit's own store files.
 
-A normal run writes `./<date>-worthit.md`, `./<date>-worthit.png` and `./<date>-worthit-audit.log`. Its store is `~/.worthit/` (or `WORTHIT_HOME`):
+A normal dashboard run writes `./<date>-worthit.md`, `./<date>-worthit.png` and
+`./<date>-worthit-audit.log`. An ordinary `worthit --json` scan writes only that
+audit log, using the shared scan audit format, and names its absolute path in the
+root `audit_log` field. It writes no Markdown or PNG and runs no Chrome.
+`audit_log` is null with `--no-files` or `--demo`; `--no-files` still updates the
+store, while demo reads and writes no store or output files. On exit 1 after
+activity, the JSON scan attempts to retain its audit and names the path on stderr,
+without printing success JSON. Query commands (`get`, `days`, `sql`, `schema`)
+do not scan or write audit files; saved `last.json` and query output shapes stay
+unchanged. The store is `~/.worthit/` (or `WORTHIT_HOME`):
 
 | Path | Kept data |
 |---|---|

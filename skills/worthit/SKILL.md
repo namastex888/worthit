@@ -158,9 +158,17 @@ automatic retirement; machine notes offer a one-line hint after 14 days without 
 
 ## Fresh run: `worthit --json`
 
-Scans, prices and prints the whole data object (the same sections as `get`). Useful flags:
+Scans, prices and prints the whole data object (the same sections as `get`), plus
+the root `audit_log` field: the absolute `<date>-worthit-audit.log` path in the
+current folder. It uses the shared scan audit format and writes no Markdown or
+PNG and runs no Chrome. `audit_log` is null with `--no-files` or `--demo`.
+`--no-files` still updates the store; demo reads and writes no store or files.
+On exit 1 after activity, the command attempts to retain the audit and names its
+path on stderr, without printing success JSON. This output metadata does not
+change saved `last.json` or the output shapes of `get`, `days` and `sql`.
+Useful flags:
 
-- `--git yes|no` include merged PRs and commits
+- `--git yes|no` include merged PRs and commits (default yes)
 - `--hosts all|none|a,b` other machines over ssh (default: the remembered selection)
 - `--days N` window to scan (default 21; `--days 90` backfills history once)
 - Unchanged log files are served from a cache, so repeat runs are fast.
