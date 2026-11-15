@@ -185,6 +185,7 @@ try {
       assert.ok(!delivery.includes('vs prev 7 d'));
     } else assert.ok(delivery.includes('100%'));
     const spec = cardSpec('delivery', data), html = cardHtml(spec), text = deliveryText(data);
+    assert.ok(!/at least \$/.test(tiles + delivery + html + text), `${mode}: costs are never floors`);
     assert.equal(spec.hero, '$20');
     assert.ok(spec.sub.includes(covered ? '50% vs last week' : 'at least 10 features'), `${mode}: delivery card proof`);
     assert.ok(text.includes(covered ? '50% vs last week' : 'at least 10 features'), `${mode}: share text proof`);

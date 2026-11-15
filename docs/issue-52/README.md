@@ -41,3 +41,31 @@ A deliberate regression was tested only in a private throwaway copy: removing th
 `[133, null, null, null]`, required `[null, null, null, null]`. All nine fixture
 folders ran, with only `git-source-coverage` failing. The implementation retained
 the guard throughout.
+
+## Bounded repair after review
+
+The Herdr mod now shows incomplete PR coverage as `at least 14` and labels the
+cost tile `COST PER PR · PARTIAL`, with `$14.29` unchanged. Absent PR coverage is
+also a floor. Its recipe lists `git.coverage.prs` among the consumed fields.
+
+[Herdr mod synthetic floor preview](herdr-mod-floor-spec.png) is a **spec-derived
+preview, not native painted UI**. A temporary mod copy loaded the existing
+`meter-sync` fixture JSON synchronously in `init`; its production `render`
+method was unchanged. `herdr-app check --print-spec` captured that actual element
+tree in a hidden window. A scratch-only HTML bridge rendered the returned flex,
+spacing, colors, fonts and text at the mod's 380 × 640 size. No owner window,
+space, tab, mod installation or service was changed. The production mod separately
+passed native `herdr-app check`; that check does not validate layout or paint.
+
+Custom share prompts now receive the same `GIT_RULE` as dashboard/answer prompts,
+plus the shared plan floor sentence. Incomplete PR coverage also adds a share
+warning. No public JSON fields were added.
+
+All four `delivery-proof` modes assert `costs are never floors` across dashboard
+tiles, delivery block, card HTML and text. A new private-copy mutation replaced
+`'$' + D.git.usd_per_merged_pr.toFixed(2)` in the cost tile with
+`(D.git.coverage?.prs ? '' : 'at least ') + '$' + D.git.usd_per_merged_pr.toFixed(2)`.
+`make check` exited 2, failing `meter-sync: costs are never floors` (fixture
+subprocess exit 1; nine folders run, one failed). The earlier coverage-guard
+negative proof above remains valid and unchanged. Neither mutation touched the
+implementation worktree.

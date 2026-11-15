@@ -121,17 +121,19 @@ const catalog = defineCatalog(schema, { actions: {}, components: {
   Facts: def(z.object({ items: z.array(z.object({ label: z.string(), value: z.string(), note: z.string().optional() })) }), 'A row of up to four small tiles: label, big value, short note.'),
   Note: def(text, 'One or two plain sentences of context or caveat.'),
 } });
+const GIT_RULE = 'Git counts use independent git.coverage.prs and git.coverage.commits: absent or false means at least, never a week-over-week comparison or personal best. PR-based cost ratios use partial denominators, not lower bounds; label them partial and do not compare.';
+const PLAN_RULE = 'A plan whose proof is "floor" gave AT LEAST its number: say "at least" for it, and never present a week-over-week change for a floor.';
 const COMMON = [
   'Output ONLY JSONL patches, one JSON object per line. No code fences, no prose, no blank lines.',
   'The first patch sets /root to a Stack. Then add elements in top-to-bottom order, a parent (with its full children list) before its children.',
   'Blocks with no props draw themselves from the data. Never restate their numbers in other blocks.',
   'Any number you write must be copied exactly from the data. To compare plans use usd_per_full_week and times_plan_price; never divide priced_usd yourself.',
-  'Git counts use independent git.coverage.prs and git.coverage.commits: absent or false means at least, never a week-over-week comparison or personal best. PR-based cost ratios use partial denominators, not lower bounds; label them partial and do not compare.',
+  GIT_RULE,
   'Do not use $state references. Keep ids short.'];
 const SYSTEM = catalog.prompt({ system: 'You compose the "Your week" terminal dashboard for worthit, a tool that tells a developer what their AI coding subscriptions were really worth this week and how productive they were. You place ready-made blocks and write two pieces of text.',
   customRules: [...COMMON,
     'Use exactly this order: Verdict, Tiles, Row(LevelCard, PlanRanking), Receipts, Delivery, Row(Heatmap, LimitTrend), WasteTable, Months, ModelMix, Events, Summary.',
-    'Verdict: which plan gave the most this week and by how much. If "plans" is empty, make it about the week\'s output instead. A plan whose proof is "floor" gave AT LEAST its number: say "at least" for it, and never present a week-over-week change for a floor.',
+    'Verdict: which plan gave the most this week and by how much. If "plans" is empty, make it about the week\'s output instead. ' + PLAN_RULE,
     'Summary: three short sentences, direct and a little playful. Say whether the last 7 days were more or less productive than the 7 before, what carried them, and the one thing to do next (use allowance that is about to reset, protect the streak, reach the next level). If the data has no "git" key, do not mention PRs or cost per PR.'] });
 const ASK_SYSTEM = catalog.prompt({ system: 'You answer questions about a developer\'s AI subscription usage for worthit. You always answer visually, by placing blocks.',
   customRules: [...COMMON,
@@ -493,6 +495,7 @@ async function makeShare(D, ask, { agent = null, clipOk = false, files = true, s
   const warnings = [], keys = Object.keys(SHARE_TOPICS);
   const ageH = Math.round((Date.now() - Date.parse(D.generated_at)) / 36e5); if (ageH >= 24) warnings.push(`the numbers are from a run ${ageH} hours ago: run worthit again for this week's figures`);
   const floors = D.plans.filter(p => p.proof !== 'measured').map(p => p.plan); if (floors.length) warnings.push(`${floors.join(' and ')}: a floor ("at least this much"), not a full measurement; the card says so`);
+  if (D.git && !D.git.coverage?.prs) warnings.push('merged PRs and features: at least (git source coverage is incomplete); costs use a partial count');
   const lc = ask.toLowerCase(); let key = keys.find(k => k === lc || SHARE_TOPICS[k].alias.includes(lc)), spec, text, by = 'built-in';
   if (key) { spec = cardSpec(key, D); text = SHARE_TOPICS[key].text(D); }
   else {      // anything else: the agent chooses the blocks and writes the post; its numbers are checked against the data
@@ -500,7 +503,8 @@ async function makeShare(D, ask, { agent = null, clipOk = false, files = true, s
     if (!agent) fallback(`"${ask}" needs an AI agent (none found, or --ai no)`);
     else { say(`asking ${agent.label} for a post about: ${ask}`);
       const system = 'You write ONE post for X about a developer\'s own AI coding statistics. Voice: lowercase, casual, first person, no hashtags, no emojis, at most 250 characters, and it ends with "npx worthit". '
-        + 'Use only numbers that appear in the data; never invent or round differently. The data covers the last 7 days only: describe this week and never generalise (no "every", "always", "usually"). Reply with one line of JSON and nothing else: {"text":"...","headline":"...","caption":"...","facts":[{"label":"...","value":"..."}]}. The card image shows ONE big number: headline is that number exactly as in the data with its unit (like $53.95, 448 or 32%), at most 8 characters; caption says what it is in at most 60 characters; facts are 2 to 4 supporting numbers (label at most 24 characters, value at most 14).';
+        + 'Use only numbers that appear in the data; never invent or round differently. The data covers the last 7 days only: describe this week and never generalise (no "every", "always", "usually"). Reply with one line of JSON and nothing else: {"text":"...","headline":"...","caption":"...","facts":[{"label":"...","value":"..."}]}. The card image shows ONE big number: headline is that number exactly as in the data with its unit (like $53.95, 448 or 32%), at most 8 characters; caption says what it is in at most 60 characters; facts are 2 to 4 supporting numbers (label at most 24 characters, value at most 14).'
+        + ' ' + GIT_RULE + ' ' + PLAN_RULE;
       const done = await new Promise(r => feed({ system, user: `What the person wants to share: ${ask}\n\nTheir data (JSON):\n${forModel()}`, agent }, () => {}, () => {}, r));
       let j = null; try { j = JSON.parse((/\{[\s\S]*\}/.exec(done.raw || '') || [])[0]); } catch { /* not JSON */ }
       const facts = j && Array.isArray(j.facts) ? j.facts.filter(f => f && f.label && f.value != null).slice(0, 4) : [];
