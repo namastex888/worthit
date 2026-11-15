@@ -34,6 +34,7 @@ const day = iso => { const t = new Date(iso + 'T00:00:00Z'); return `${t.getUTCD
 const measured = p => p.proof === 'measured';
 // what to say beside a plan's number: a floor is "at least" and is never compared week to week
 const moved = p => !measured(p) ? { t: 'at least', c: C.ink3 } : p.change_vs_last_week_pct == null ? { t: 'measured', c: C.ink3 }
+  : p.change_vs_last_week_pct === 0 ? { t: '0% vs last week', c: C.ink3 }
   : { t: `${p.change_vs_last_week_pct >= 0 ? '▲' : '▼'} ${Math.abs(p.change_vs_last_week_pct)}% vs last week`, c: p.change_vs_last_week_pct >= 0 ? C.cx : C.red };
 const proofLine = D => { const a = D.plans.filter(measured).map(p => p.plan), b = D.plans.filter(p => !measured(p)).map(p => p.plan);
   return !b.length ? 'every plan measured' : !a.length ? 'every plan is a floor: at least this much' : `${a.join(', ')} measured · the others at least`; };
