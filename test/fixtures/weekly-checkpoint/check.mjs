@@ -15,18 +15,38 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
   for (const name of ['open', 'xdg-open', 'osascript', 'wl-copy', 'xclip', 'claude', 'codex', 'omp', 'dsh', 'git']) {
     fs.writeFileSync(path.join(bin, name), `#!${process.execPath}\nimport fs from 'node:fs';fs.appendFileSync(process.env.FIXTURE_TRACE,JSON.stringify({unexpected:${JSON.stringify(name)}})+'\\n');process.exit(86);\n`, { mode: 0o755 });
   }
-  const weekly = (store, { args = [], overrides = {}, status = 0, files = false } = {}) => {
-    const outputDir = path.join(tmp, 'output-' + store); fs.mkdirSync(outputDir, { recursive: true });
+  const weekly = (store, { args = [], overrides = {}, status = 0, files = false, blockAudit = false } = {}) => {
+    const outputDir = path.join(files ? home : tmp, 'output-' + store); fs.mkdirSync(outputDir, { recursive: true });
     const output = fs.realpathSync(outputDir); // macOS /var and /private/var name the same scratch directory.
+    if (blockAudit) fs.mkdirSync(path.join(output, '2026-11-14-worthit-audit.log'));
     const rendersBefore = trace().filter(c => c.command === 'headless-chrome').length;
     const r = spawnSync(process.execPath, [path.join(root, 'bin/worthit.mjs'), 'weekly', ...(files ? [] : ['--no-files']), ...args], {
       cwd: output, env: { ...env, NODE_OPTIONS: env.NODE_OPTIONS + ` --import=${path.join(folder, 'render.mjs')}`, WORTHIT_HOME: path.join(tmp, store),
-        WORTHIT_PROGRESS: '1', // The synthetic SSH adapter must honor the real remote command's progress environment.
         ...overrides },
       input: '', encoding: 'utf8', maxBuffer: 16 << 20, timeout: 30000,
     });
     assert.equal(r.status, status, `weekly ${store}: exit status\n${r.stderr}\n${r.stdout}`);
-    if (status === 1) { assert.equal(r.stdout, '', 'failed run prints no result JSON'); return r; }
+    if (status === 1) {
+      assert.equal(r.stdout, '', 'failed run prints no result JSON');
+      if (files) {
+        const file = path.join(output, '2026-11-14-worthit-audit.log');
+        if (blockAudit) {
+          assert.ok(fs.statSync(file).isDirectory(), 'unwritable audit destination remains untouched');
+          assert.match(r.stderr, /could not write audit log/);
+          assert.ok(fs.existsSync(path.join(output, '2026-11-14-worthit-share-allowance.png')), 'audit failure can leave an already-rendered PNG');
+        } else {
+          assert.ok(fs.existsSync(file), 'exit-1 scan still writes its audit');
+          const audit = fs.readFileSync(file, 'utf8');
+          assert.match(audit, /  run\s+ssh box-b .*core\/extract_usage\.py/);
+          assert.doesNotMatch(audit, /headless Chrome screenshot/);
+          assert.equal(trace().filter(c => c.command === 'headless-chrome').length, rendersBefore);
+          assert.deepEqual(fs.readdirSync(output), [path.basename(file)], 'missing Chrome leaves only the audit');
+        }
+        assert.ok(r.stderr.includes(file), 'failed run names its audit path on stderr');
+        assert.equal(query('SELECT COUNT(*) AS n FROM weekly', store)[0].n, 0, 'failed run saves no checkpoint');
+      } else assert.deepEqual(fs.readdirSync(output), [], '--no-files failure creates no output artifacts');
+      return r;
+    }
     const data = JSON.parse(r.stdout); // one JSON object, no TUI or questions
     assert.equal(trace().filter(c => c.command === 'headless-chrome').length - rendersBefore, +files, 'render only with output files enabled');
     if (files) {
@@ -52,8 +72,9 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
         assert.match(audit, new RegExp(`ssh ${machine} finished:`));
         if (status === 0) assert.match(audit, new RegExp(`  read\\s+${machine}:.*usage\\.jsonl`));
       }
-      assert.ok(audit.includes(data.image), 'audit includes card write');
-      assert.ok(audit.includes(data.audit_log), 'audit includes its own write');
+      const display = file => '~' + file.slice(env.HOME.length);
+      assert.ok(audit.includes('  write ' + display(data.image)), 'audit includes card write with tilde path');
+      assert.ok(audit.includes('  write ' + display(data.audit_log)), 'audit includes its own write with tilde path');
       assert.deepEqual(fs.readdirSync(output).sort(), [path.basename(data.audit_log), path.basename(data.image)].sort());
     } else {
       assert.equal(data.image, null);
@@ -75,6 +96,8 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
     return d;
   };
   // Issue #60: actual synthetic scans must persist their audit on exit 0 and 3.
+  weekly('audit-no-chrome', { files: true, status: 1, overrides: { FIXTURE_NO_CHROME: '1' } });
+  weekly('audit-blocked', { files: true, status: 1, blockAudit: true });
   weekly('audit-complete', { files: true });
   weekly('audit-missing', { files: true, status: 3, overrides: { FIXTURE_OFFLINE: '1' } });
   const first = check('complete');

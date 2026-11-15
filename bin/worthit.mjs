@@ -553,16 +553,26 @@ if (WEEKLY) {
     }
     const checkpoint = prepareWeekly(D, db ? weeklyBaseline(db, D) : null);
     checkpoint.audit_log = NO_FILES ? null : path.resolve(`${STAMP}-worthit-audit.log`);
-    if (!NO_FILES) audit('run', 'headless Chrome screenshot of the allowance card (local file, no network)');
     const result = await makeShare(D, 'allowance', { agent: null, clipOk: false, files: !NO_FILES });
     if (!NO_FILES && !result.image) throw new Error('allowance PNG could not be rendered; install Chrome or Chromium, or use --no-files');
     checkpoint.text = result.text; checkpoint.image = result.image;
-    if (result.image) audit('write', result.image);
-    if (db) { saveWeekly(db, checkpoint); audit('write', tilde(path.join(HOME, 'worthit.db')) + '  (weekly checkpoint)'); }
+    if (result.image) {
+      audit('run', 'headless Chrome screenshot of the allowance card (local file, no network)');
+      audit('write', tilde(result.image));
+    }
+    if (db) audit('write', tilde(path.join(HOME, 'worthit.db')) + '  (weekly checkpoint)');
     if (checkpoint.audit_log) writeAudit(checkpoint.audit_log, VERSION);
+    if (db) saveWeekly(db, checkpoint);
     console.log(JSON.stringify(checkpoint, null, 1));
     process.exitCode = checkpoint.safe_to_post || flag('--allow-partial') ? 0 : 3;
-  } catch (e) { console.error('worthit weekly: ' + e.message); process.exitCode = 1; }
+  } catch (e) {
+    console.error('worthit weekly: ' + e.message); process.exitCode = 1;
+    if (!NO_FILES) {
+      const file = path.resolve(`${STAMP}-worthit-audit.log`);
+      try { writeAudit(file, VERSION); console.error('worthit weekly: audit log: ' + file); }
+      catch (error) { console.error('worthit weekly: could not write audit log ' + file + ': ' + error.message); }
+    }
+  }
   finally { db?.close(); }
 } else if (SHARE) { await share(); process.exit(0); }
 else {

@@ -188,6 +188,7 @@ JSON fields (also documented by `worthit schema`):
 Exit **0**: safe, or `--allow-partial` supplied. Exit **3**: unsafe, JSON still printed.
 The override keeps `safe_to_post: false` and its reasons. Exit **1**: no result due to
 scan failure, no allowance data this week, or PNG/audit/store failure.
+An exit-1 run still writes the audit log; it prints no JSON and saves no weekly row.
 
 SQLite `weekly (generated_at TEXT PRIMARY KEY, week_to TEXT, safe INTEGER, json TEXT)`
 records one row per successful checkpoint, including unsafe runs and `--no-files`.

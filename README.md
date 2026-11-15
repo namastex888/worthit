@@ -98,6 +98,7 @@ left out, or has retained units inside this week. Reasons name each machine, and
 units name their day and provider. `--allow-partial` changes exit 3 to 0, keeping
 `safe_to_post: false`. Exit **1** means no result (scan failure, no allowance data this
 week, or PNG/audit/store failure). Floors alone, including pre-retirement weeks, and retained units only in earlier weeks are safe.
+An exit-1 run still writes the audit log; it prints no JSON and saves no weekly row.
 
 `compared_with` is the latest earlier checkpoint ending at least six days before this
 week's end. Only the same plan measured at both endpoints gets a percentage in `plans`,

@@ -6,7 +6,8 @@ import { syncBuiltinESMExports } from 'node:module';
 
 const existsSync = fs.existsSync, spawn = childProcess.spawn;
 const chrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-fs.existsSync = file => file === chrome || existsSync(file);
+const chromes = new Set([chrome, '/Applications/Chromium.app/Contents/MacOS/Chromium', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser']);
+fs.existsSync = file => process.env.FIXTURE_NO_CHROME === '1' && chromes.has(file) ? false : file === chrome || existsSync(file);
 childProcess.spawn = (command, args, options) => {
   if (command !== chrome) return spawn(command, args, options);
   fs.appendFileSync(process.env.FIXTURE_TRACE, JSON.stringify({ command: 'headless-chrome', args }) + '\n');
