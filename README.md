@@ -82,6 +82,19 @@ worthit install-skill            # install the skill into your coding agents
 worthit --demo                   # the whole run on sample data
 ```
 
+Stored usage never decreases on rescan because tools prune their logs. Each usage
+field in `day_provider`, `day_model` and `history.json` keeps its maximum on every
+day. Later price cuts or dedupe fixes cannot lower days already stored; higher
+values still increase them. Git PR and commit counts keep their independent
+14-day, per-metric coverage rules. Saved machines with usage or unreadable saved scans
+stay left out after their SSH alias is removed, until retired or covered by a fresh
+answer from the same machine.
+
+`day_provider` uses local days. `day_model` uses UTC days for `--by model` or any
+`--model` filter, including `--by total` and `--by tool`. Never compare UTC and
+local views per day; date filters and week/month groups use the selected stored
+basis too, so their boundaries can differ. No stored dates or values are converted.
+
 `worthit weekly [--hosts all|none|a,b] [--allow-partial] [--no-files]` runs a fresh
 headless scan with all SSH hosts by default, git and AI off. It prints the fixed allowance
 post and facts as JSON, writes `<date>-worthit-share-allowance.png` (Chrome or Chromium

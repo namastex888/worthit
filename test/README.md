@@ -7,17 +7,30 @@ in `test/run-fixtures.mjs` are required, so deleting a folder or its check fails
 whitespace-only scripts fail with the folder's name while other checks still run. Add another
 folder with a `check.mjs` to add a case; no registration or framework is needed.
 
+`log-evidence` uses real synthetic Claude/Codex files with controlled actual mtimes.
+A 90-day scan seeds 35 stored days, a 21-day scan clears the older run-keep units,
+and actual file removal leaves 30 recent daily logs plus surviving mixed-provider
+and partial-model sources. Repeated 60/90-day scans and then all-pruned sources must
+leave every stored provider/model/history/month value unchanged. Literal source
+corrections separately raise USD, tokens and request counts while other fields fall;
+each stored field keeps its own MAX. Meter-only remote usage exercises structural
+saved JSON parsing. Removing its actual SSH config entry preserves left-out status,
+even beyond the old generated-at cutoff. Corrupt saved JSON remains unknown;
+temporary files and retired snapshots are excluded. Fresh equivalent-machine
+answers suppress duplicates; saved fallbacks do not. Explicit retirement preserves
+snapshot bytes and stored usage. No scanInfo, left-out or proof flags are manufactured.
+All expected values are literal synthetic values, not application-generated oracles.
+
 `day-model-complete-day` copies the application source into scratch and reprices the
 same literal Claude requests from two synthetic machines from $20/M to $10/M output
-tokens. The complete Nov 10 UTC day falls from $6 to $3 through the real scanner,
-pricing and CLI `days --by model` / `days --by total`; the partial Nov 7 and current
-Nov 14 days keep $6, including on rerun. Its literal `expected-data.json` also pins
-independent token/USD replacement and MAX, UTC versus local boundaries in both
-directions, exact midnight, a scan crossing midnight, missing/cached/left-out machines,
-and the existing retirement guard (including its exact boundary and UTC/local
-distinction). Schema assertions check both usage day rules and Git's separate
-14-day coverage. The case is required by the runner. Price changes and deliberate
-regression experiments only touch private scratch copies.
+tokens. Complete Nov 10, partial Nov 7 and current Nov 14 all keep $6 through the real
+scanner, pricing and CLI queries, including reruns. Its literal expectations pin
+independent token/USD MAX across UTC/local boundaries, exact midnight, scan-start,
+missing/cached/left-out and retirement scenarios. The history fixture preserves its
+independent Git coverage assertions: delivery counts may fall inside their covered
+window while usage never does. Schema assertions check unconditional usage MAX and
+Git's separate 14-day coverage. Both cases are required by the runner. Price changes
+and deliberate regression experiments only touch private scratch copies.
 
 The first three folders share literal **source logs** in `test/sources/box-a/`,
 `box-b/` and the left-out control `box-c/`, rather than scan responses. `support/materialize.py` puts the Claude Code,
