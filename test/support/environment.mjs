@@ -19,5 +19,6 @@ export function isolatedEnvironment() {
     GH_CONFIG_DIR: path.join(home, '.config/gh'), TZ: 'UTC', LANG: 'en_US.UTF-8',
     PYTHONDONTWRITEBYTECODE: '1', WORTHIT_NO_CACHE: '1', USAGE_ACCT_SALT: 'synthetic-fixtures',
   };
+  if (process.env.WORTHIT_FIXTURE_ARTIFACTS) env.WORTHIT_FIXTURE_ARTIFACTS = process.env.WORTHIT_FIXTURE_ARTIFACTS;
   return { tmp, bin, home, python, env, cleanup: () => fs.rmSync(tmp, { recursive: true, force: true }) };
 }

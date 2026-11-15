@@ -122,3 +122,16 @@ and still counts another readable checkout. Literal glab 1.123.0 output shapes
 cover token-less gitlab.com alone, a self-hosted login beside it, token-bearing
 host errors, and the no-authenticated-instances message. Only synthetic identities
 are used; source references are recorded with the PR.
+
+`retire-machine` primes a real scan with fourteen literal daily Claude source rows
+(Oct 25–Nov 7, 200,000 output tokens and $2 per day), retires box-b, and verifies
+all fourteen frozen days, empty missing/left-out lists, measured $6 Claude allowance
+and $36 / 3,000,000 current totals from the two active machines. Its pre-retirement
+comparison remains a floor. Actual later source logs/checkpoints restore a measured
+week-over-week change; an early week stays unsafe with the machine and first eligible
+week end named. Separate duplicate-host stores check another alias and local answers,
+higher saved/fresh winners and a fresh tie without summing units. Moving windows keep
+snapshot bytes and earlier history unchanged; unretire restores bytes and selection.
+The seven-day source case preserves a 700,000-token/$7 partial oldest day and the
+100,000-token/$1 older day with a git row in history.json and SQLite. All identities
+are synthetic. Proof-rule mutations run only in a private throwaway checkout.

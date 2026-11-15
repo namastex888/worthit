@@ -41,7 +41,7 @@ const proofLine = D => { const a = D.plans.filter(measured).map(p => p.plan), b 
 export const CARD_TOPICS = {
   allowance(D) { const ps = D.plans.slice().sort((a, b) => measured(b) - measured(a) || b.usd_per_full_week - a.usd_per_full_week), h = ps[0], mx = Math.max(...ps.map(p => p.usd_per_full_week)), mv = moved(h);
     return { eyebrow: 'Weekly AI allowance check', hero: usd(h.usd_per_full_week), color: h.color, cap: `of API-priced usage in one ${h.plan} weekly limit`, sub: mv.t, subColor: mv.c,
-      rows: ps.map(p => ({ label: p.plan, pct: p.usd_per_full_week / mx, color: p.color, value: usd(p.usd_per_full_week), note: moved(p).t })) }; },
+      rows: ps.map(p => ({ label: p.plan, pct: p.usd_per_full_week / mx, color: p.color, value: usd(p.usd_per_full_week), note: moved(p).t, ...(measured(p) && p.retirement_note ? { retirement_note: p.retirement_note } : {}) })) }; },
   value(D) { const p = D.plans.slice().sort((a, b) => b.times_plan_price - a.times_plan_price)[0];
     return { eyebrow: 'The receipt', hero: p.times_plan_price + '×', color: p.color, cap: `what I pay for ${p.plan}, back in API-priced usage`, sub: measured(p) ? 'measured from the plan\'s own meter' : 'at least', subColor: C.ink3,
       rows: [{ label: 'one weekly limit', pct: 1, color: p.color, value: usd(p.usd_per_full_week), note: '' }, { label: 'the plan, per week', pct: p.plan_usd_per_week / p.usd_per_full_week, color: C.ink3, value: usd(p.plan_usd_per_week), note: '' }] }; },
@@ -75,7 +75,7 @@ export function cardHtml(s) {
   const heroSize = s.hero.length > 7 ? 150 : s.hero.length > 5 ? 180 : 210, bars = s.rows.some(r => r.pct != null);
   const rows = s.rows.map(r => `<div class="row${bars ? '' : ' nobar'}"><span class="label" style="color:${r.color}">${esc(r.label)}</span>`
     + (bars ? `<span class="track"><span class="fill" style="width:${Math.max(1.5, Math.min(100, (r.pct || 0) * 100)).toFixed(1)}%;background:${r.color}"></span></span>` : '<span class="dots"></span>')
-    + `<span class="value">${esc(r.value)}</span>${bars ? `<span class="note">${esc(r.note)}</span>` : ''}</div>`).join('');
+    + `<span class="value">${esc(r.value)}</span>${bars ? `<span class="note">${esc(r.note)}</span>` : ''}${r.retirement_note ? `<span class="retirement">${esc(r.retirement_note)}</span>` : ''}</div>`).join('');
   return `<!doctype html><meta charset="utf-8"><style>
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{width:1600px;height:900px;background:#0a0a0c;color:${C.ink};font-family:"SF Mono",ui-monospace,Menlo,Consolas,"DejaVu Sans Mono",monospace;-webkit-font-smoothing:antialiased}
@@ -97,6 +97,7 @@ body{display:flex;flex-direction:column;padding:60px 76px 56px}
 .dots{border-bottom:3px dotted ${C.line};height:20px}
 .value{font-weight:800;text-align:right;white-space:nowrap}
 .note{font-size:30px;color:${C.ink3};white-space:nowrap;overflow:hidden}
+.retirement{grid-column:1/-1;font-size:26px;line-height:1.3;color:${C.ink3};overflow-wrap:anywhere}
 .foot{margin-top:36px;padding-top:28px;border-top:2px solid ${C.line};display:flex;justify-content:space-between;align-items:center}
 .src{font-size:27px;color:${C.ink3};line-height:1.4}
 .cmd{font-size:30px;color:${C.ink3};white-space:nowrap}

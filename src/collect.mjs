@@ -5,6 +5,7 @@ import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'; import { createRequire } from 'node:module';
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');   // loaded here, after quiet.mjs, so its 'experimental' warning stays silent
 import { C } from './draw.mjs';
+import { readHosts, writeHosts, activeHosts, retirementBlocks, retirementStatement } from './hosts.mjs';
 
 export const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 export const HOME = process.env.WORTHIT_HOME || path.join(os.homedir(), '.worthit');
@@ -42,13 +43,14 @@ export function sshHosts() {             // aliases from ~/.ssh/config and its I
   return res;
 }
 const HOSTS_FILE = path.join(HOME, 'hosts.json');
-export const savedHosts = () => { try { const known = new Set(sshHosts().map(x => x.alias)); return JSON.parse(fs.readFileSync(HOSTS_FILE, 'utf8')).selected.filter(a => known.has(a)); } catch { return null; } };
-export const saveHosts = sel => { fs.mkdirSync(HOME, { recursive: true }); fs.writeFileSync(HOSTS_FILE, JSON.stringify({ selected: sel })); audit('write', tilde(HOSTS_FILE) + `  (${sel.length} machines remembered)`); };
+export const savedHosts = () => { if (!fs.existsSync(HOSTS_FILE)) return null; const known = new Set(sshHosts().map(x => x.alias)); return activeHosts(HOME, readHosts(HOME).selected).filter(a => known.has(a)); };
+export const saveHosts = sel => { writeHosts(HOME, { ...readHosts(HOME), selected: activeHosts(HOME, sel) }); audit('write', tilde(HOSTS_FILE) + `  (${sel.length} machines remembered)`); };
 
 // ---------------------------------------------------------------- step 1: scan
 const SPAN = { claude: [0, .68], codex: [.68, .97], antigravity: [.97, 1] }, TOOL = { claude: 'Claude Code', codex: 'Codex', antigravity: 'Antigravity', omp: 'omp', dsh: 'dsh', meter: 'usagemeter store' };
 export async function scan(cfg, on) {
-  const startedAt = Date.now();
+  const startedAt = Date.now(), retirement = readHosts(HOME).retired;
+  cfg = { ...cfg, hosts: activeHosts(HOME, cfg.hosts || []) };
   const py = ['python3', 'python'].find(has);
   if (!py) throw new Error('Python 3 is needed for the log scanner. macOS: xcode-select --install · Linux: install python3 with your package manager.');
   const runs = path.join(HOME, 'run'), runDir = path.join(runs, String(process.pid)); fs.mkdirSync(runs, { recursive: true });
@@ -56,7 +58,7 @@ export async function scan(cfg, on) {
   fs.mkdirSync(runDir, { recursive: true });
   const script = path.join(ROOT, 'core', 'extract_usage.py'), counts = { claude: 0, codex: 0, antigravity: 0 };
   const cache = path.join(HOME, 'run-counts.json'), keepDir = path.join(HOME, 'run-keep');
-  if (!cfg.fresh && process.env.WORTHIT_REUSE && fs.existsSync(path.join(keepDir, 'local.json'))) { fs.cpSync(keepDir, runDir, { recursive: true }); audit('note', 'WORTHIT_REUSE: using the previous scan'); return { runDir, counts: JSON.parse(fs.readFileSync(cache, 'utf8')), hosts: [], started_at: 0 }; }
+  if (!cfg.fresh && !retirement.length && process.env.WORTHIT_REUSE && fs.existsSync(path.join(keepDir, 'local.json'))) { fs.cpSync(keepDir, runDir, { recursive: true, filter: f => f !== path.join(keepDir, 'retired') }); audit('note', 'WORTHIT_REUSE: using the previous scan'); return { runDir, counts: JSON.parse(fs.readFileSync(cache, 'utf8')), hosts: [], started_at: 0 }; }
   let cached = 0; const names = cfg.hosts || [], pcts = { local: 0 }; names.forEach(a => { pcts[a] = 0; });
   const emit = detail => { const v = Object.values(pcts); on({ pct: v.reduce((a, b) => a + b, 0) / v.length, detail, counts }); };
   audit('run', `${py} core/extract_usage.py ${cfg.days}   (reads local session logs, read-only)`);
@@ -93,18 +95,20 @@ export async function scan(cfg, on) {
   for (const x of [...hosts].sort((a, b) => !!a.saved_at - !!b.saved_at)) { if (!x.ok) continue; const f = path.join(runDir, x.alias + '.json'), hn = hostOf(f);   // fresh answers first: a saved copy never wins over one
     if (hn && seenHost.has(hn)) { x.same_as = seenHost.get(hn); x.ok = false; delete x.saved_at; fs.rmSync(f, { force: true }); audit('note', `${x.alias} is the same machine as ${x.same_as} (${hn}): its copy is dropped`); } else if (hn) seenHost.set(hn, x.alias); }
   // Merge only the deduplicated machines (including local), before pricing and persisting run-keep.
-  const merged = spawnSync(py, [path.join(ROOT, 'core', 'merge_scans.py'), runDir, keepDir], { env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' }, encoding: 'utf8', maxBuffer: 64 << 20 });
+  const merged = spawnSync(py, [path.join(ROOT, 'core', 'merge_scans.py'), runDir, keepDir, HOSTS_FILE, String(startedAt), String(cfg.days), JSON.stringify(['local.json', ...hosts.filter(x => x.ok && !x.saved_at).map(x => x.alias + '.json')])], { env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' }, encoding: 'utf8', maxBuffer: 64 << 20 });
   if (merged.status) throw new Error('keeping saved scan days failed: ' + String(merged.stderr).trim().split('\n').pop());
-  const retained = JSON.parse(merged.stdout);
+  const { retained, retired, conflicts } = JSON.parse(merged.stdout);
+  for (const x of conflicts) audit('note', `${x.machine} is retired but answers as ${x.same_as}`);
   for (const x of retained) for (const u of x.units) audit('note', `${x.machine}: older ${u.day} ${u.provider} scan kept (higher API value, then tokens)`);
   on({ pct: 1, detail: 'done', counts });
   // saved machines the person left out of this run, whose last scan (inside the window) holds usage: the plans' numbers are then "at least"
-  const leftOut = []; for (const h of sshHosts()) { const k = path.join(keepDir, h.alias + '.json'); if (names.includes(h.alias) || !fs.existsSync(k)) continue;
+  const leftOut = []; for (const h of sshHosts()) { const k = path.join(keepDir, h.alias + '.json'); if (retirement.some(r => r.machine === h.alias) || names.includes(h.alias) || !fs.existsSync(k)) continue;
     const hn = hostOf(k), at = Date.parse(savedAt(k) || ''); if ((hn && seenHost.has(hn)) || !(at > Date.now() - cfg.days * DAY)) continue; if (hn) seenHost.set(hn, h.alias);
     let used = false; try { used = !/"buckets"\s*:\s*\[\s*\]/.test(fs.readFileSync(k, 'utf8')); } catch { /* unreadable: not counted as use */ } if (used) leftOut.push(h.alias); }
   if (leftOut.length) audit('note', `saved machines with usage left out of this run: ${leftOut.join(', ')}`);
-  fs.writeFileSync(cache, JSON.stringify(counts)); fs.cpSync(runDir, keepDir, { recursive: true, force: true });
-  return { runDir, counts, hosts, cached, left_out: leftOut, retained, started_at: startedAt };
+  fs.writeFileSync(cache, JSON.stringify(counts));
+  fs.cpSync(runDir, keepDir, { recursive: true, force: true, filter: f => !retirement.some(r => path.basename(f) === r.machine + '.json') });
+  return { runDir, counts, hosts, cached, left_out: leftOut, retained, retired, retirement, retirement_conflicts: conflicts, started_at: startedAt };
 }
 
 // ---------------------------------------------------------------- step 2: price every request, read the weekly meters
@@ -345,9 +349,12 @@ export function buildData(report, g, cfg, scanInfo) {
   // plans: this week's measured value of one full weekly limit
   // measured needs every machine's answer from this run: one that gave no answer (even with a saved scan standing in) or a saved machine with usage left out means use elsewhere may be missing
   const hs = scanInfo.hosts || [], missing = hs.filter(x => x.saved_at || !(x.ok || x.same_as)).map(x => ({ machine: x.alias, saved_scan_at: x.saved_at || null })), leftOut = scanInfo.left_out || [];
-  const retainedThisWeek = (scanInfo.retained || []).some(x => x.units.some(u => retainedUnitOverlapsWeek(u, now)));
-  // A saved unit cannot account for lost hours after that scan, even when its machine answered.
-  const allMachines = !missing.length && !leftOut.length && !retainedThisWeek && (hs.length > 0 || !sshHosts().length);
+  const retired = scanInfo.retirement || [], retained = scanInfo.retained || [];
+  const answered = !missing.length && !leftOut.length && (hs.length > 0 || !activeHosts(HOME, sshHosts().map(h => h.alias)).length);
+  // Evaluate each rolling week separately: a current measured week cannot certify an older floor.
+  const measuredAt = end => answered && !retirementBlocks(retired, end).length &&
+    !retained.some(x => x.units.some(u => retainedUnitOverlapsWeek(u, end)));
+  const allMachines = measuredAt(now);
   let ledger = []; try { ledger = fs.readFileSync(path.join(HOME, 'weeks', 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch { /* first run */ }
   const day0 = new Date(w1).toISOString().slice(0, 10), events = loadEvents().filter(e => e.date_utc >= day0).map(e => ({ date: e.date_utc, provider: e.provider, type: e.type, title: e.title, confidence: e.confidence, source: e.source_url }));
   const plans = [];
@@ -360,11 +367,13 @@ export function buildData(report, g, cfg, scanInfo) {
       if (pts > 0 && r.usd_measured) { a.usd += r.usd_measured; a.pts += pts; } a.max = Math.max(a.max, r.usd_per_full_week); }
     const byWeek = {}; for (const k in acc) if (+k >= 1) byWeek[String(99 - k).padStart(2, '0')] = acc[k].pts >= 15 ? Math.round(acc[k].usd / (acc[k].pts / 100)) : acc[k].max;
     const past = Object.keys(byWeek).sort().slice(-5).map(k => byWeek[k]), pl = (report.pooled || {})[key], v = pl ? pl.usd_per_full_week : w.usd_per_full_week, resets = events.filter(e => e.provider === key && e.type === 'reset' && e.confidence === 'high').length, from = Math.round(w.meter_start_pct), to = Math.round(w.meter_end_pct), per = report.prices.plan_usd_per_week[key];
-    plans.push({ key, ...PLAN[key], usd_per_full_week: v, times_plan_price: Math.round(v / per), proof: key === 'claude' && allMachines ? 'measured' : 'floor', plan_usd_per_week: Math.round(per), meter_from: from, meter_to: to,
+    const proofAt = end => key === 'claude' && measuredAt(end) ? 'measured' : 'floor';
+    const retirementNote = allMachines && key === 'claude' ? retirementStatement(retired) : '';
+    plans.push({ key, ...PLAN[key], usd_per_full_week: v, times_plan_price: Math.round(v / per), proof: proofAt(now), ...(retirementNote ? { retirement_note: retirementNote } : {}), plan_usd_per_week: Math.round(per), meter_from: from, meter_to: to,
       meter: pl ? `${pl.stretches} stretches · ${pl.meter_points} points` : key === 'google' ? `no meter · cap after ${w.hours} h` : `meter ${from}% → ${to}% in ${w.hours} h`, priced_usd: pl ? pl.api_usd : w.measured.api_usd, fraction_of_week: pl ? +(pl.meter_points / 100).toFixed(2) : +((to - from) / 100).toFixed(2),
       other_machines_usd: pl && pl.other_machines_usd >= 1 ? Math.round(pl.other_machines_usd) : 0, usd_per_full_week_all_machines: pl && pl.other_machines_usd >= 1 ? pl.usd_per_full_week_all_machines : null,
       stretches: pl ? pl.stretches : 1, range_usd: report.this_week[key + '_range'] || null, resets_this_week: resets,
-      tokens: pl ? `${ft(pl.output_tokens)} out ${ft(pl.cached_input_tokens)} cached` : `${ft(w.measured.output_tokens)} out ${ft(w.measured.cached_input_tokens)} cached`, models: models(w.measured.model_mix_by_usd), history: [...past, v], weeks: [...Object.keys(byWeek).sort().slice(-11).map(k => ({ weeks_ago: 99 - +k, to: new Date(now - (99 - +k) * 7 * DAY).toISOString().slice(0, 10), usd: byWeek[k] })), { weeks_ago: 0, to: new Date(now).toISOString().slice(0, 10), usd: v }], change_vs_last_week_pct: past.length && key === 'claude' && allMachines ? pctChange(v, past[past.length - 1]) : null });
+      tokens: pl ? `${ft(pl.output_tokens)} out ${ft(pl.cached_input_tokens)} cached` : `${ft(w.measured.output_tokens)} out ${ft(w.measured.cached_input_tokens)} cached`, models: models(w.measured.model_mix_by_usd), history: [...past, v], weeks: [...Object.keys(byWeek).sort().slice(-11).map(k => ({ weeks_ago: 99 - +k, to: new Date(now - (99 - +k) * 7 * DAY).toISOString().slice(0, 10), usd: byWeek[k], proof: proofAt(now - (99 - +k) * 7 * DAY) })), { weeks_ago: 0, to: new Date(now).toISOString().slice(0, 10), usd: v, proof: proofAt(now) }], change_vs_last_week_pct: byWeek['98'] != null && proofAt(now) === 'measured' && proofAt(w1) === 'measured' ? pctChange(v, byWeek['98']) : null });
   }
 
   // waste: account-weeks that closed in the last 7 days (and ones still open, shown as at risk, never as waste)
@@ -386,7 +395,7 @@ export function buildData(report, g, cfg, scanInfo) {
 
   const tools = ['claude', 'codex', 'antigravity', 'omp', 'dsh'].filter(p => p !== 'omp' && p !== 'dsh' || (report.other_tools || {})[p]).map(p => { const r = cur.filter(a => a.provider === p), ot = (report.other_tools || {})[p];
     return { tool: TOOL[p], key: p, found: ot ? true : (scanInfo.counts[p] || 0) > 0, files: scanInfo.counts[p] || 0, source: ot ? 'usagemeter store' : 'session logs', priced: ot ? (ot.usd_fitted ? 'cost reported by omp; dsh priced at the rates those costs imply' : 'cost reported by the tool') : 'API list price', unpriced_output_tokens: ot ? ot.unpriced_output_tokens : 0, sessions: (report.sessions_by_provider || {})[p] || 0, requests: sum(r, 'requests'), output: sum(r, 'output'), cached: sum(r, 'cache_read'), fresh: sum(r, 'input_uncached'), usd: Math.round(sum(r, 'usd')) }; });
-  const D = { generated_at: new Date(now).toISOString(), week: { from: new Date(w1).toISOString().slice(0, 10), to: new Date(now).toISOString().slice(0, 10) }, machines: 1 + (scanInfo.hosts || []).filter(x => x.ok).length, machines_missing: missing, machines_left_out: leftOut, machines_retained: scanInfo.retained || [], days_scanned: cfg.days,
+  const D = { generated_at: new Date(now).toISOString(), week: { from: new Date(w1).toISOString().slice(0, 10), to: new Date(now).toISOString().slice(0, 10) }, machines: 1 + (scanInfo.hosts || []).filter(x => x.ok).length, machines_missing: missing, machines_left_out: leftOut, machines_retained: scanInfo.retained || [], machines_retired: scanInfo.retired || [], retirement_conflicts: scanInfo.retirement_conflicts || [], days_scanned: cfg.days,
     plans, events, months: [], tools, waste, waste_hidden: hidden, totals: { output_tokens: sum(cur, 'output'), output_tokens_change_pct: pctChange(sum(cur, 'output'), sum(prev, 'output')), api_value_usd: Math.round(sum(cur, 'usd')), api_value_change_pct: pctChange(sum(cur, 'usd'), sum(prev, 'usd')),
       tokens_per_day: perDay(act, 'output'), value_per_day: perDay(act, 'usd').map(Math.round) },
     heat: { days: names, rows: heat, note: pk[2] ? `peak ${names[pk[0]]} ${String(pk[1]).padStart(2, '0')}:00 · quiet ${names[quiet]}` : 'no activity' } };
@@ -406,7 +415,7 @@ export function buildData(report, g, cfg, scanInfo) {
   const scanFrom = now - cfg.days * DAY, scanTo = scanInfo.started_at ?? now;
   const complete = k => {
     const start = new Date(k + 'T00:00:00'), end = new Date(start); end.setDate(end.getDate() + 1);
-    return !missing.length && !leftOut.length && +start >= scanFrom && +end <= scanTo;
+    return !missing.length && !leftOut.length && retired.every(r => +start >= Date.parse(r.retired_at)) && +start >= scanFrom && +end <= scanTo;
   };
   // Git has its own 14-day window; usage coverage and machine selection do not govern delivery counts.
   const gitCovered = (k, metric) => !!g?.coverage?.[metric] && +new Date(k + 'T00:00:00') >= now - 14 * DAY;

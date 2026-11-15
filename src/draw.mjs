@@ -1,3 +1,4 @@
+import { retirementBlocks, firstMeasuredAt } from './hosts.mjs';
 // worthit blocks: each function takes the week's data (and a few agent-written props) and returns ANSI lines.
 // The agent never draws: it names a block, the harness draws it the same way every time.
 export const C = { ink: '#f4f4f2', ink2: '#b4b4ae', ink3: '#74747a', line: '#3d3d46', track: '#26262c', cl: '#4c94f0', go: '#ee7440', cx: '#27b888',
@@ -49,6 +50,13 @@ export const machineNotes = D => { const out = [], few = a => a[0].slice(0, 16) 
     const days = same ? String(counts[0]) : `${Math.min(...counts)}–${Math.max(...counts)}`;
     out.push(`${few(kept.map(x => x.machine))}: kept ${days} older day${same && counts[0] === 1 ? '' : 's'}${kept.length > 1 ? ' each' : ''}`);
   }
+  for (const r of D.machines_retired || []) out.push(`${r.machine}: retired, kept ${r.days_kept} saved days`);
+  for (const r of D.retirement_conflicts || []) out.push(`${r.machine} is retired but answers as ${r.same_as}`);
+  for (const r of retirementBlocks(D.machines_retired || [], Date.parse(D.generated_at)))
+    out.push(`${r.machine}: week starts before retirement; first measured week ${firstMeasuredAt(r).slice(0, 10)} (${firstMeasuredAt(r).slice(11, 16)} UTC)`);
+  for (const p of D.plans || []) if (p.proof === 'measured' && p.retirement_note) out.push(`${p.plan}: ${p.retirement_note}`);
+  for (const r of miss) if (r.saved_scan_at && Date.parse(D.generated_at) - Date.parse(r.saved_scan_at) >= 14 * 864e5)
+    out.push(`${r.machine}: gone for good? worthit hosts retire ${r.machine}`);
   return out; };
 
 export const blocks = {
@@ -77,7 +85,7 @@ export const blocks = {
     if (!D.plans.length) return box('WHICH PLAN GAVE MORE', [m('No finished weekly limit in your logs yet.'), d('A plan is ranked once its weekly meter runs to the cap,'), d('or closes, inside the scanned days.')], 56, C.ink, '$ per full weekly limit', 9);
     const ps = [...D.plans].sort((a, b) => b.usd_per_full_week - a.usd_per_full_week), mx = ps[0].usd_per_full_week;
     const l = ps.map((p, i) => bold(w(String(i + 1))) + ' ' + pad(fg(p.color, p.plan), 16) + lpad(bold(w(usd(p.usd_per_full_week))), 7) + ' ' + bar(p.usd_per_full_week, mx, 13, dark(p.color), p.color, false) + lpad(w(p.times_plan_price + '×'), 4) + ' ' + d(p.proof));
-    l.push(...machineNotes(D).map(t => fg(C.gold, '! ') + m(t)));
+    l.push(...machineNotes(D).flatMap(t => wrap(t, 50).map((line, i) => (i ? '  ' : fg(C.gold, '! ')) + m(line))));
     while (l.length < 7) l.push('');
     l.push(d('measured  meter + every machine on the account'), d('floor     use elsewhere not counted: value ≥ shown'));
     return box('WHICH PLAN GAVE MORE', l, 56, C.ink, '$ per full weekly limit');
@@ -117,11 +125,13 @@ export const blocks = {
     if (!D.plans.length) return box('WEEKLY ALLOWANCE HISTORY', [d('needs one finished week')], W, C.cx, '');
     const l = [], today = Date.parse(D.week.to + 'T00:00:00Z');
     for (const p of D.plans) { const wk = p.weeks || (p.history || []).map((usd, i, a) => ({ weeks_ago: a.length - 1 - i, usd })), at = {}; for (const x of wk) if (x.weeks_ago < N) at[x.weeks_ago] = x.usd;
+      const floors = new Set(wk.filter(x => (x.proof || p.proof) !== 'measured').map(x => x.weeks_ago));
       const mx = Math.max(1, ...Object.values(at)), n = Object.keys(at).length, floor = p.proof !== 'measured';
       const left = [fg(p.color, p.plan.replace(' AI', '')), d(floor ? 'at least (floor)' : 'measured'), d(n + (n === 1 ? ' week' : ' weeks'))];
       for (let r = 2; r >= 0; r--) { let row = pad(left[2 - r], 18); for (let a = N - 1; a >= 0; a--) { const v = at[a]; row += v == null ? d(r === 0 ? ' ·    ' : '      ') : fg(a === 0 ? p.color : mix(C.track, p.color, .6), ' ▁▂▃▄▅▆▇█'[Math.round(Math.max(0, Math.min(1, v / mx * 3 - r)) * 8)].repeat(4)) + '  '; } l.push(row); }
-      let vals = pad('', 18); for (let a = N - 1; a >= 0; a--) vals += at[a] == null ? ' '.repeat(SL) : (a === 0 ? bold(w(pad(kk(at[a]), SL))) : m(pad(kk(at[a]), SL))); l.push(vals, ''); }
+      let vals = pad('', 18); for (let a = N - 1; a >= 0; a--) vals += at[a] == null ? ' '.repeat(SL) : (a === 0 ? bold(w(pad(kk(at[a]), SL))) : m(pad((floors.has(a) ? '≥' : '') + kk(at[a]), SL))); l.push(vals, ''); }
     let ax = pad(d('week ending'), 18); for (let a = N - 1; a >= 0; a--) ax += d(pad(new Date(today - a * 7 * 864e5).toISOString().slice(5, 10), SL)); l.push(ax);
+    l.push(d('≥  at least (floor); never compared week to week'));
     l.push(d('·  no meter reading that week, so no weekly limit could be measured'));
     return box('WEEKLY ALLOWANCE HISTORY', l, W, C.cx, '$ per full weekly limit · weeks counted back from today');
   },
