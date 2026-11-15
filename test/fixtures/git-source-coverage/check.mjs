@@ -36,7 +36,25 @@ const stored = (prs, commits, emptyPrs, emptyCommits) => {
   assert.deepEqual(rows.map(r => ({ ...r })), expected, 'SQLite daily counts');
   assert.deepEqual(Object.entries(history).map(([day, r]) => ({ day, prs: r.prs, commits: r.commits })).sort((a, b) => a.day.localeCompare(b.day)), expected, 'history daily counts');
 };
-const collect = mode => { fs.writeFileSync(env.FIXTURE_MODE, mode); return run([path.join(folder, 'collect.mjs')]); };
+const trace = () => fs.existsSync(env.FIXTURE_TRACE) ? fs.readFileSync(env.FIXTURE_TRACE, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : [];
+const auditedCommands = (mode, calls) => {
+  const entries = fs.readFileSync(env.FIXTURE_AUDIT, 'utf8').split('\n').flatMap(line => {
+    const match = /^\S+\s+(run|net)\s+(\S+)(.*)$/.exec(line);
+    return match ? [{ kind: match[1], text: (path.basename(match[2]) + match[3]).replaceAll('"', '').replace(/\s{2,}\(.*$/, '') }] : [];
+  });
+  for (const entry of entries) if (/^(gh|glab|tea) api /.test(entry.text)) assert.equal(entry.kind, 'net', `${mode}: ${entry.text} is network activity`);
+  for (const { command, args } of calls.filter(x => ['gh', 'usagemeter', 'tea', 'glab'].includes(x.command))) {
+    // gh's audit displays the endpoint, search and pagination; output-format flags are omitted.
+    const shown = command === 'gh' && args[0] === 'api' ? ['api', 'search/issues', args.find(x => x.startsWith('q=')), '--paginate'] : args;
+    const text = [command, ...shown].join(' '), index = entries.findIndex(entry => entry.text === text);
+    assert.ok(index >= 0, `${mode}: audit records ${text}`);
+    entries.splice(index, 1); // Repeated calls need separate audit entries.
+  }
+};
+const collect = mode => {
+  fs.writeFileSync(env.FIXTURE_MODE, mode); const start = trace().length, data = run([path.join(folder, 'collect.mjs')]);
+  auditedCommands(mode, trace().slice(start)); return data;
+};
 const coverage = (data, prs, commits, failed) => {
   assert.equal(data.git.coverage.prs, prs); assert.equal(data.git.coverage.commits, commits);
   assert.deepEqual(data.git.coverage.sources.filter(x => !x.answered).map(x => x.source), failed);
@@ -76,7 +94,6 @@ try {
   // Same store, same source rows: answering again replaces even the saved day with no new rows.
   const good = collect('good'); check('good', good);
   assert.deepEqual(good.git.coverage.sources, expected.get('all_sources'));
-  const trace = () => fs.readFileSync(env.FIXTURE_TRACE, 'utf8').trim().split('\n').map(JSON.parse);
   for (const mode of ['meter-status', 'meter-budget', 'glab-host', 'gh-account', 'tea', 'gh-discovery', 'glab-discovery', 'tea-discovery', 'gh-malformed', 'glab-malformed', 'tea-malformed', 'gh-auth-error', 'glab-auth-error', 'git-log', 'tea-partial', 'logged-out', 'glab-self-hosted', 'glab-no-instances', 'gh-legacy']) {
     seed(); const traceStart = trace().length, data = collect(mode); check(mode, data);
     if (mode === 'logged-out') {
@@ -136,5 +153,5 @@ try {
   expected.done();
   assert.ok(!fs.readFileSync(env.FIXTURE_TRACE, 'utf8').includes('"unexpected"'), 'all source calls were stubbed');
   const schema = run([path.join(root, 'bin/worthit.mjs'), 'schema']); assert.ok(schema['git.coverage']);
-  console.log('git-source-coverage: failed sources preserve both stores; recovery and independent metrics replace');
+  console.log('git-source-coverage: failed sources preserve both stores; recovery and independent metrics replace; traced forge/meter commands audited, API calls net');
 } finally { isolated.cleanup(); }
