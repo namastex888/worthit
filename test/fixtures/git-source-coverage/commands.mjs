@@ -15,6 +15,7 @@ if (command === 'usagemeter') {
   if (args[0] !== '-C' || args.slice(2).join(' ') !== 'log --all --since=14 days ago --format=%H %ct') unexpected();
   if (!fs.existsSync(args[1])) unexpected();
   if (mode === 'git-log') fail();
+  if (env.FIXTURE_DELIVERY && mode !== 'empty') console.log('commit-prev 1793718000');
   if (mode !== 'empty') console.log('commit-a 1794322800\ncommit-b 1794322800'); // Nov 10, 15:00 UTC
 } else if (command === 'gh') {
   if (args.join(' ') === 'auth status --hostname github.com') {
@@ -27,6 +28,13 @@ if (command === 'usagemeter') {
   } else if (args[0] === 'api' && args.includes('search/issues')) {
     if (!args.some(x => /^q=is:pr is:merged author:(coder-a|coder-b|@me) merged:/.test(x))) unexpected();
     if (mode === 'gh-account' && args.some(x => x.includes('author:coder-b '))) fail();
+    if (env.FIXTURE_DELIVERY && args.some(x => x.includes('author:coder-a '))) {
+      const range = args.find(x => x.startsWith('q=')).match(/merged:(\S+)\.\.(\S+)/);
+      for (const [date, count, prefix] of [['2026-11-10', 10, 'feat'], ['2026-11-03', 5, 'feat'], ['2026-11-10', 2, 'fix'], ['2026-11-03', 1, 'fix']]) {
+        if (date < range[1].slice(0, 10) || date > range[2].slice(0, 10)) continue;
+        for (let i = 0; i < count; i++) console.log(`https://api.github.com/repos/example/delivery\t${Number(date.slice(-2)) * 1000 + (prefix === 'feat' ? 0 : 100) + i}\t${date}T15:00:00Z\t${prefix}: synthetic delivery`);
+      }
+    }
   } else unexpected();
 } else if (command === 'glab') {
   if (args.join(' ') === 'auth status') {

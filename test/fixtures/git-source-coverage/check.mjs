@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { isolatedEnvironment } from '../../support/environment.mjs';
+import { blocks } from '../../../src/draw.mjs';
+import { cardSpec, cardHtml, deliveryText } from '../../../src/card.mjs';
 import { expectedData } from '../../support/expected-data.mjs';
 
 const folder = path.dirname(fileURLToPath(import.meta.url)), root = path.resolve(folder, '../../..');
@@ -150,6 +152,54 @@ try {
   assert.ok(fs.readFileSync(env.FIXTURE_AUDIT, 'utf8').includes('no-checkout recency query unavailable'));
   seed(); const db = new DatabaseSync(meterFile); db.exec("DELETE FROM cwd_repo WHERE repo = 'example/missing'; DELETE FROM pr"); db.close();
   check('empty', collect('empty'));
+  // Issue #52: real source failures pass through git(), buildData(), persistence and drawing.
+  // All counts/titles come from the same meter/forge/log commands in each control.
+  env.FIXTURE_DELIVERY = '1';
+  const deliveryMeter = new DatabaseSync(meterFile);
+  deliveryMeter.exec("INSERT INTO pr VALUES ('example/project', 1, 1794322800000), ('example/project', 2, 1794322800000)"); deliveryMeter.close();
+  const proofExpected = expected.get('delivery-proof');
+  for (const mode of ['meter-sync', 'gh-account', 'git-log', 'good']) {
+    seed();
+    // Old literal history makes both PR badges attainable in the measured control.
+    const history = JSON.parse(fs.readFileSync(path.join(env.WORTHIT_HOME, 'history.json')));
+    for (let i = 1; i <= 7; i++) history.days[`2026-10-${String(i).padStart(2, '0')}`] = { out: 1, usd: 100, prs: 1, commits: 1 };
+    fs.writeFileSync(path.join(env.WORTHIT_HOME, 'history.json'), JSON.stringify(history));
+    const data = collect(mode), covered = data.git.coverage.prs;
+    assert.deepEqual([covered, data.git.coverage.commits], proofExpected[mode].coverage, `${mode}: independent proof`);
+    assert.equal(data.git.merged_prs, 14); // 12 typed forge PRs plus 2 meter-only PRs
+    assert.equal(data.git.commits, mode === 'git-log' ? 0 : 2);
+    assert.deepEqual([data.git.merged_prs_change_pct, data.git.usd_per_pr_change_pct, data.delivery.features_change_pct, data.delivery.usd_per_feature_change_pct], proofExpected[mode].changes, `${mode}: delivery-proof changes`);
+    assert.deepEqual(data.delivery.kinds.map(x => x.change_pct), covered ? [100, 100, null] : [null, null, null], `${mode}: every kind change`);
+    assert.equal(data.git.usd_per_merged_pr, 200 / 14);
+    assert.equal(data.delivery.usd_per_feature, 20);
+    assert.deepEqual(data.game.personal_bests.filter(x => /PR/.test(x)), covered ? ['PRs merged in a week', 'lowest cost per PR'] : [], `${mode}: no floor badges`);
+    const strip = lines => lines.join('\n').replace(/\x1b\[[0-9;]*m/g, '');
+    const tiles = strip(blocks.Tiles(data)), delivery = strip(blocks.Delivery(data));
+    assert.ok(tiles.includes(covered ? '14 PRs' : 'at least 14 PRs'), `${mode}: shipped proof`);
+    assert.ok(tiles.includes(data.git.coverage.commits ? '2 commits' : `at least ${data.git.commits} commits`), `${mode}: commits independently floor`);
+    if (data.git.coverage.commits) assert.ok(!tiles.includes('at least 2 commits'));
+    if (!covered) {
+      assert.ok(tiles.includes('partial PR count'));
+      assert.ok(delivery.includes('at least 10'));
+      assert.ok(delivery.includes('partial feature count'));
+      assert.ok(!delivery.includes('vs prev 7 d'));
+    } else assert.ok(delivery.includes('100%'));
+    const spec = cardSpec('delivery', data), html = cardHtml(spec), text = deliveryText(data);
+    assert.equal(spec.hero, '$20');
+    assert.ok(spec.sub.includes(covered ? '50% vs last week' : 'at least 10 features'), `${mode}: delivery card proof`);
+    assert.ok(text.includes(covered ? '50% vs last week' : 'at least 10 features'), `${mode}: share text proof`);
+    if (!covered) {
+      assert.ok(html.includes('partial feature count; not compared'));
+      assert.ok(text.includes('partial feature count; not compared'));
+      assert.ok(spec.rows.every(x => x.note.startsWith('at least ')));
+      assert.ok(!html.includes('vs last week') && !text.includes('vs last week'));
+    }
+    if (env.WORTHIT_FIXTURE_ARTIFACTS) {
+      fs.mkdirSync(env.WORTHIT_FIXTURE_ARTIFACTS, { recursive: true });
+      fs.writeFileSync(path.join(env.WORTHIT_FIXTURE_ARTIFACTS, mode + '.json'), JSON.stringify(data, null, 2));
+      fs.writeFileSync(path.join(env.WORTHIT_FIXTURE_ARTIFACTS, mode + '-dashboard.txt'), tiles + '\n' + delivery);
+    }
+  }
   expected.done();
   assert.ok(!fs.readFileSync(env.FIXTURE_TRACE, 'utf8').includes('"unexpected"'), 'all source calls were stubbed');
   const schema = run([path.join(root, 'bin/worthit.mjs'), 'schema']); assert.ok(schema['git.coverage']);

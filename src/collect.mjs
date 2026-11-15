@@ -412,7 +412,7 @@ export function buildData(report, g, cfg, scanInfo) {
   if (g) {
     const inw = (t, a, b) => t >= a && t < b, mc = g.prs.filter(t => inw(t, w1, now)).length, mp = g.prs.filter(t => inw(t, w0, w1)).length, per = Array(7).fill(0); for (const t of g.prs) { const i = di(t); if (i >= 0 && i < 7) per[i]++; }
     const cost = mc ? D.totals.api_value_usd / mc : null, costPrev = mp ? sum(prev, 'usd') / mp : null;
-    D.git = { merged_prs: mc, merged_prs_change_pct: pctChange(mc, mp), commits: g.commits.filter(t => t >= w1).length, repos: g.repos, usd_per_merged_pr: cost, usd_per_pr_change_pct: cost != null && costPrev ? pctChange(cost, costPrev) : null,
+    D.git = { merged_prs: mc, merged_prs_change_pct: g.coverage?.prs ? pctChange(mc, mp) : null, commits: g.commits.filter(t => t >= w1).length, repos: g.repos, usd_per_merged_pr: cost, usd_per_pr_change_pct: g.coverage?.prs && cost != null && costPrev ? pctChange(cost, costPrev) : null,
       prs_per_day: per, usd_per_pr_per_day: per.map((k, i) => k ? D.totals.value_per_day[i] / k : 0), sources: g.src, meter: g.meter, coverage: g.coverage };
   }
 
@@ -448,8 +448,8 @@ export function buildData(report, g, cfg, scanInfo) {
       return { month: mo, days_with_cost: n, ...shape(count(byMonth[mo]), n ? usd : null) }; });
     const f0 = each(D.totals.api_value_usd, cur7), f1 = each(sum(prev, 'usd'), prev7);
     D.delivery = { source: 'title prefix of each merged pull request (feat:, fix:, docs: ...); a cost per feature needs 5 features in the week (3 in a day)', typed_pct: cur7.prs ? Math.round(100 * (cur7.prs - (cur7.other || 0)) / cur7.prs) : null,
-      kinds: Object.keys(KINDS).filter(k => cur7[k] || prev7[k]).map(k => ({ kind: k, label: KINDS[k], prs: cur7[k] || 0, share_pct: cur7.prs ? Math.round(100 * (cur7[k] || 0) / cur7.prs) : 0, last_week: prev7[k] || 0, change_pct: pctChange(cur7[k] || 0, prev7[k] || 0) })).sort((x, y) => y.prs - x.prs),
-      features: cur7.feat || 0, features_change_pct: pctChange(cur7.feat || 0, prev7.feat || 0), usd_per_feature: f0, usd_per_feature_change_pct: f0 != null && f1 ? pctChange(f0, f1) : null,
+      kinds: Object.keys(KINDS).filter(k => cur7[k] || prev7[k]).map(k => ({ kind: k, label: KINDS[k], prs: cur7[k] || 0, share_pct: cur7.prs ? Math.round(100 * (cur7[k] || 0) / cur7.prs) : 0, last_week: prev7[k] || 0, change_pct: g.coverage?.prs ? pctChange(cur7[k] || 0, prev7[k] || 0) : null })).sort((x, y) => y.prs - x.prs),
+      features: cur7.feat || 0, features_change_pct: g.coverage?.prs ? pctChange(cur7.feat || 0, prev7.feat || 0) : null, usd_per_feature: f0, usd_per_feature_change_pct: g.coverage?.prs && f0 != null && f1 ? pctChange(f0, f1) : null,
       fix_share_pct: share(cur7), fix_share_last_week_pct: share(prev7), days, weeks, months };
   }
 
@@ -508,8 +508,8 @@ export function buildData(report, g, cfg, scanInfo) {
   let streak = 0; for (let t = d0.getTime(); (hist.days[dayKey(t)] || {}).out > 0; t -= DAY) streak++;
   const old = keys.filter(k => k < dayKey(days[0])).reverse(), blocks = []; for (let i = 0; i + 7 <= old.length; i += 7) { const b = old.slice(i, i + 7).map(k => hist.days[k]); blocks.push({ out: b.reduce((s, x) => s + x.out, 0), prs: b.reduce((s, x) => s + x.prs, 0), usd: b.reduce((s, x) => s + x.usd, 0) }); }
   const bests = []; if (blocks.length) { if (D.totals.output_tokens > Math.max(...blocks.map(b => b.out))) bests.push('most tokens in a week');
-    if (D.git && D.git.merged_prs > Math.max(...blocks.map(b => b.prs))) bests.push('PRs merged in a week');
-    const pc = blocks.filter(b => b.prs).map(b => b.usd / b.prs); if (D.git && D.git.usd_per_merged_pr != null && pc.length && D.git.usd_per_merged_pr < Math.min(...pc)) bests.push('lowest cost per PR'); }
+    if (D.git?.coverage?.prs && D.git.merged_prs > Math.max(...blocks.map(b => b.prs))) bests.push('PRs merged in a week');
+    const pc = blocks.filter(b => b.prs).map(b => b.usd / b.prs); if (D.git?.coverage?.prs && D.git.usd_per_merged_pr != null && pc.length && D.git.usd_per_merged_pr < Math.min(...pc)) bests.push('lowest cost per PR'); }
   D.game = { level, title: TITLES[Math.min(level - 1, TITLES.length - 1)], xp, xp_next: 2500 * level * level, streak_days: streak, days_tracked: keys.length, personal_bests: bests };
   try { fs.writeFileSync(path.join(HOME, 'last.json'), JSON.stringify(D)); } catch { /* not fatal */ }      // what `worthit get` reads
   return D;
