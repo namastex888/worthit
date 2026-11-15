@@ -93,7 +93,7 @@ def merge(saved, fresh, prices, meter_prices=None):
     return result, kept
 
 
-def main(run_dir, keep_dir):
+def main(run_dir, keep_dir, hosts_file=None, started_at=None, days=None, live_names=None):
     with open(os.path.join(os.path.dirname(__file__), 'prices.json')) as f:
         prices = json.load(f)
     retained, scans, usage = [], {}, {}
@@ -129,7 +129,60 @@ def main(run_dir, keep_dir):
                 json.dump(merged, f, separators=(',', ':'))
             retained.append({'machine': 'this machine' if name == 'local.json' else name[:-5],
                              'days_kept': len({u['day'] for u in units}), 'units': units})
-    print(json.dumps(retained))
+    if hosts_file is None:  # Keep the issue #24 helper's original interface.
+        print(json.dumps(retained))
+        return
+    try:
+        with open(hosts_file) as f: retired = json.load(f).get('retired', [])
+    except FileNotFoundError:
+        retired = []
+    # Live answers were deduplicated before the ordinary saved/fresh merge above.
+    # Read frozen snapshots here; never write to run-keep/retired.
+    targets = {}
+    for name in sorted(scans):
+        with open(os.path.join(run_dir, name)) as f: current = json.load(f)
+        targets[current.get('host')] = (name, current)
+    stamp = dt.datetime.fromtimestamp(float(started_at) / 1000, dt.timezone.utc)
+    since = (stamp - dt.timedelta(days=float(days))).isoformat().replace('+00:00', 'Z')
+    live_names = set(json.loads(live_names or '[]'))
+    summaries, conflicts = [], []
+    snapshots = []
+    for entry in retired:
+        name = entry['machine'] + '.json'
+        # Missing/corrupt frozen data is a failed run, never silent measured proof.
+        with open(os.path.join(keep_dir, 'retired', name)) as f: snapshot = json.load(f)
+        snapshots.append((entry, snapshot))
+        for row in snapshot.get('meter_usage', []): usage.setdefault(row[0], row)
+    meter_prices = fit_meter_prices(usage.values())
+    for entry, snapshot in snapshots:
+        machine = entry['machine']
+        target = targets.get(snapshot['host'])
+        if target:
+            name, current = target
+            same_as = 'this machine' if name == 'local.json' else name[:-5]
+            if name in live_names:
+                conflicts.append({'machine': machine, 'same_as': same_as})
+        else:
+            name = machine + '.json'
+            current = dict(snapshot, since=since, generated_at=stamp.isoformat())
+            for field in ('buckets', 'meters', 'events', 'meter_readings', 'meter_usage', 'sessions'):
+                current[field] = []
+        combined, units = merge(snapshot, current, prices, meter_prices)
+        with open(os.path.join(run_dir, name), 'w') as f:
+            json.dump(combined, f, separators=(',', ':'))
+        targets[snapshot['host']] = (name, combined)
+        if target and units:
+            # Retained data merged into an answering host follows #24's proof rule too.
+            label = 'this machine' if name == 'local.json' else name[:-5]
+            row = next((r for r in retained if r['machine'] == label), None)
+            if row is None:
+                row = {'machine': label, 'days_kept': 0, 'units': []}
+                retained.append(row)
+            row['units'] = [dict(day=d, provider=p) for d, p in sorted({(u['day'], u['provider']) for u in row['units'] + units})]
+            row['days_kept'] = len({u['day'] for u in row['units']})
+        summaries.append({k: entry[k] for k in ('machine', 'retired_at', 'last_scan_at')} |
+                         {'days_kept': len({u['day'] for u in units})})
+    print(json.dumps({'retained': retained, 'retired': summaries, 'conflicts': conflicts}))
 
 
 if __name__ == '__main__':

@@ -4,11 +4,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { usd } from './draw.mjs';
+import { retirementBlocks } from './hosts.mjs';
 import { retainedUnitOverlapsWeek } from './collect.mjs';
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');
 
 export const allowanceText = data => {
-  const lines = data.plans.map(p => `${p.plan.toLowerCase()} ${usd(p.usd_per_full_week)}${p.proof !== 'measured' ? ' (at least)' : p.change_vs_last_week_pct == null ? '' : ` (${p.change_vs_last_week_pct >= 0 ? '▲' : '▼'}${Math.abs(p.change_vs_last_week_pct)}% vs the week before)`}`);
+  const lines = data.plans.map(p => `${p.plan.toLowerCase()} ${usd(p.usd_per_full_week)}${p.proof !== 'measured' ? ' (at least)' : p.change_vs_last_week_pct == null ? '' : ` (${p.change_vs_last_week_pct >= 0 ? '▲' : '▼'}${Math.abs(p.change_vs_last_week_pct)}% vs the week before)`}${p.proof === 'measured' && p.retirement_note ? ` · ${p.retirement_note}` : ''}`);
   return `weekly ai allowance check, week to ${data.week.to}.. what one full weekly limit was worth at api prices:\n${lines.join('\n')}\nmeasured from my local logs: npx worthit`;
 };
 
@@ -26,7 +27,8 @@ export function weeklyBaseline(db, data) {
   if (!row) return null;
   const previous = JSON.parse(row.json);
   return { generated_at: previous.generated_at, week_to: previous.week.to,
-    plans: previous.plans.map(({ plan, usd_per_full_week, proof }) => ({ plan, usd_per_full_week, proof })) };
+    plans: previous.plans.map(({ plan, usd_per_full_week, proof }) => ({ plan, usd_per_full_week,
+      proof: retirementBlocks(data.machines_retired || [], Date.parse(previous.generated_at)).length ? 'floor' : proof })) };
 }
 
 // Mutate the drawing data before either the fixed template or card reads it.
@@ -50,10 +52,10 @@ export function prepareWeekly(data, comparedWith) {
     if (retainedUnitOverlapsWeek(unit, end)) reasons.push(`${row.machine}: retained ${unit.day} ${unit.provider} (lost logs inside this week)`);
   }
   return { week: data.week, generated_at: data.generated_at, text: '', image: null,
-    plans: data.plans.map(({ plan, usd_per_full_week, times_plan_price, proof, change_vs_last_week_pct }) =>
-      ({ plan, usd_per_full_week, times_plan_price, proof, change_vs_last_week_pct })),
+    plans: data.plans.map(({ plan, usd_per_full_week, times_plan_price, proof, change_vs_last_week_pct, retirement_note }) =>
+      ({ plan, usd_per_full_week, times_plan_price, proof, change_vs_last_week_pct, ...(retirement_note ? { retirement_note } : {}) })),
     machines_read: data.machines, machines_missing: data.machines_missing, machines_left_out: data.machines_left_out,
-    machines_retired: [], machines_retained: data.machines_retained, compared_with: comparedWith,
+    machines_retired: data.machines_retired || [], machines_retained: data.machines_retained, compared_with: comparedWith,
     moved, safe_to_post: !reasons.length, reasons };
 }
 

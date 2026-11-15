@@ -26,7 +26,7 @@ Parts of the last run. Dots walk into objects and arrays (`plans.0.usd_per_full_
 
 | Section | What it holds |
 |---|---|
-| `plans` | Per plan: `usd_per_full_week` (API-list dollars one full weekly limit is worth), `times_plan_price`, `proof` (measured, floor), `stretches`, `meter`, `priced_usd`, `models`, `history` (earlier 7-day blocks, oldest first, then this week), `weeks` (the same with dates and gaps: `weeks_ago`, `to`, `usd`, up to 12; a missing week had no meter reading), `change_vs_last_week_pct`, and when machines without a meter log were busy in the same hours: `other_machines_usd`, `usd_per_full_week_all_machines` (an upper figure) |
+| `plans` | Per plan: `usd_per_full_week` (API-list dollars one full weekly limit is worth), `times_plan_price`, `proof` (measured, floor), `stretches`, `meter`, `priced_usd`, `models`, `history` (earlier 7-day blocks, oldest first, then this week), `weeks` (the same with dates and gaps: `weeks_ago`, `to`, `usd`, `proof`, up to 12; a missing week had no meter reading), `change_vs_last_week_pct`, and when machines without a meter log were busy in the same hours: `other_machines_usd`, `usd_per_full_week_all_machines` (an upper figure) |
 | `totals` | Last 7 days against the 7 before: output tokens, API value, changes in % |
 | `tools` | Per tool, last 7 days: requests, output, cached and fresh input, dollars, where the data came from |
 | `months` | Per month and plan: API value used, times the monthly plan price, days tracked |
@@ -96,6 +96,45 @@ worthit sql "SELECT day, SUM(api_usd) usd FROM day_provider GROUP BY day ORDER B
 worthit sql "SELECT day, provider, usd_per_full_week FROM plan_value ORDER BY day"
 ```
 
+## Retire a machine: `worthit hosts`
+
+`worthit hosts` lists selected, not selected and retired SSH aliases; redirected stdout
+is JSON. `worthit hosts retire <machine> [--since YYYY-MM-DD]` needs a readable saved
+scan; without one, leave the alias out of the selection instead. Retirement moves
+`run-keep/<alias>.json` to frozen `run-keep/retired/<alias>.json`. No run writes there.
+`hosts.json` keeps `selected` and `retired: [{machine, retired_at, last_scan_at, since?}]`;
+legacy stores without `retired` mean none retired. `retired_at` defaults to now.
+`--since` means UTC midnight and cannot precede the saved scan timestamp or be future.
+It records the user's statement in optional `since`. Measured plans relying on it carry
+`retirement_note` and say "<machine>: retired since <date>, as stated by you" in notes,
+allowance text and cards. Preserve that disclosure when reporting the plan.
+
+Retired aliases are never scanned, even with `--hosts all` or an explicit alias. They
+are neither missing nor left out. The picker displays them without offering them.
+`machines_retired` reports `{machine, retired_at, last_scan_at, days_kept}`; the count is
+snapshot days selected inside this run window. Mention each retired machine.
+`retirement_conflicts: [{machine, same_as}]` means a retired host answers live as that
+SSH alias or `this machine`; the snapshot merges into that answer with #24's whole
+local-day/provider winner (USD, tokens, fresh tie), never summed. Missing frozen data
+fails the run with advice to restore the snapshot or unretire. Unretire without a
+snapshot removes the record and reselects the machine. Invalid `retired_at` or corrupt
+`hosts.json` fails cleanly on every non-demo command: exit 2,
+`worthit: cannot read <path>: <reason>. Fix or remove it.` No stack trace.
+The partial oldest day and older history retain per-field MAX; git rows
+have their separate coverage window. Frozen snapshots stay byte-stable as windows move.
+
+Measured needs all active answers, none left out, no retained unit in the week, and the
+week start >= every `retired_at`. A pre-retirement week stays floor. Machine notes name
+the machine and the first possible measured week end (retired_at + seven days).
+`plans[].weeks[].proof`: week 0 gets its actual proof; a ledger week gets `floor`
+when retirement or a retained unit blocks it; otherwise the key is absent.
+Ledger weeks carry no machine check. Ordinary comparisons retain their existing
+retirement/retained eligibility checks; this field does not certify ledger coverage. Weekly baseline proof is likewise
+checked against current retirements without rewriting saved checkpoints or searching
+past a floor. `worthit hosts unretire <machine>` restores the full frozen scan, removes
+retirement and reselects the alias. Its next answer merges normally. There is no
+automatic retirement; machine notes offer a one-line hint after 14 days without answer.
+
 ## Fresh run: `worthit --json`
 
 Scans, prices and prints the whole data object (the same sections as `get`). Useful flags:
@@ -125,10 +164,10 @@ JSON fields (also documented by `worthit schema`):
 
 - `week: {from, to}` (YYYY-MM-DD), `generated_at` (ISO time), `text` (fixed post),
   `image` (absolute PNG path, or null with `--no-files`).
-- `plans: [{plan, usd_per_full_week, times_plan_price, proof, change_vs_last_week_pct}]`.
+- `plans: [{plan, usd_per_full_week, times_plan_price, proof, change_vs_last_week_pct, retirement_note?}]`.
   Proof is `measured` or `floor`; change is a number or null.
 - `machines_read` (number included), `machines_missing: [{machine, saved_scan_at}]`,
-  `machines_left_out` (aliases), `machines_retired` (always `[]` until RFC 0002 ships),
+  `machines_left_out` (aliases), `machines_retired: [{machine, retired_at, last_scan_at, days_kept}]`,
   `machines_retained: [{machine, days_kept, units: [{day, provider}]}]`.
 - `compared_with`: null, or `{generated_at, week_to, plans: [{plan, usd_per_full_week, proof}]}`.
   This is the latest earlier checkpoint ending at least six days before this one's end.
@@ -138,7 +177,8 @@ JSON fields (also documented by `worthit schema`):
   An unsafe rerun in the same week becomes the newest row, so next week's change is null.
 - `moved: [{plan, from, to, pct}]` includes only eligible absolute changes strictly >5%.
 - `safe_to_post` is true iff missing and left-out lists are empty and no retained local-day
-  unit overlaps this week. A floor alone or retained units only in earlier weeks are safe.
+  unit overlaps this week. A floor alone, including a pre-retirement week, or retained
+  units only in earlier weeks are safe.
 - `reasons` is an array of explanations naming unsafe machines; retained reasons also
   name each day and provider.
 

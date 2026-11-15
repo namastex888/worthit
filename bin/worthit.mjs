@@ -2,6 +2,7 @@
 // worthit — what your AI coding subscription is really worth. One command, everything local.
 //   npx worthit                 three questions, live scan, dashboard, then a question bar (ctrl+c exits)
 //   npx worthit --json          no UI: prints the week's data as JSON (for agents and scripts)
+//   worthit hosts · worthit hosts retire <machine> [--since YYYY-MM-DD] · worthit hosts unretire <machine>
 //   worthit get [section] · worthit days [--since D --until D --group day|week|month --by total|tool|model] · worthit sql "SELECT …" · worthit schema · worthit --skill
 //   worthit share [allowance|open|models|value|ranking|waste|"anything"]   an X-ready post and card image from your last run
 //   worthit weekly [--hosts all|none|a,b] [--allow-partial] [--no-files]   fresh headless allowance checkpoint (exit 0 safe, 3 unsafe, 1 no result)
@@ -23,6 +24,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import { blocks, C, W, bar, fg, bold, d, m, w, pad, lpad, len, strip, grad, fmtTok, usd, machineNotes } from '../src/draw.mjs';
 import { scan, analyse, git, buildData, audit, AUDIT, has, tilde, ROOT, HOME, sshHosts, savedHosts, saveHosts } from '../src/collect.mjs';
+import { activeHosts, readHosts, hostsCommand } from '../src/hosts.mjs';
 import { query, run as runQuery, QUERY_COMMANDS } from '../src/query.mjs';
 import { cardSpec, customSpec, renderCardImage } from '../src/card.mjs';
 import { allowanceText, openWeekly, weeklyBaseline, prepareWeekly, saveWeekly } from '../src/weekly.mjs';
@@ -32,13 +34,25 @@ import { demoHosts, demoScan, demoGit, demoPricing, demoData, demoSpec, demoAnsw
 const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
 const h = React.createElement, argv = process.argv.slice(2);
 const flag = k => argv.includes(k), arg = (k, dflt) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : dflt; };
+// Fail closed before any command touches the store; demo remains completely isolated.
+let hostState = { selected: [], retired: [] };
+if (!flag('--demo')) {
+  try { hostState = readHosts(HOME); } catch (e) { console.error('worthit: ' + e.message); process.exit(2); }
+}
 if (flag('--version') || flag('-v')) { console.log(VERSION); process.exit(0); }
-if (argv[0] && !argv[0].startsWith('-') && !['get', 'days', 'sql', 'schema', 'install-skill', 'share', 'weekly'].includes(argv[0])) { console.error(`worthit: unknown command "${argv[0]}". Try: worthit --help`); process.exit(2); }
+if (argv[0] && !argv[0].startsWith('-') && !['get', 'days', 'sql', 'schema', 'install-skill', 'share', 'weekly', 'hosts'].includes(argv[0])) { console.error(`worthit: unknown command "${argv[0]}". Try: worthit --help`); process.exit(2); }
+if (argv[0] === 'hosts') {
+  try { const result = hostsCommand(HOME, sshHosts(), argv.slice(1));
+    if (process.stdout.isTTY) console.log(Array.isArray(result) ? result.map(r => `${r.machine}: ${r.status}`).join('\n') || 'No saved SSH machines. Choose machines on your next run.' : `${result.machine}: ${result.status}`);
+    else console.log(JSON.stringify(result, null, 1));
+  } catch (e) { console.error('worthit hosts: ' + e.message); process.exit(2); }
+  process.exit(0);
+}
 if (await query(argv)) process.exit(0);        // get / days / sql / schema / --skill: answered from the local store, no scan
 // from here on a scan would start: never from inside another worthit run (lookups above stay allowed)
 if (process.env.WORTHIT_RUNNING) { console.error('worthit: started from inside another worthit run; stopping.'); process.exit(2); }
 process.env.WORTHIT_RUNNING = '1';        // inherited by every program this run starts
-if (flag('--help') || flag('-h')) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 10).map(l => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
+if (flag('--help') || flag('-h')) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 11).map(l => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
 const WEEKLY = argv[0] === 'weekly';
 const JSON_MODE = WEEKLY || flag('--json'), ASK = arg('--ask'), F_GIT = arg('--git'), F_AI = arg('--ai'), DAYS = +arg('--days', 21), F_HOSTS = arg('--hosts', WEEKLY ? 'all' : undefined), DEMO = flag('--demo'), NO_FILES = flag('--no-files') || DEMO, FRESH = flag('--fresh');
 // the agent skill (skills/worthit/SKILL.md in this package and in the repo): installed into the person's coding agents with the skills CLI
@@ -51,8 +65,10 @@ const AGENTS = [{ id: 'claude', cli: 'claude', label: 'Claude Sonnet 5.5', model
   { id: 'omp', cli: 'omp', label: 'omp', model: 'omp · your default model', via: 'omp -p, your default model' }, { id: 'dsh', cli: 'dsh', label: 'dsh', model: 'dsh headless', via: 'dsh headless, your DeepSeek profile' }].filter(a => has(a.cli));
 const STAMP = (() => { const t = new Date(); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); })();
 let DATA = null;
-const DETECTED = DEMO ? demoHosts : sshHosts(), SAVED = DEMO ? ['build-box'] : savedHosts();      // other machines: --hosts all | none | a,b; without the flag, the remembered choice (or the question)
+const RETIRED = hostState.retired;
+const DETECTED = DEMO ? demoHosts : sshHosts().filter(h => !RETIRED.some(r => r.machine === h.alias)), SAVED = DEMO ? ['build-box'] : savedHosts();      // other machines: --hosts all | none | a,b; without the flag, the remembered choice (or the question)
 let HOSTS = F_HOSTS == null ? (SAVED || []) : F_HOSTS === 'all' ? DETECTED.map(x => x.alias) : F_HOSTS === 'none' ? [] : F_HOSTS.split(',').filter(Boolean);
+if (!DEMO) HOSTS = activeHosts(HOME, HOSTS);
 // Saved report: when nothing the report is built from has changed, the model is not asked again.
 const REPORT_FILE = path.join(HOME, 'report-cache.json');
 // "Same data" means: same day, same ranking, level, streak and events, and no headline number moved by more than 2%.
@@ -60,7 +76,7 @@ const REPORT_FILE = path.join(HOME, 'report-cache.json');
 const reportKey = agent => { const D = DATA, t = D.totals || {}, g = D.git || {}, nums = { output_tokens: t.output_tokens, api_value_usd: t.api_value_usd, merged_prs: g.merged_prs, commits: g.commits, usd_per_merged_pr: g.usd_per_merged_pr };
   for (const p of D.plans) nums['plan_' + p.key] = p.usd_per_full_week;
   for (const x of D.waste) nums['unused_' + x.account] = x.unused_usd;
-  const exact = crypto.createHash('sha256').update(JSON.stringify([D.week.to, D.machines, D.machines_missing, D.machines_left_out, D.machines_retained, D.plans.map(p => p.key + p.proof), (D.events || []).map(e => e.date + e.title), D.game && [D.game.level, D.game.streak_days], agent.id, agent.model, SYSTEM])).digest('hex');
+  const exact = crypto.createHash('sha256').update(JSON.stringify([D.week.to, D.machines, D.machines_missing, D.machines_left_out, D.machines_retained, D.machines_retired, D.plans.map(p => p.key + p.proof), (D.events || []).map(e => e.date + e.title), D.game && [D.game.level, D.game.streak_days], agent.id, agent.model, SYSTEM])).digest('hex');
   return { exact, nums }; };
 const sameReport = (a, b) => !!a && !!a.nums && a.exact === b.exact && Object.keys({ ...a.nums, ...b.nums }).every(k => { const x = +a.nums[k] || 0, y = +b.nums[k] || 0; return Math.abs(x - y) <= Math.max(1, 0.02 * Math.abs(x)); });
 const readReport = () => { try { return JSON.parse(fs.readFileSync(REPORT_FILE, 'utf8')); } catch { return null; } };
@@ -224,7 +240,7 @@ function writeFiles(spec) {
   const out = [], dash = specLines(spec), head = [...LOGO, ' ' + m('what your AI coding subscription is really worth') + d(`  ·  7 days to ${DATA.week.to}  ·  ${DATA.machines} machine${DATA.machines > 1 ? 's' : ''}  ·  v${VERSION}`), ...machineNotes(DATA).map(t => ' ' + fg(C.gold, '! ') + m(t)), ''];
   const el = spec.elements || {}, txt = t => (Object.values(el).find(e => e.type === t) || { props: {} }).props.text || '';
   const md = [`# worthit · ${STAMP}`, '', ...(txt('Verdict') ? [`> ${txt('Verdict')}`, ''] : []), '## Which plan gave more', '', '| Plan | $ per full weekly limit | × plan price | Proof | How it was read |', '|---|---|---|---|---|',
-    ...DATA.plans.map(p => `| ${p.plan} | ${usd(p.usd_per_full_week)} | ${p.times_plan_price}× | ${p.proof} | ${p.meter}; ${usd(p.priced_usd)} priced ÷ ${p.fraction_of_week} weekly limits; ${p.models} |`), ...(DATA.plans.length ? [] : ['| (no finished weekly limit in the scanned days) | | | | |']), '',
+    ...DATA.plans.map(p => `| ${p.plan} | ${usd(p.usd_per_full_week)} | ${p.times_plan_price}× | ${p.proof}${p.proof === 'measured' && p.retirement_note ? '; ' + p.retirement_note : ''} | ${p.meter}; ${usd(p.priced_usd)} priced ÷ ${p.fraction_of_week} weekly limits; ${p.models} |`), ...(DATA.plans.length ? [] : ['| (no finished weekly limit in the scanned days) | | | | |']), '',
     '## Last 7 days', '', `- Output tokens: ${fmtTok(DATA.totals.output_tokens)}${DATA.totals.output_tokens_change_pct == null ? '' : ` (${DATA.totals.output_tokens_change_pct >= 0 ? '+' : ''}${DATA.totals.output_tokens_change_pct}% vs the 7 days before)`}`, `- API value used: ${usd(DATA.totals.api_value_usd)}`,
     ...(DATA.git ? [`- Merged PRs: ${DATA.git.merged_prs} · commits: ${DATA.git.commits} · repos: ${DATA.git.repos}`, `- Cost per merged PR: ${DATA.git.usd_per_merged_pr == null ? 'n/a' : '$' + DATA.git.usd_per_merged_pr.toFixed(2)}`] : []),
     `- Level ${DATA.game.level} (${DATA.game.title}), ${DATA.game.xp.toLocaleString('en-US')} XP, ${DATA.game.streak_days}-day streak`, '',
@@ -285,7 +301,7 @@ function useClick(onClick) {
 function Choice({ q, options, onPick }) {       // arrows move, enter picks; the recommended answer is already selected
   const [i, setI] = useState(0);
   useClick(up => { const k = options.length - 1 - up; if (k >= 0 && k < options.length) { setI(k); onPick(options[k]); } });
-  useInput((input, key) => { if (key.upArrow || key.leftArrow) setI(x => (x + options.length - 1) % options.length); else if (key.downArrow || key.rightArrow || key.tab) setI(x => (x + 1) % options.length);
+  useInput((input, key) => { if (key.upArrow || key.leftArrow) setI(x => (x + options.length - 1) % (options.length || 1)); else if (key.downArrow || key.rightArrow || key.tab) setI(x => (x + 1) % (options.length || 1));
     else if (key.return) onPick(options[i]); else { const k = options.findIndex(o => o.key === input.toLowerCase()); if (k >= 0) onPick(options[k]); } });
   return h(Box, { flexDirection: 'column', marginTop: 1 }, h(Box, { gap: 1 }, h(Text, { color: GOLD, bold: true }, '?'), h(Text, { bold: true }, q), h(Text, { dimColor: true }, '↑↓ to move · enter to confirm · or click')),
     ...options.map((o, k) => h(Box, { key: o.label, gap: 1 }, h(Text, { color: GOLD }, k === i ? '  ❯' : '   '), h(Text, { bold: k === i, color: k === i ? GOLD : undefined }, o.label), h(Text, { dimColor: true }, o.hint || ''))));
@@ -295,18 +311,19 @@ function MultiChoice({ q, options, initial, onDone }) {   // ↑↓ move, space 
   const finish = () => onDone(options.map(o => o.alias).filter(a => selRef.current.has(a)));
   useClick(up => { if (up === 0) return finish(); const k = options.length - up; if (k < 0 || k >= options.length) return; setI(k);
     setSel(s => { const n = new Set(s), a = options[k].alias; n.has(a) ? n.delete(a) : n.add(a); return n; }); });
-  useInput((input, key) => { if (key.upArrow) setI(x => (x + options.length - 1) % options.length); else if (key.downArrow || key.tab) setI(x => (x + 1) % options.length);
-    else if (input === ' ') setSel(s => { const n = new Set(s), a = options[i].alias; n.has(a) ? n.delete(a) : n.add(a); return n; });
+  useInput((input, key) => { if (key.upArrow) setI(x => (x + options.length - 1) % (options.length || 1)); else if (key.downArrow || key.tab) setI(x => (x + 1) % (options.length || 1));
+    else if (input === ' ' && options[i]) setSel(s => { const n = new Set(s), a = options[i].alias; n.has(a) ? n.delete(a) : n.add(a); return n; });
     else if (input === 'a') setSel(new Set(options.map(o => o.alias))); else if (input === 'n') setSel(new Set());
     else if (key.return) finish(); });
   return h(Box, { flexDirection: 'column', marginTop: 1 }, h(Box, { gap: 1 }, h(Text, { color: GOLD, bold: true }, '?'), h(Text, { bold: true }, q), h(Text, { dimColor: true }, '↑↓ move · space or click to tick · a all · n none · enter confirm')),
     h(Text, { dimColor: true }, '    from your saved ssh hosts · scanned in parallel with the same read-only script · your choice is remembered'),
+    ...RETIRED.map(r => h(Text, { key: 'retired-' + r.machine, dimColor: true }, `    ${r.machine}: retired (not offered)`)),
     ...options.map((o, k) => h(Box, { key: o.alias, gap: 1 }, h(Text, { color: GOLD }, k === i ? '  ❯' : '   '), h(Text, { color: sel.has(o.alias) ? 'green' : undefined }, sel.has(o.alias) ? '◉' : '○'),
       h(Text, { bold: k === i, color: k === i ? GOLD : undefined }, o.alias), h(Text, { dimColor: true }, o.hostname !== o.alias ? o.hostname : ''))),
     h(Text, { color: GOLD, bold: true }, `   [ Confirm · this machine${sel.size ? ' + ' + sel.size + ' more' : ' only'} ]`));
 }
 function Setup({ onDone }) {
-  const [hostsAsked, setHostsAsked] = useState(!(F_HOSTS == null && DETECTED.length));
+  const [hostsAsked, setHostsAsked] = useState(!(F_HOSTS == null && (DETECTED.length || RETIRED.length)));
   const [ans, setAns] = useState([]); const [step, setStep] = useState(0); const [cfg, setCfg] = useState({});
   const pick = (label, patch, next) => o => { setAns(a => [...a, label + ': ' + o.label]); const c = { ...cfg, ...patch(o) }; setCfg(c); if (next === null || (next === 2 && !c.ai)) onDone(c); else setStep(next); };
   const qs = [
@@ -458,16 +475,16 @@ const SHARE_TOPICS = {
       return `my model mix this week, most used first: ${top.join(', ')}. whats yours? npx worthit`; } },
   value: { title: 'the receipt', hint: 'what your best plan gave for its price', alias: ['receipt', 'worth', 'plan'],
     text: D => { const p = D.plans.slice().sort((a, b) => b.times_plan_price - a.times_plan_price)[0], mo = Math.round(p.plan_usd_per_week * 52 / 12 / 10) * 10;
-      return `i pay $${mo}/mo for ${p.plan.toLowerCase()}. last week one weekly limit gave me ${usd(p.usd_per_full_week)} of api-priced usage.. ${p.times_plan_price}× the price. measured from my own local logs, not vibes. npx worthit`; } },
+      return `i pay $${mo}/mo for ${p.plan.toLowerCase()}. last week one weekly limit gave me ${usd(p.usd_per_full_week)} of api-priced usage.. ${p.times_plan_price}× the price.${p.proof === 'measured' && p.retirement_note ? ' ' + p.retirement_note + '.' : ''} measured from my own local logs, not vibes. npx worthit`; } },
   ranking: { title: 'plan ranking', hint: 'which plan gave more', alias: ['plans', 'compare', 'comparison'],
-    text: D => `which ai plan actually gives more? measured on my real work this week: ${D.plans.slice().sort((a, b) => b.times_plan_price - a.times_plan_price).map(p => `${p.plan.toLowerCase()} ${p.times_plan_price}×`).join(', ')} the price. one command: npx worthit` },
+    text: D => `which ai plan actually gives more? measured on my real work this week: ${D.plans.slice().sort((a, b) => b.times_plan_price - a.times_plan_price).map(p => `${p.plan.toLowerCase()} ${p.times_plan_price}×${p.proof === 'measured' && p.retirement_note ? ' (' + p.retirement_note + ')' : ''}`).join(', ')} the price. one command: npx worthit` },
   waste: { title: 'unused allowance', hint: 'what you paid for and did not use', alias: ['unused', 'wasted'],
     text: D => { const un = D.waste.reduce((a, x) => a + (x.unused_usd || 0), 0), risk = D.waste.reduce((a, x) => a + (x.at_risk_usd || 0), 0);
       return `ai allowance i paid for and left unused last week: ${usd(un)}${risk ? `.. another ${usd(risk)} still open before the reset` : ''}. check yours: npx worthit`; } },
 };
 // the card as a few terminal lines: the same headline, caption and rows the image shows
 const cardLines = c => [' ' + d(c.eyebrow.toUpperCase()), '', ' ' + bold(fg(c.color, c.hero)) + '  ' + w(c.cap) + (c.sub ? d('  ·  ') + fg(c.subColor, c.sub) : ''), '',
-  ...c.rows.map(r => ' ' + pad(fg(r.color, r.label), 26) + (r.pct == null ? '' : fg(r.color, '█'.repeat(Math.max(1, Math.round(r.pct * 20)))) + fg(C.track, '█'.repeat(20 - Math.max(1, Math.round(r.pct * 20)))) + ' ') + lpad(bold(w(r.value)), 10) + '  ' + d(r.note))];
+  ...c.rows.flatMap(r => [ ' ' + pad(fg(r.color, r.label), 26) + (r.pct == null ? '' : fg(r.color, '█'.repeat(Math.max(1, Math.round(r.pct * 20)))) + fg(C.track, '█'.repeat(20 - Math.max(1, Math.round(r.pct * 20)))) + ' ') + lpad(bold(w(r.value)), 10) + '  ' + d(r.note), ...(r.retirement_note ? [' ' + d(r.retirement_note)] : [])])];
 const numbersIn = s => (strip(String(s)).match(/\d[\d,]*(?:\.\d+)?/g) || []).map(x => String(+x.replace(/,/g, '')));
 // every number the data holds (walked value by value, so neighbours in a list are never glued together), plus each one rounded to 0, 1 and 2 decimals
 const knownNumbers = D => { const out = new Set(); (function walk(v) { if (typeof v === 'number') { for (const k of [String(v), v.toFixed(0), v.toFixed(1), v.toFixed(2)]) out.add(String(+k)); } else if (typeof v === 'string') numbersIn(v).forEach(x => out.add(x)); else if (v && typeof v === 'object') Object.values(v).forEach(walk); })(D); return out; };

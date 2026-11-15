@@ -1,0 +1,196 @@
+{
+  "retired_days": [
+    "2026-10-25",
+    "2026-10-26",
+    "2026-10-27",
+    "2026-10-28",
+    "2026-10-29",
+    "2026-10-30",
+    "2026-10-31",
+    "2026-11-01",
+    "2026-11-02",
+    "2026-11-03",
+    "2026-11-04",
+    "2026-11-05",
+    "2026-11-06",
+    "2026-11-07"
+  ],
+  "retirement": {
+    "machine": "box-b",
+    "retired_at": "2026-11-07T00:00:00.000Z",
+    "last_scan_at": "2026-11-07T00:00:00Z",
+    "days_kept": 14
+  },
+  "measured": {
+    "machines": 2,
+    "missing": [],
+    "left_out": [],
+    "out": 3000000,
+    "usd": 36,
+    "proof": "measured",
+    "plan_usd": 6,
+    "change": null
+  },
+  "past_history": {
+    "2026-10-25": {
+      "out": 200000,
+      "usd": 2,
+      "prs": 0,
+      "commits": 0
+    },
+    "2026-10-26": {
+      "out": 200000,
+      "usd": 2,
+      "prs": 0,
+      "commits": 0
+    },
+    "2026-10-27": {
+      "out": 200000,
+      "usd": 2,
+      "prs": 0,
+      "commits": 0
+    },
+    "2026-10-28": {
+      "out": 200000,
+      "usd": 2,
+      "prs": 0,
+      "commits": 0
+    },
+    "2026-10-29": {
+      "out": 200000,
+      "usd": 2,
+      "prs": 0,
+      "commits": 0
+    },
+    "2026-10-30": {
+      "out": 200000,
+      "usd": 2,
+      "prs": 0,
+      "commits": 0
+    },
+    "2026-10-31": {
+      "out": 200000,
+      "usd": 2,
+      "prs": 0,
+      "commits": 0
+    },
+    "2026-11-01": {
+      "out": 200000,
+      "usd": 2,
+      "prs": 0,
+      "commits": 0
+    },
+    "2026-11-02": {
+      "out": 1200000,
+      "usd": 14,
+      "prs": 0,
+      "commits": 0
+    },
+    "2026-11-03": {
+      "out": 200000,
+      "usd": 2,
+      "prs": 0,
+      "commits": 0
+    },
+    "2026-11-04": {
+      "out": 1200000,
+      "usd": 14,
+      "prs": 0,
+      "commits": 0
+    },
+    "2026-11-05": {
+      "out": 200000,
+      "usd": 2,
+      "prs": 0,
+      "commits": 0
+    },
+    "2026-11-06": {
+      "out": 1200000,
+      "usd": 14,
+      "prs": 0,
+      "commits": 0
+    },
+    "2026-11-07": {
+      "out": 200000,
+      "usd": 2,
+      "prs": 0,
+      "commits": 0
+    }
+  },
+  "early": {
+    "proof": "floor",
+    "change": null,
+    "status": 0,
+    "first_measured": "2026-11-14T00:00:00.000Z",
+    "safe_to_post": true
+  },
+  "eligible_change": {
+    "proof": "measured",
+    "change": 0,
+    "status": 0
+  },
+  "duplicate": {
+    "out": 4100000,
+    "usd": 41,
+    "requests": 26
+  },
+  "short_history": {
+    "2026-11-04": {
+      "out": 100000,
+      "usd": 1,
+      "prs": 1,
+      "commits": 0
+    },
+    "2026-11-07": {
+      "out": 700000,
+      "usd": 7,
+      "prs": 0,
+      "commits": 0
+    }
+  },
+  "active_missing": {
+    "proof": "floor",
+    "change": null,
+    "missing": [
+      "box-c"
+    ]
+  },
+  "expanded_history": {
+    "2026-11-02": {
+      "out": 1200000,
+      "usd": 14,
+      "prs": 0,
+      "commits": 0
+    },
+    "2026-11-04": {
+      "out": 1200000,
+      "usd": 14,
+      "prs": 0,
+      "commits": 0
+    },
+    "2026-11-06": {
+      "out": 1200000,
+      "usd": 14,
+      "prs": 0,
+      "commits": 0
+    }
+  },
+  "expanded_sql": [
+    {
+      "day": "2026-11-02",
+      "usd": 14,
+      "out": 1200000
+    },
+    {
+      "day": "2026-11-04",
+      "usd": 14,
+      "out": 1200000
+    },
+    {
+      "day": "2026-11-06",
+      "usd": 14,
+      "out": 1200000
+    }
+  ],
+  "wide_labels": "\u2265$1.2k \u2265$1.2k"
+}

@@ -41,13 +41,13 @@ const proofLine = D => { const a = D.plans.filter(measured).map(p => p.plan), b 
 export const CARD_TOPICS = {
   allowance(D) { const ps = D.plans.slice().sort((a, b) => measured(b) - measured(a) || b.usd_per_full_week - a.usd_per_full_week), h = ps[0], mx = Math.max(...ps.map(p => p.usd_per_full_week)), mv = moved(h);
     return { eyebrow: 'Weekly AI allowance check', hero: usd(h.usd_per_full_week), color: h.color, cap: `of API-priced usage in one ${h.plan} weekly limit`, sub: mv.t, subColor: mv.c,
-      rows: ps.map(p => ({ label: p.plan, pct: p.usd_per_full_week / mx, color: p.color, value: usd(p.usd_per_full_week), note: moved(p).t })) }; },
+      rows: ps.map(p => ({ label: p.plan, pct: p.usd_per_full_week / mx, color: p.color, value: usd(p.usd_per_full_week), note: moved(p).t, ...(measured(p) && p.retirement_note ? { retirement_note: p.retirement_note } : {}) })) }; },
   value(D) { const p = D.plans.slice().sort((a, b) => b.times_plan_price - a.times_plan_price)[0];
     return { eyebrow: 'The receipt', hero: p.times_plan_price + '×', color: p.color, cap: `what I pay for ${p.plan}, back in API-priced usage`, sub: measured(p) ? 'measured from the plan\'s own meter' : 'at least', subColor: C.ink3,
-      rows: [{ label: 'one weekly limit', pct: 1, color: p.color, value: usd(p.usd_per_full_week), note: '' }, { label: 'the plan, per week', pct: p.plan_usd_per_week / p.usd_per_full_week, color: C.ink3, value: usd(p.plan_usd_per_week), note: '' }] }; },
+      rows: [{ label: 'one weekly limit', pct: 1, color: p.color, value: usd(p.usd_per_full_week), note: '', ...(measured(p) && p.retirement_note ? { retirement_note: p.retirement_note } : {}) }, { label: 'the plan, per week', pct: p.plan_usd_per_week / p.usd_per_full_week, color: C.ink3, value: usd(p.plan_usd_per_week), note: '' }] }; },
   ranking(D) { const ps = D.plans.slice().sort((a, b) => b.times_plan_price - a.times_plan_price), h = ps[0];
     return { eyebrow: 'Which AI plan gives more for its price', hero: h.times_plan_price + '×', color: h.color, cap: `${h.plan} gives the most for its price`, sub: 'API-priced usage in one weekly limit ÷ its price', subColor: C.ink3,
-      rows: ps.map(p => ({ label: p.plan, pct: p.times_plan_price / h.times_plan_price, color: p.color, value: p.times_plan_price + '×', note: usd(p.usd_per_full_week) + (measured(p) ? ' measured' : ' at least') })) }; },
+      rows: ps.map(p => ({ label: p.plan, pct: p.times_plan_price / h.times_plan_price, color: p.color, value: p.times_plan_price + '×', note: usd(p.usd_per_full_week) + (measured(p) ? ' measured' : ' at least'), ...(measured(p) && p.retirement_note ? { retirement_note: p.retirement_note } : {}) })) }; },
   open(D) { const o = D.model_mix.open, c = D.model_mix.closed, n = o.share_pct.length - 1, s = Math.round(o.share_pct[n]), ch = o.change_pts;
     return { eyebrow: 'Open vs closed models', hero: s + '%', color: C.cx, cap: 'of my AI coding output ran on open models', sub: ch == null || Math.abs(ch) < 0.5 ? 'this week' : `${ch > 0 ? '▲' : '▼'} ${Math.abs(Math.round(ch))} pts vs last week`, subColor: C.ink3,
       rows: [{ label: 'open models', pct: s / 100, color: C.cx, value: s + '%', note: `$${o.usd_per_m_output} per M output` }, { label: 'closed models', pct: 1 - s / 100, color: C.cl, value: (100 - s) + '%', note: `$${c.usd_per_m_output} per M output` }] }; },
@@ -75,7 +75,7 @@ export function cardHtml(s) {
   const heroSize = s.hero.length > 7 ? 150 : s.hero.length > 5 ? 180 : 210, bars = s.rows.some(r => r.pct != null);
   const rows = s.rows.map(r => `<div class="row${bars ? '' : ' nobar'}"><span class="label" style="color:${r.color}">${esc(r.label)}</span>`
     + (bars ? `<span class="track"><span class="fill" style="width:${Math.max(1.5, Math.min(100, (r.pct || 0) * 100)).toFixed(1)}%;background:${r.color}"></span></span>` : '<span class="dots"></span>')
-    + `<span class="value">${esc(r.value)}</span>${bars ? `<span class="note">${esc(r.note)}</span>` : ''}</div>`).join('');
+    + `<span class="value">${esc(r.value)}</span>${bars ? `<span class="note">${esc(r.note)}</span>` : ''}${r.retirement_note ? `<span class="retirement">${esc(r.retirement_note)}</span>` : ''}</div>`).join('');
   return `<!doctype html><meta charset="utf-8"><style>
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{width:1600px;height:900px;background:#0a0a0c;color:${C.ink};font-family:"SF Mono",ui-monospace,Menlo,Consolas,"DejaVu Sans Mono",monospace;-webkit-font-smoothing:antialiased}
@@ -97,6 +97,7 @@ body{display:flex;flex-direction:column;padding:60px 76px 56px}
 .dots{border-bottom:3px dotted ${C.line};height:20px}
 .value{font-weight:800;text-align:right;white-space:nowrap}
 .note{font-size:30px;color:${C.ink3};white-space:nowrap;overflow:hidden}
+.retirement{grid-column:1/-1;font-size:26px;line-height:1.3;color:${C.ink3};overflow-wrap:anywhere}
 .foot{margin-top:36px;padding-top:28px;border-top:2px solid ${C.line};display:flex;justify-content:space-between;align-items:center}
 .src{font-size:27px;color:${C.ink3};line-height:1.4}
 .cmd{font-size:30px;color:${C.ink3};white-space:nowrap}

@@ -67,6 +67,9 @@ Every command prints JSON when piped and reads only local files:
 ```sh
 worthit --json                   # scan now, print the week's data (no UI, no model)
 worthit weekly                   # fresh allowance checkpoint for a scheduler: JSON, PNG and safety exit code
+worthit hosts                    # selected, not selected and retired SSH machines
+worthit hosts retire build-box [--since 2026-11-07] # keep saved days, stop asking it
+worthit hosts unretire build-box  # restore its saved scan and selection
 worthit get                      # sections of the last run, no scan
 worthit get plans                # one section; dots walk in: plans.0.usd_per_full_week
 worthit days --group month --by tool             # daily history, grouped: day|week|month by total|tool|model
@@ -91,13 +94,41 @@ Exit **0** means safe to post; **3** means the JSON is available but a machine i
 left out, or has retained units inside this week. Reasons name each machine, and retained
 units name their day and provider. `--allow-partial` changes exit 3 to 0, keeping
 `safe_to_post: false`. Exit **1** means no result (scan failure, no allowance data this
-week, or PNG/store failure). Floors alone and retained units only in earlier weeks are safe.
+week, or PNG/store failure). Floors alone, including pre-retirement weeks, and retained units only in earlier weeks are safe.
 
 `compared_with` is the latest earlier checkpoint ending at least six days before this
 week's end. Only the same plan measured at both endpoints gets a percentage in `plans`,
 `moved`, text or card; it never searches past a floor or uses the meter ledger's comparison.
 The first checkpoint has null changes. `moved` includes absolute changes strictly greater
 than 5%. `worthit schema` and the agent skill describe the complete JSON and table.
+
+### A machine that will never answer again
+
+Run `worthit hosts` to see each SSH machine's state. `worthit hosts retire build-box`
+keeps its saved usage and stops asking it, even with `--hosts all` or an explicit alias.
+The picker lists retired machines without offering them. Retirement needs a saved scan;
+otherwise leave the machine out of the selection. Nothing is retired automatically.
+After 14 days without an answer, machine notes suggest the command.
+
+A week can be measured when every active machine answers, none is left out, no saved
+retained unit overlaps the week, and its start is on or after every retirement time.
+Ledger weeks carry no machine check: `weeks[].proof` is present on week 0, or
+`floor` on a ledger week blocked by retirement or retained data; otherwise it is absent.
+A pre-retirement week stays a floor; notes name the machine and the first possible
+measured week end. Week-over-week changes require two measured weeks.
+`--since YYYY-MM-DD` states nothing ran after that date (UTC midnight). It cannot precede
+the saved scan's full timestamp or be in the future. Every measured plan relying on it
+says "retired since <date>, as stated by you". Without it, wait seven days from retirement.
+
+`worthit hosts unretire build-box` restores the whole snapshot and adds the machine back
+to the saved selection. The next answer merges by whole local day/provider: higher API
+USD, then more tokens, fresh wins a tie. The same rule handles a retired host answering
+under another alias or locally, without counting it twice. Earlier history and checkpoints
+stay saved; short windows keep partial-day usage and outside-window git history.
+If the frozen snapshot is missing, restore it or use `hosts unretire` to remove the
+retirement record and reselect the machine. A corrupt `hosts.json` or invalid
+`retired_at` fails with exit 2 and a one-line instruction to fix or remove the file;
+`--demo` continues to ignore the store.
 
 Flags for a scan (`worthit` or `worthit --json`):
 
@@ -119,6 +150,19 @@ What leaves your machine:
 
 The audit log records session-log reads and cache hits, collector commands, network activity, agent calls, sent data and output writes. It does not list executable lookup (`which`), hardware probes, the `zstd` decompressor used for `.zst` logs, the account ids read from Claude and Codex login files (`.claude.json`, `auth.json`; hashed), `~/.ssh/config`, or worthit's own store files.
 
-A normal run writes `./<date>-worthit.md`, `./<date>-worthit.png` and `./<date>-worthit-audit.log`. Its store is `~/.worthit/`.
+A normal run writes `./<date>-worthit.md`, `./<date>-worthit.png` and `./<date>-worthit-audit.log`. Its store is `~/.worthit/` (or `WORTHIT_HOME`):
+
+| Path | Kept data |
+|---|---|
+| `hosts.json` | `selected` aliases and `retired: [{machine, retired_at, last_scan_at, since?}]`; old stores without `retired` work unchanged |
+| `run-keep/<alias>.json` | Latest active scan, merged with saved whole-day/provider winners |
+| `run-keep/retired/<alias>.json` | Frozen snapshot moved at retirement; no run changes it; unretire restores its bytes |
+| `history.json`, `worthit.db` | Daily usage and git history; the database also holds plan values and weekly checkpoints |
+| `last.json`, `weeks/` | Last run and weekly meter reports/ledger |
+
+Run JSON and weekly JSON include `machines_retired: [{machine, retired_at, last_scan_at,
+days_kept}]`. These machines never appear in missing/left-out lists. `days_kept` counts
+snapshot days selected inside this run's window. Last-run `retirement_conflicts` names
+retired machines answering elsewhere. `worthit schema` documents the complete fields.
 
 MIT. Releases: every merge into `dev` cuts a version; `make publish` puts it on npm.
