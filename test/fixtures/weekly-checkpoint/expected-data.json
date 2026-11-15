@@ -4,6 +4,7 @@
   "allow_partial": {"status":0,"safe":false,"machines":1,"proof":"floor","value":3,"change":null},
   "current_retained": {"status":3,"safe":false,"machines":3,"proof":"floor","value":12,"change":null},
   "prior_retained": {"status":0,"safe":true,"machines":3,"proof":"measured","value":12,"change":null},
+  "straddling_retained": {"status":3,"safe":false,"machines":3,"proof":"floor","value":12,"change":null},
   "retained_override": {"status":0,"safe":false,"machines":3,"proof":"floor","value":12,"change":null},
   "left_out": {"status":3,"safe":false,"machines":1,"proof":"floor","value":3,"change":null},
   "floor_safe": {"status":0,"safe":true,"machines":1,"proof":"floor","value":3,"change":null},
@@ -12,6 +13,7 @@
   "six_days": {"status":0,"safe":true,"machines":3,"proof":"measured","value":12,"change":20},
   "no_data_exit": 1,
   "mixed_changes": [20,null,null,null],
-  "boundary_moved": ["Up over","Down over","Up just over","Down just over"],
+  "boundary_moved": ["Up rounded over","Down rounded over"],
+  "straddling_unit": {"day":"2026-11-07","provider":"claude"},
   "retained_unit": {"day":"2026-11-11","provider":"claude"}
 }

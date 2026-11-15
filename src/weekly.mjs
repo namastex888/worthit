@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { usd } from './draw.mjs';
+import { retainedUnitOverlapsWeek } from './collect.mjs';
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');
 
 export const allowanceText = data => {
@@ -37,19 +38,16 @@ export function prepareWeekly(data, comparedWith) {
     const previous = comparedWith?.plans.find(p => p.plan === plan.plan);
     const pct = plan.proof === 'measured' && previous?.proof === 'measured' && previous.usd_per_full_week > 0
       ? 100 * (plan.usd_per_full_week - previous.usd_per_full_week) / previous.usd_per_full_week : null;
-    plan.change_vs_last_week_pct = pct == null ? null : +pct.toPrecision(12);
-    if (pct != null && Math.abs(pct) > 5) moved.push({ plan: plan.plan, from: previous.usd_per_full_week,
+    plan.change_vs_last_week_pct = pct == null ? null : Math.round(pct);
+    if (plan.change_vs_last_week_pct != null && Math.abs(plan.change_vs_last_week_pct) > 5) moved.push({ plan: plan.plan, from: previous.usd_per_full_week,
       to: plan.usd_per_full_week, pct: plan.change_vs_last_week_pct });
   }
   const reasons = [];
   for (const row of data.machines_missing) reasons.push(`${row.machine}: no fresh answer${row.saved_scan_at ? ' (saved scan used)' : ''}`);
   for (const machine of data.machines_left_out) reasons.push(`${machine}: saved machine with usage left out`);
-  // Retained units are local calendar days. Include a boundary day if any of it
-  // overlaps the rolling seven-day window, just as buildData does for proof.
-  const end = Date.parse(data.generated_at), start = end - 7 * 864e5;
+  const end = Date.parse(data.generated_at);
   for (const row of data.machines_retained) for (const unit of row.units) {
-    const lo = new Date(unit.day + 'T00:00:00'), hi = new Date(lo); hi.setDate(hi.getDate() + 1);
-    if (+lo <= end && +hi > start) reasons.push(`${row.machine}: retained ${unit.day} ${unit.provider} (lost logs inside this week)`);
+    if (retainedUnitOverlapsWeek(unit, end)) reasons.push(`${row.machine}: retained ${unit.day} ${unit.provider} (lost logs inside this week)`);
   }
   return { week: data.week, generated_at: data.generated_at, text: '', image: null,
     plans: data.plans.map(({ plan, usd_per_full_week, times_plan_price, proof, change_vs_last_week_pct }) =>

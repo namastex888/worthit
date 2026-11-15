@@ -52,7 +52,8 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
 
   const missing = check('missing', 'missing', { overrides: { FIXTURE_OFFLINE: '1' } });
   for (const machine of ['box-b', 'box-c']) assert.ok(missing.reasons.some(r => r.includes(machine) && r.includes('no fresh answer')));
-  check('allow_partial', 'allow-partial', { args: ['--allow-partial'], overrides: { FIXTURE_OFFLINE: '1' } });
+  const allowed = check('allow_partial', 'allow-partial', { args: ['--allow-partial'], overrides: { FIXTURE_OFFLINE: '1' } });
+  assert.deepEqual(allowed.reasons, missing.reasons, 'allow-partial retains missing-machine reasons');
   // A warm reusable store cannot bypass the required new local and SSH scans.
   const before = trace().filter(c => c.command === 'ssh').length;
   const fresh = weekly('complete', { overrides: { WORTHIT_REUSE: '1', FIXTURE_OFFLINE: '1' }, status: 3 }).data;
@@ -77,7 +78,8 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
   const unit = expected.get('retained_unit');
   assert.ok(retained.machines_retained.some(r => r.machine === 'this machine' && r.units.some(u => u.day === unit.day && u.provider === unit.provider)));
   assert.ok(retained.reasons.some(r => r.includes('this machine') && r.includes(unit.day) && r.includes(unit.provider)));
-  check('retained_override', 'current-retained', { args: ['--allow-partial'] });
+  const overridden = check('retained_override', 'current-retained', { args: ['--allow-partial'] });
+  assert.deepEqual(overridden.reasons, retained.reasons, 'allow-partial retains machine/day/provider reasons');
   fs.writeFileSync(log, original);
   weekly('prior-retained');
   removeDay('2026-11-04');
@@ -85,6 +87,19 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
   assert.ok(prior.machines_retained.length, 'prior retained unit exists');
   assert.deepEqual(prior.reasons, []);
   fs.writeFileSync(log, original);
+
+  // Nov 7 starts before the rolling week's noon boundary and ends inside it.
+  // Losing its source unit must force both floor proof and unsafe exit 3.
+  const straddlingUnit = expected.get('straddling_unit');
+  const edgeRow = JSON.parse(original.split('\n').find(l => l.includes('2026-11-06')));
+  edgeRow.timestamp = straddlingUnit.day + 'T10:00:00Z';
+  edgeRow.sessionId = edgeRow.requestId = edgeRow.message.id = 'box-a-straddling';
+  fs.writeFileSync(log, original.trimEnd() + '\n' + JSON.stringify(edgeRow) + '\n');
+  weekly('straddling-retained');
+  fs.writeFileSync(log, original);
+  const straddling = check('straddling_retained', 'straddling-retained');
+  assert.ok(straddling.machines_retained.some(r => r.machine === 'this machine' && r.units.some(u => u.day === straddlingUnit.day && u.provider === straddlingUnit.provider)));
+  assert.ok(straddling.reasons.some(r => r.includes('this machine') && r.includes(straddlingUnit.day) && r.includes(straddlingUnit.provider)), 'straddling retained unit names machine/day/provider');
 
   // Real checkpoints one week apart; increase only current Claude output in scratch.
   // Temporarily withhold future source rows from the historical run, including
@@ -164,10 +179,17 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
   assert.match(mixedText, /before floor \$120\n/);
   assert.match(mixedText, /now floor \$120 \(at least\)/);
   assert.doesNotMatch(mixedText, /999/);
-  const boundaryData = baseData([plan('Up exact', 105), plan('Down exact', 95), plan('Up over', 105.1), plan('Down over', 94.9), plan('Up just over', 105.001), plan('Down just over', 94.999)]);
+  const boundaryData = baseData([plan('Up exact', 105), plan('Down exact', 95), plan('Up over', 105.1), plan('Down over', 94.9), plan('Up just over', 105.001), plan('Down just over', 94.999), plan('Up rounded over', 105.6), plan('Down rounded over', 94.4)]);
   const boundary = prepareWeekly(boundaryData, { plans: boundaryData.plans.map(p => plan(p.plan, 100)) });
   assert.deepEqual(boundary.moved.map(p => p.plan), expected.get('boundary_moved'));
-  assert.deepEqual(boundary.plans.map(p => p.change_vs_last_week_pct), [5,-5,5.1,-5.1,5.001,-5.001]);
+  assert.deepEqual(boundary.plans.map(p => p.change_vs_last_week_pct), [5,-5,5,-5,5,-5,6,-6]);
+  assert.ok(boundary.moved.every(p => Math.abs(p.pct) > 5), 'a displayed 5% is never moved');
+  const fractionalData = baseData([plan('Rounded plan', 800)]);
+  const fractional = prepareWeekly(fractionalData, { plans: [plan('Rounded plan', 700)] });
+  assert.equal(JSON.parse(JSON.stringify(fractional)).plans[0].change_vs_last_week_pct, 14, '700 to 800 publishes whole-number JSON percent');
+  assert.deepEqual(fractional.moved, [{ plan: 'Rounded plan', from: 700, to: 800, pct: 14 }]);
+  assert.match(allowanceText(fractionalData), /▲14% vs the week before/);
+  assert.equal(draw(fractional).sub, '▲ 14% vs last week');
 
   // --demo must never read or contaminate a real checkpoint store. Exercise
   // both explicit WORTHIT_HOME and its default, always inside this fixture HOME.

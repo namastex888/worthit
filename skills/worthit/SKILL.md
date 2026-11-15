@@ -135,6 +135,7 @@ JSON fields (also documented by `worthit schema`):
   Only the same plan measured at both ends gets a change, in JSON, text and card.
   Never search past a floor. The first checkpoint has null changes even if the meter
   ledger has history; weekly never uses ledger comparisons.
+  An unsafe rerun in the same week becomes the newest row, so next week's change is null.
 - `moved: [{plan, from, to, pct}]` includes only eligible absolute changes strictly >5%.
 - `safe_to_post` is true iff missing and left-out lists are empty and no retained local-day
   unit overlaps this week. A floor alone or retained units only in earlier weeks are safe.
