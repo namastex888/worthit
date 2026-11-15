@@ -12,6 +12,10 @@ export const HOME = process.env.WORTHIT_HOME || path.join(os.homedir(), '.worthi
 export const tilde = p => String(p).startsWith(os.homedir()) ? '~' + String(p).slice(os.homedir().length) : String(p);
 export const AUDIT = [];
 export const audit = (kind, text) => { AUDIT.push(new Date().toISOString() + '  ' + kind.padEnd(5) + ' ' + text); };
+export function writeAudit(file, version) {
+  audit('write', tilde(file));
+  fs.writeFileSync(file, [`worthit ${version} audit log · ${new Date().toISOString()}`, "Recorded session-log reads and cache hits, collector commands, network activity, agent calls, sent data and output writes. It does not list executable lookup (which), hardware probes, the zstd decompressor used for .zst logs, the account ids read from Claude and Codex login files (.claude.json, auth.json; hashed), ~/.ssh/config, or worthit's own store files. Kinds: read, cache, run, net, agent, sent, write, note.", '', ...AUDIT, ''].join('\n'));
+}
 export const has = c => spawnSync('which', [c], { stdio: 'ignore' }).status === 0;
 const H = 3600e3, DAY = 24 * H;
 const LANE = 'https://github.com/automagik-dev/automagik/releases/download/meter-lane/meter.json';

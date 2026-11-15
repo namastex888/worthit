@@ -10,19 +10,77 @@ import { cardSpec, cardHtml } from '../../../src/card.mjs';
 
 const folder = path.dirname(fileURLToPath(import.meta.url));
 sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, trace }) => {
+  env.HOME = fs.realpathSync(home);
   // If any UI, agent, clipboard or git command is attempted, fail and record it.
   for (const name of ['open', 'xdg-open', 'osascript', 'wl-copy', 'xclip', 'claude', 'codex', 'omp', 'dsh', 'git']) {
     fs.writeFileSync(path.join(bin, name), `#!${process.execPath}\nimport fs from 'node:fs';fs.appendFileSync(process.env.FIXTURE_TRACE,JSON.stringify({unexpected:${JSON.stringify(name)}})+'\\n');process.exit(86);\n`, { mode: 0o755 });
   }
-  const weekly = (store, { args = [], overrides = {}, status = 0 } = {}) => {
-    const r = spawnSync(process.execPath, [path.join(root, 'bin/worthit.mjs'), 'weekly', '--no-files', ...args], {
-      cwd: tmp, env: { ...env, WORTHIT_HOME: path.join(tmp, store), ...overrides },
+  const weekly = (store, { args = [], overrides = {}, status = 0, files = false, blockAudit = false } = {}) => {
+    const outputDir = path.join(files ? home : tmp, 'output-' + store); fs.mkdirSync(outputDir, { recursive: true });
+    const output = fs.realpathSync(outputDir); // macOS /var and /private/var name the same scratch directory.
+    if (blockAudit) fs.mkdirSync(path.join(output, '2026-11-14-worthit-audit.log'));
+    const rendersBefore = trace().filter(c => c.command === 'headless-chrome').length;
+    const r = spawnSync(process.execPath, [path.join(root, 'bin/worthit.mjs'), 'weekly', ...(files ? [] : ['--no-files']), ...args], {
+      cwd: output, env: { ...env, NODE_OPTIONS: env.NODE_OPTIONS + ` --import=${path.join(folder, 'render.mjs')}`, WORTHIT_HOME: path.join(tmp, store),
+        ...overrides },
       input: '', encoding: 'utf8', maxBuffer: 16 << 20, timeout: 30000,
     });
     assert.equal(r.status, status, `weekly ${store}: exit status\n${r.stderr}\n${r.stdout}`);
-    if (status === 1) { assert.equal(r.stdout, '', 'failed run prints no result JSON'); return r; }
+    if (status === 1) {
+      assert.equal(r.stdout, '', 'failed run prints no result JSON');
+      if (files) {
+        const file = path.join(output, '2026-11-14-worthit-audit.log');
+        if (blockAudit) {
+          assert.ok(fs.statSync(file).isDirectory(), 'unwritable audit destination remains untouched');
+          assert.match(r.stderr, /could not write audit log/);
+          assert.ok(fs.existsSync(path.join(output, '2026-11-14-worthit-share-allowance.png')), 'audit failure can leave an already-rendered PNG');
+        } else {
+          assert.ok(fs.existsSync(file), 'exit-1 scan still writes its audit');
+          const audit = fs.readFileSync(file, 'utf8');
+          assert.match(audit, /  run\s+ssh box-b .*core\/extract_usage\.py/);
+          assert.doesNotMatch(audit, /headless Chrome screenshot/);
+          assert.equal(trace().filter(c => c.command === 'headless-chrome').length, rendersBefore);
+          assert.deepEqual(fs.readdirSync(output), [path.basename(file)], 'missing Chrome leaves only the audit');
+        }
+        assert.ok(r.stderr.includes(file), 'failed run names its audit path on stderr');
+        assert.equal(query('SELECT COUNT(*) AS n FROM weekly', store)[0].n, 0, 'failed run saves no checkpoint');
+      } else assert.deepEqual(fs.readdirSync(output), [], '--no-files failure creates no output artifacts');
+      return r;
+    }
     const data = JSON.parse(r.stdout); // one JSON object, no TUI or questions
-    assert.equal(data.image, null);
+    assert.equal(trace().filter(c => c.command === 'headless-chrome').length - rendersBefore, +files, 'render only with output files enabled');
+    if (files) {
+      assert.equal(typeof data.audit_log, 'string', 'weekly JSON names its audit path');
+      assert.ok(path.isAbsolute(data.audit_log), 'weekly JSON names its absolute audit path');
+      assert.equal(fs.realpathSync(data.audit_log), fs.realpathSync(path.join(output, '2026-11-14-worthit-audit.log')));
+      assert.ok(path.isAbsolute(data.image));
+      assert.equal(fs.realpathSync(data.image), fs.realpathSync(path.join(output, '2026-11-14-worthit-share-allowance.png')));
+      assert.ok(fs.readFileSync(data.image).subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')));
+      const audit = fs.readFileSync(data.audit_log, 'utf8');
+      assert.match(audit, /^worthit .+ audit log · [^\n]+\n/);
+      assert.match(audit, /Kinds: [^\n]*\bread\b[^\n]*\brun\b[^\n]*\bwrite\b/);
+      assert.match(audit, /  run\s+python3 core\/extract_usage\.py/);
+      const localRead = /^\S+  read\s+((?:~|\/[^\n]*)\/\.claude\/projects\/example\/usage\.jsonl)$/m.exec(audit)?.[1];
+      assert.ok(localRead, 'audit includes the local session-log read');
+      assert.equal(fs.realpathSync(localRead.replace(/^~(?=\/)/, env.HOME)),
+        fs.realpathSync(path.join(home, '.claude/projects/example/usage.jsonl')), 'audit read names the actual fixture source');
+      assert.match(audit, /  run\s+python3 core\/weekly\.py/);
+      assert.match(audit, /  run\s+headless Chrome screenshot of the allowance card/);
+      assert.match(audit, /  write\s+.*worthit\.db  \(weekly checkpoint\)/);
+      for (const machine of ['box-b', 'box-c']) {
+        assert.match(audit, new RegExp(`  run\\s+ssh ${machine} .*core/extract_usage\\.py`));
+        assert.match(audit, new RegExp(`ssh ${machine} finished:`));
+        if (status === 0) assert.match(audit, new RegExp(`  read\\s+${machine}:.*usage\\.jsonl`));
+      }
+      const display = file => '~' + file.slice(env.HOME.length);
+      assert.ok(audit.includes('  write ' + display(data.image)), 'audit includes card write with tilde path');
+      assert.ok(audit.includes('  write ' + display(data.audit_log)), 'audit includes its own write with tilde path');
+      assert.deepEqual(fs.readdirSync(output).sort(), [path.basename(data.audit_log), path.basename(data.image)].sort());
+    } else {
+      assert.equal(data.image, null);
+      assert.equal(data.audit_log, null, '--no-files reports no audit path');
+      assert.deepEqual(fs.readdirSync(output), [], '--no-files creates no output artifacts');
+    }
     assert.deepEqual(data.machines_retired, []);
     assert.deepEqual(data.week, { from: '2026-11-07', to: '2026-11-14' });
     const stored = query('SELECT generated_at, week_to, safe, json FROM weekly ORDER BY generated_at DESC', store).find(row => row.generated_at === data.generated_at);
@@ -37,6 +95,11 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
       proof: p.proof, value: p.usd_per_full_week, change: p.change_vs_last_week_pct }, e, name);
     return d;
   };
+  // Issue #60: actual synthetic scans must persist their audit on exit 0 and 3.
+  weekly('audit-no-chrome', { files: true, status: 1, overrides: { FIXTURE_NO_CHROME: '1' } });
+  weekly('audit-blocked', { files: true, status: 1, blockAudit: true });
+  weekly('audit-complete', { files: true });
+  weekly('audit-missing', { files: true, status: 3, overrides: { FIXTURE_OFFLINE: '1' } });
   const first = check('complete');
   assert.equal(first.compared_with, null);
   assert.deepEqual(first.moved, []);
@@ -205,6 +268,7 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
     assert.equal(demo.compared_with, null, 'demo does not read the sentinel baseline');
     assert.ok(demo.plans.every(p => p.change_vs_last_week_pct === null));
     assert.equal(demo.image, null, 'demo keeps the existing no-files behavior');
+    assert.equal(demo.audit_log, null, 'demo reports no audit path');
     assert.deepEqual(contents(), beforeDemo, 'demo leaves every sentinel file byte-for-byte unchanged');
   }
   const absentDemoStore = path.join(tmp, 'absent-demo-store');
@@ -222,7 +286,7 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
   assert.match(weekly('scan-failure', { status: 1 }).stderr, /Python 3 is needed/);
   assert.deepEqual(fs.readdirSync(tmp).filter(f => /\.(png|md|log)$/.test(f)), [], '--no-files writes no presentation files');
   const schema = JSON.parse(run(process.execPath, [path.join(root, 'bin/worthit.mjs'), 'schema']));
-  assert.ok(schema.weekly.columns.json && schema['weekly.result'].fields.compared_with);
+  assert.ok(schema.weekly.columns.json && schema['weekly.result'].fields.compared_with && schema['weekly.result'].fields.audit_log);
   assert.match(run(process.execPath, [path.join(root, 'bin/worthit.mjs'), '--skill']), /worthit weekly/);
-  assert.ok(trace().every(c => c.command === 'ssh'), 'weekly runs no git, AI, UI or clipboard commands');
+  assert.ok(trace().every(c => ['ssh', 'headless-chrome'].includes(c.command)), 'weekly runs no git, AI, UI or clipboard commands');
 });

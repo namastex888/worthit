@@ -85,8 +85,11 @@ worthit --demo                   # the whole run on sample data
 `worthit weekly [--hosts all|none|a,b] [--allow-partial] [--no-files]` runs a fresh
 headless scan with all SSH hosts by default, git and AI off. It prints the fixed allowance
 post and facts as JSON, writes `<date>-worthit-share-allowance.png` (Chrome or Chromium
-required), and saves a checkpoint in SQLite's `weekly` table. `--no-files` skips the PNG
-and leaves `image: null`; the local store is still updated. It never asks questions,
+required) and `<date>-worthit-audit.log` beside it, and saves a checkpoint in SQLite's
+`weekly` table. The audit uses the plain scan format, including scan reads, commands,
+selected SSH hosts and output writes. JSON names the absolute paths in `image` and
+`audit_log`; both are null with `--no-files` or `--demo`. `--no-files` skips output
+artifacts; the local store is still updated. It never asks questions,
 opens browser UI, touches the clipboard or posts.
 `worthit weekly --demo` previews synthetic JSON without reading or writing a store or files.
 
@@ -94,7 +97,8 @@ Exit **0** means safe to post; **3** means the JSON is available but a machine i
 left out, or has retained units inside this week. Reasons name each machine, and retained
 units name their day and provider. `--allow-partial` changes exit 3 to 0, keeping
 `safe_to_post: false`. Exit **1** means no result (scan failure, no allowance data this
-week, or PNG/store failure). Floors alone, including pre-retirement weeks, and retained units only in earlier weeks are safe.
+week, or PNG/audit/store failure). Floors alone, including pre-retirement weeks, and retained units only in earlier weeks are safe.
+An exit-1 run still writes the audit log; it prints no JSON and saves no weekly row.
 
 `compared_with` is the latest earlier checkpoint ending at least six days before this
 week's end. Only the same plan measured at both endpoints gets a percentage in `plans`,

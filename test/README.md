@@ -109,6 +109,12 @@ clipboard commands fail if called. `docs/weekly-checkpoint-demo.png` is a render
 visually checked allowance card from bundled demo data with first-checkpoint changes.
 Demo checkpoints ignore a sentinel baseline and leave both default and explicit
 fixture stores byte-for-byte unchanged; an absent demo store is never created.
+Issue #60 extends this same fixture with real synthetic scans on both exit 0 and
+unsafe exit 3: the audit beside the PNG names local reads, scanner commands, selected
+SSH attempts and output writes, and its absolute path matches JSON and SQLite.
+Only headless Chrome is replaced by a deterministic one-pixel PNG writer; no browser
+is launched. `--no-files` keeps each output folder empty, reports null paths and
+still stores its checkpoint; demo also reports a null audit path without store writes.
 
 `git-source-coverage` seeds literal daily PR and commit counts in both stores and
 uses synthetic meter, local git, gh (two accounts), glab (two hosts), and tea
