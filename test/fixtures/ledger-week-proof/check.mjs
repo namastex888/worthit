@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { sourceCase } from '../../support/source-case.mjs';
 import { blocks, strip, len } from '../../../src/draw.mjs';
 import { cardSpec, cardHtml } from '../../../src/card.mjs';
@@ -115,6 +115,31 @@ sourceCase(folder, ({ expected, tmp, home, env, python, root, run, query }) => {
   surfaces(scan('local-day', local), 'local-day', null);
   sql('local-day', `UPDATE plan_value SET day='${expected.get('local_day')}' WHERE day='2026-11-07';`);
   surfaces(scan('local-day', local), 'local-day', 0);
+
+  // Synthetic shaping controls isolate the day key from the age of the source logs.
+  const shapeScript = `import fs from 'node:fs';
+import {buildData,git,AUDIT} from ${JSON.stringify(pathToFileURL(path.join(root, 'src/collect.mjs')).href)};
+const prices=JSON.parse(fs.readFileSync(${JSON.stringify(path.join(root, 'core/prices.json'))}));
+const w={usd_per_full_week:12,meter_start_pct:0,meter_end_pct:100,hours:1,measured:{api_usd:12,output_tokens:1000,cached_input_tokens:0,model_mix_by_usd:{}}};
+const cfg={days:21},g=process.env.FIXTURE_FIRST_GIT ? await git(cfg,()=>{}) : null;
+const data=buildData({prices,this_week:{claude:w}},g,cfg,{counts:{},hosts:[{alias:'box-b',ok:true}]});
+console.log(JSON.stringify({change:data.plans[0].change_vs_last_week_pct,audit:AUDIT}));`;
+  const shape = (store, overrides = {}) => JSON.parse(run(process.execPath,
+    ['--input-type=module', '-e', shapeScript],
+    { ...env, FIXTURE_ACCOUNTS: '[]', WORTHIT_HOME: path.join(tmp, store), ...overrides }));
+  for (const test of expected.get('dst')) {
+    copy(test.name);
+    sql(test.name, `INSERT OR REPLACE INTO plan_value VALUES
+      ('${test.day}', 'claude', 'Claude Ultra', 6, 1, 1, 'measured'),
+      ('${test.elapsed_day}', 'claude', 'Claude Ultra', 99, 1, 1, 'floor');`);
+    assert.equal(shape(test.name, { FIXTURE_NOW: test.now, TZ: 'America/New_York' }).change,
+      test.change, `ledger-week-proof / ${test.name} uses seven local calendar days`);
+  }
+  // git() creates its tables before buildData on a fresh store, with no plan_value yet.
+  const firstGit = shape('first-git', { FIXTURE_FIRST_GIT: '1' });
+  assert.equal(firstGit.change, null, 'ledger-week-proof / first git run has no baseline');
+  assert.ok(firstGit.audit.every(line => !line.includes('previous plan value unavailable')),
+    'ledger-week-proof / absent plan_value on first git run is not an audit failure');
 
   // Previously measured observation cannot overrule known retained prior-week data.
   copy('retained');

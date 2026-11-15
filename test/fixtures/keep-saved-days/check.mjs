@@ -232,9 +232,15 @@ console.log(JSON.stringify(buildData(report,null,cfg,{counts:{},hosts:[{alias:'b
   const pastEnd = new Date(Date.now() - 8 * 864e5).toISOString().slice(0, 13);
   fs.writeFileSync(path.join(env.WORTHIT_HOME, 'weeks/ledger.jsonl'), JSON.stringify({ provider: 'claude', quality: 'clean', reset: 'reset-a', start: pastEnd, end: pastEnd, usd_measured: 10, usd_per_full_week: 10, meter: [0, 100] }) + '\n');
   assert.equal(proof([]).plans[0].change_vs_last_week_pct, null, 'ledger alone cannot certify a previous measured observation');
+  // Restore the positive control: an intact sliding window must keep a saved measured comparison.
+  run(python, ['-c', `import sqlite3,sys
+d=sqlite3.connect(sys.argv[1])
+d.execute("INSERT OR REPLACE INTO plan_value VALUES (?, 'claude', 'Claude Ultra', 10, 1, 1, 'measured')", ('2026-11-07',))
+d.commit(); d.close()`, path.join(env.WORTHIT_HOME, 'worthit.db')]);
+  assert.equal(proof([]).plans[0].change_vs_last_week_pct, 100, 'saved measured baseline permits a change');
   const sevenProof = proof(seven.machines_retained, 7).plans[0];
   assert.equal(sevenProof.proof, 'measured', '--days 7 sliding edge must not force floor');
-  assert.equal(sevenProof.change_vs_last_week_pct, null, '--days 7 with ledger still needs a stored measured observation');
+  assert.equal(sevenProof.change_vs_last_week_pct, 100, '--days 7 does not suppress the saved measured comparison');
   const floor = proof(after.machines_retained);
   assert.equal(floor.plans.length, 3);
   for (const p of floor.plans) { assert.equal(p.proof, 'floor'); assert.equal(p.change_vs_last_week_pct, null); }

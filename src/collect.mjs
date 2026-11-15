@@ -372,12 +372,14 @@ export function buildData(report, g, cfg, scanInfo) {
   let ledger = []; try { ledger = fs.readFileSync(path.join(HOME, 'weeks', 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch { /* first run */ }
   // A daily observation certifies only its own stored value, never a ledger pool.
   // Read before this run replaces today's row; do not substitute a nearby day.
+  const previousDay = new Date(now); previousDay.setDate(previousDay.getDate() - 7);
   let previousValues = [];
   if (fs.existsSync(path.join(HOME, 'worthit.db'))) {
     let db;
     try {
       db = new DatabaseSync(path.join(HOME, 'worthit.db'), { readOnly: true });
-      previousValues = db.prepare('SELECT provider, plan, usd_per_full_week, proof FROM plan_value WHERE day = ?').all(dayKey(w1));
+      if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'plan_value'").get())
+        previousValues = db.prepare('SELECT provider, plan, usd_per_full_week, proof FROM plan_value WHERE day = ?').all(dayKey(previousDay));
     } catch (e) { audit('note', 'previous plan value unavailable: ' + e.message); }
     finally { db?.close(); }
   }

@@ -94,10 +94,13 @@ text. Two complete $9 runs show 0%. A literal stored $6 observation produces 50%
 while the independent ledger pool stays $9, proving the denominator is the stored
 value. Exact-day controls reject measured rows six or eight days back, the wrong
 provider/plan, zero USD, absent/null proof and a same-day overwritten floor. A local
-New York date crossing UTC midnight pins the run-day key. Retained prior-week units
+New York date crossing UTC midnight pins the run-day key; spring-forward and fall-back
+controls require seven local calendar days rather than 168 elapsed hours. A first git
+run creating its tables without `plan_value` must not log a missing-baseline error. Retained prior-week units
 still override stored measured proof. Historical ledger rows remain unmeasured.
-The common source cases and saved-days fixture now expect null for ledger-only
-history: today's complete machine answers cannot prove an earlier observation.
+The common source cases and saved-days fixture expect null for ledger-only history:
+today's complete machine answers cannot prove an earlier observation. Saved-days then
+seeds a measured $10 baseline and checks a 100% change, including its intact seven-day window.
 
 Each case keeps literal expectations in its own `expected-data.json`. Every root key must
 be exercised, including the adopted saved-days expectations; unused or misspelled keys fail.

@@ -3,5 +3,9 @@
   "both_measured": {"before": "measured", "before_usd": 9, "after": "measured", "after_usd": 9, "change": 0},
   "stored_denominator": 50,
   "ineligible": ["six-days", "eight-days", "wrong-provider", "wrong-plan", "zero", "unknown", "overwritten-floor", "no-proof"],
-  "local_day": "2026-11-06"
+  "local_day": "2026-11-06",
+  "dst": [
+    {"name": "fall-back", "now": "2026-11-02T04:30:00Z", "day": "2026-10-25", "elapsed_day": "2026-10-26", "change": 100},
+    {"name": "spring-forward", "now": "2027-03-15T04:30:00Z", "day": "2027-03-08", "elapsed_day": "2027-03-07", "change": 100}
+  ]
 }
