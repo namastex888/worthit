@@ -149,7 +149,8 @@ const ASK_SYSTEM = catalog.prompt({ system: 'You answer questions about a develo
 
 const safe = (type, props) => { try { return blocks[type](DATA, props || {}); } catch (e) { return ['  ' + type + ': could not draw (' + String(e.message).slice(0, 60) + ')']; } };
 const registry = { Stack: ({ children }) => h(Box, { flexDirection: 'column' }, children), Row: ({ children }) => h(Box, { flexDirection: 'row', gap: 1 }, children) };
-for (const t of Object.keys(blocks)) registry[t] = ({ element }) => h(Text, { wrap: 'truncate-end' }, safe(t, element.props).join('\n'));
+// Ink truncates a whole multiline Text, including later rows. Wrap blocks to keep every line.
+for (const t of Object.keys(blocks)) registry[t] = ({ element }) => h(Text, { wrap: 'wrap' }, safe(t, element.props).join('\n'));
 const InkRenderer = createRenderer(catalog, registry);
 class Guard extends React.Component { constructor(p) { super(p); this.state = { e: null }; } static getDerivedStateFromError(e) { return { e }; }
   render() { return this.state.e ? h(Text, { dimColor: true }, '  (waiting for the next patch)') : this.props.children; } }
@@ -158,7 +159,9 @@ function ready(spec) {               // a streamed spec can name children that h
   const el = {}; for (const [k, v] of Object.entries(spec.elements)) if (v && v.type && registry[v.type]) el[k] = { ...v, props: v.props || {}, children: (v.children || []).filter(c => spec.elements[c] && registry[spec.elements[c].type]) };
   return el[spec.root] ? { ...spec, elements: el } : null;
 }
-const View = ({ spec, k }) => { const r = ready(spec); return r ? h(Guard, { key: k }, h(InkRenderer, { spec: r, state: {} })) : null; };
+const View = ({ spec, k }) => { const r = ready(spec); return r ? h(Box, { flexDirection: 'column' },
+  (process.stdout.columns || 80) < W ? h(Text, { color: 'yellow' }, `  Below ${W} columns: dashboard lines wrap.`) : null,
+  h(Guard, { key: k }, h(InkRenderer, { spec: r, state: {} }))) : null; };
 // the same spec as plain lines, for the image and the .md
 function specLines(spec) {
   const r = ready(spec); if (!r) return [];

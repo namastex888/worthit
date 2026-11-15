@@ -1,0 +1,77 @@
+{
+  "cli_cases": [
+    {
+      "name": "demo-80",
+      "cli_exit": 0,
+      "signal": null,
+      "columns": 80
+    },
+    {
+      "name": "demo-120",
+      "cli_exit": 0,
+      "signal": null,
+      "columns": 120
+    },
+    {
+      "name": "demo-pipe",
+      "cli_exit": 0,
+      "signal": null,
+      "columns": "pipe (80 fallback)"
+    },
+    {
+      "name": "retained-80",
+      "cli_exit": 0,
+      "signal": null,
+      "columns": 80
+    },
+    {
+      "name": "retained-120",
+      "cli_exit": 0,
+      "signal": null,
+      "columns": 120
+    },
+    {
+      "name": "retained-pipe",
+      "cli_exit": 0,
+      "signal": null,
+      "columns": "pipe (80 fallback)"
+    }
+  ],
+  "first_render": [
+    {
+      "name": "retained-80",
+      "renderer_exit": 0,
+      "renderer_signal": null,
+      "renderer_error": null,
+      "image_written": true,
+      "cli_exit": 0
+    },
+    {
+      "name": "retained-120",
+      "renderer_exit": 0,
+      "renderer_signal": null,
+      "renderer_error": null,
+      "image_written": true,
+      "cli_exit": 0
+    }
+  ],
+  "final_render": [
+    {
+      "name": "retained-80",
+      "renderer_exit": 0,
+      "renderer_signal": null,
+      "renderer_error": null,
+      "image_written": true,
+      "cli_exit": 0
+    },
+    {
+      "name": "retained-120",
+      "renderer_exit": 2,
+      "renderer_signal": null,
+      "renderer_error": null,
+      "image_written": true,
+      "cli_exit": 0
+    }
+  ],
+  "inspection": "Both final PNGs inspected. Narrow image physically wraps captured lines at 80 columns; machine reason, account rows, $68 open allowance, $24 Total unused and bottom borders remain visible. Wide120 retains the existing layout. Final wide Chrome exited2 after writing the inspected image; product CLI exited0."
+}

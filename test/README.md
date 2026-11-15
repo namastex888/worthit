@@ -169,3 +169,19 @@ and fixed share text assert at least on counts, partial denominators on costs an
 no comparisons; complete PR coverage preserves changes even if commits failed.
 `WORTHIT_FIXTURE_ARTIFACTS` optionally saves synthetic data/drawn text for image
 inspection. Source failures are never simulated by editing output proof flags.
+
+`dashboard-lines` runs the actual `--demo --git no --ai no` CLI through installed Ink
+at controlled stdout widths 80 and 120, plus a pipe with Ink's 80-column fallback.
+It repeats those three boundaries with a fixture-only copy of demo data: one retained
+`box-z` day, floor plans and $24 unused allowance. Literal assertions pin account rows,
+amounts, Total unused, closing footers, later content, the retained-machine reason and
+the narrow-width notice. No production data or store is changed. Set
+`WORTHIT_FIXTURE_ARTIFACTS` to save captures and individual CLI exit statuses;
+`test/fixtures/dashboard-lines/render.mjs <captures> <images>` separately renders
+synthetic captures with local Chrome and reports renderer status apart from CLI status.
+The inspected [80-column capture](fixtures/dashboard-lines/retained-80.png) shows
+physical wrapping of the fixed-width lines; the [120-column capture](fixtures/dashboard-lines/retained-120.png)
+keeps the wide layout. Both show the retained-machine reason, $68 open allowance,
+$24 Total unused and closing borders. `evidence.json` records CLI and renderer
+statuses separately: the final wide Chrome process exited 2 after writing its
+inspected PNG; all six product CLI runs exited 0. Image generation is outside the gate.
