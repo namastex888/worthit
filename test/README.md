@@ -95,6 +95,8 @@ The first checkpoint ignores an existing ledger. Empty sources and a missing
 Python executable exit 1. Every run uses isolated fixture homes; UI, git, AI and
 clipboard commands fail if called. `docs/weekly-checkpoint-demo.png` is a rendered,
 visually checked allowance card from bundled demo data with first-checkpoint changes.
+Demo checkpoints ignore a sentinel baseline and leave both default and explicit
+fixture stores byte-for-byte unchanged; an absent demo store is never created.
 
 `git-source-coverage` seeds literal daily PR and commit counts in both stores and
 uses synthetic meter, local git, gh (two accounts), glab (two hosts), and tea

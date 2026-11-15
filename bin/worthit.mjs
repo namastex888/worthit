@@ -529,15 +529,17 @@ if (WEEKLY) {
     const info = DEMO ? null : await scan(cfg, () => {});
     const D = DEMO ? demoData() : buildData(await analyse(info.runDir), null, cfg, info);
     if (!D.plans.length || !(D.totals.output_tokens || D.totals.api_value_usd)) throw new Error('no allowance data for this week');
-    db = openWeekly(HOME);
-    // Millisecond collisions must still record one row per successful invocation.
-    const exists = db.prepare('SELECT 1 FROM weekly WHERE generated_at = ?');
-    while (exists.get(D.generated_at)) D.generated_at = new Date(Date.parse(D.generated_at) + 1).toISOString();
-    const checkpoint = prepareWeekly(D, weeklyBaseline(db, D));
+    if (!DEMO) {
+      db = openWeekly(HOME);
+      // Millisecond collisions must still record one row per successful invocation.
+      const exists = db.prepare('SELECT 1 FROM weekly WHERE generated_at = ?');
+      while (exists.get(D.generated_at)) D.generated_at = new Date(Date.parse(D.generated_at) + 1).toISOString();
+    }
+    const checkpoint = prepareWeekly(D, db ? weeklyBaseline(db, D) : null);
     const result = await makeShare(D, 'allowance', { agent: null, clipOk: false, files: !NO_FILES });
     if (!NO_FILES && !result.image) throw new Error('allowance PNG could not be rendered; install Chrome or Chromium, or use --no-files');
     checkpoint.text = result.text; checkpoint.image = result.image;
-    saveWeekly(db, checkpoint);
+    if (db) saveWeekly(db, checkpoint);
     console.log(JSON.stringify(checkpoint, null, 1));
     process.exitCode = checkpoint.safe_to_post || flag('--allow-partial') ? 0 : 3;
   } catch (e) { console.error('worthit weekly: ' + e.message); process.exitCode = 1; }

@@ -118,6 +118,8 @@ shortcuts and always uses the fixed `SHARE_TOPICS.allowance` template. No TTY, q
 browser UI, clipboard or posting. Chrome or Chromium is required to render
 `<date>-worthit-share-allowance.png` in the current folder; `--no-files` skips it.
 The local store is updated in either case.
+`--demo` uses bundled synthetic data and leaves all stores and files untouched;
+its baseline is always null.
 
 JSON fields (also documented by `worthit schema`):
 

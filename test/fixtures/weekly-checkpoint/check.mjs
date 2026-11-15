@@ -169,6 +169,26 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
   assert.deepEqual(boundary.moved.map(p => p.plan), expected.get('boundary_moved'));
   assert.deepEqual(boundary.plans.map(p => p.change_vs_last_week_pct), [5,-5,5.1,-5.1,5.001,-5.001]);
 
+  // --demo must never read or contaminate a real checkpoint store. Exercise
+  // both explicit WORTHIT_HOME and its default, always inside this fixture HOME.
+  const sentinelStore = path.join(home, '.worthit'), sentinel = openWeekly(sentinelStore);
+  saveWeekly(sentinel, { generated_at: '2026-11-07T12:00:00.000Z', week: { to: '2026-11-07' },
+    plans: [{ plan: 'Claude Ultra', usd_per_full_week: 100, proof: 'measured' }], safe_to_post: true });
+  sentinel.close(); fs.writeFileSync(path.join(sentinelStore, 'last.json'), 'synthetic sentinel: do not change');
+  const contents = () => Object.fromEntries(fs.readdirSync(sentinelStore).map(f => [f, fs.readFileSync(path.join(sentinelStore, f))]));
+  const beforeDemo = contents();
+  for (const explicit of [false, true]) {
+    const demoEnv = { ...env }; if (explicit) demoEnv.WORTHIT_HOME = sentinelStore; else delete demoEnv.WORTHIT_HOME;
+    const demo = JSON.parse(run(process.execPath, [path.join(root, 'bin/worthit.mjs'), 'weekly', '--demo'], demoEnv));
+    assert.equal(demo.compared_with, null, 'demo does not read the sentinel baseline');
+    assert.ok(demo.plans.every(p => p.change_vs_last_week_pct === null));
+    assert.equal(demo.image, null, 'demo keeps the existing no-files behavior');
+    assert.deepEqual(contents(), beforeDemo, 'demo leaves every sentinel file byte-for-byte unchanged');
+  }
+  const absentDemoStore = path.join(tmp, 'absent-demo-store');
+  run(process.execPath, [path.join(root, 'bin/worthit.mjs'), 'weekly', '--demo'], { ...env, WORTHIT_HOME: absentDemoStore });
+  assert.ok(!fs.existsSync(absentDemoStore), 'demo creates no store at all');
+
   // Remove every source in the isolated homes: a successful empty scan is no result.
   for (const boxHome of [home, path.join(tmp, 'box-b'), path.join(tmp, 'box-c')]) {
     for (const name of ['.claude', '.codex', '.gemini', '.meter']) fs.rmSync(path.join(boxHome, name), { recursive: true, force: true });

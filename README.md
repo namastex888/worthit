@@ -85,6 +85,7 @@ post and facts as JSON, writes `<date>-worthit-share-allowance.png` (Chrome or C
 required), and saves a checkpoint in SQLite's `weekly` table. `--no-files` skips the PNG
 and leaves `image: null`; the local store is still updated. It never asks questions,
 opens browser UI, touches the clipboard or posts.
+`worthit weekly --demo` previews synthetic JSON without reading or writing a store or files.
 
 Exit **0** means safe to post; **3** means the JSON is available but a machine is missing,
 left out, or has retained units inside this week. Reasons name each machine, and retained
