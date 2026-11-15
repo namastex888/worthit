@@ -9,4 +9,8 @@ forge-b.test
   x forge-b.test: could not read the token: synthetic keyring unavailable
 forge-c.test
   x forge-c.test: failed to initialize api client: synthetic invalid configuration
-  X could not authenticate to one or more of the configured GitLab instances
+          
+   ERROR  
+          
+  X could not authenticate to one or more of the configured GitLab instances.                                         
+

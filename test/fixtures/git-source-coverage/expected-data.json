@@ -678,24 +678,25 @@
     ]
   },
   "glab-port": {
-    "prs": true,
+    "prs": false,
     "commits": true,
-    "failed": [],
+    "failed": [
+      "glab:gitlab:3000"
+    ],
     "counts": [
-      3,
+      9,
       2,
-      0,
+      7,
       0
     ],
     "live": {
-      "prs": 3,
+      "prs": 2,
       "commits": 2,
       "repos": 1
     },
     "host": "gitlab:3000",
-    "keys": [
-      "gitlab:3000/example/host!102"
-    ]
+    "keys": [],
+    "portRejected": true
   },
   "glab-digit-tld": {
     "prs": true,
@@ -738,24 +739,25 @@
     ]
   },
   "glab-localhost": {
-    "prs": true,
+    "prs": false,
     "commits": true,
-    "failed": [],
+    "failed": [
+      "glab:localhost:3000"
+    ],
     "counts": [
-      3,
+      9,
       2,
-      0,
+      7,
       0
     ],
     "live": {
-      "prs": 3,
+      "prs": 2,
       "commits": 2,
       "repos": 1
     },
     "host": "localhost:3000",
-    "keys": [
-      "localhost:3000/example/host!105"
-    ]
+    "keys": [],
+    "portRejected": true
   },
   "glab-malformed-before": {
     "prs": false,
@@ -914,5 +916,25 @@
       "10.0.0.5/example/host!101"
     ],
     "line": "??? unreadable inventory body"
+  },
+  "glab-error-host": {
+    "prs": true,
+    "commits": true,
+    "failed": [],
+    "counts": [
+      3,
+      2,
+      0,
+      0
+    ],
+    "live": {
+      "prs": 3,
+      "commits": 2,
+      "repos": 1
+    },
+    "host": "ERROR",
+    "keys": [
+      "error/example/host!106"
+    ]
   }
 }

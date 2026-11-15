@@ -6,7 +6,11 @@ gitlab.com
   ✓ GraphQL Endpoint: https://gitlab.com/api/graphql/
   ! No token found (checked config file, keyring, and environment variables).
   ??? unreadable inventory body
-  X could not authenticate to one or more of the configured GitLab instances.
+          
+   ERROR  
+          
+  X could not authenticate to one or more of the configured GitLab instances.                                         
+
 10.0.0.5
   ✓ Logged in to 10.0.0.5 as coder-a (keyring)
   ✓ Git operations for 10.0.0.5 configured to use ssh protocol.

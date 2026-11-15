@@ -2,7 +2,9 @@
 import fs from 'node:fs';
 const [command, ...args] = process.argv.slice(2), env = process.env;
 const mode = fs.readFileSync(env.FIXTURE_MODE, 'utf8').trim();
-fs.appendFileSync(env.FIXTURE_TRACE, JSON.stringify({ command, args }) + '\n');
+const authEnv = command === 'glab' && args.join(' ') === 'auth status'
+  ? { GLAB_CHECK_UPDATE: env.GLAB_CHECK_UPDATE, GLAB_SHOW_WHATS_NEW: env.GLAB_SHOW_WHATS_NEW } : null;
+fs.appendFileSync(env.FIXTURE_TRACE, JSON.stringify({ command, args, ...(authEnv ? { authEnv } : {}) }) + '\n');
 const fail = () => process.exit(1);
 const unexpected = () => { fs.appendFileSync(env.FIXTURE_TRACE, '"unexpected"\n'); process.exit(86); };
 if (command === 'usagemeter') {
@@ -38,9 +40,10 @@ if (command === 'usagemeter') {
   } else unexpected();
 } else if (command === 'glab') {
   if (args.join(' ') === 'auth status') {
+    if (authEnv.GLAB_CHECK_UPDATE !== 'false' || authEnv.GLAB_SHOW_WHATS_NEW !== 'false') unexpected();
     if (mode === 'glab-discovery') fail();
     if (mode === 'glab-malformed') { console.log('unrecognized inventory'); process.exit(0); }
-    const hostModes = ['glab-ip', 'glab-port', 'glab-digit-tld', 'glab-bare', 'glab-localhost', 'glab-malformed-before', 'glab-malformed-after', 'glab-orphan-body', 'glab-unreadable-body', 'glab-empty-block', 'glab-partial-errors', 'glab-footer'];
+    const hostModes = ['glab-ip', 'glab-port', 'glab-digit-tld', 'glab-bare', 'glab-localhost', 'glab-error-host', 'glab-malformed-before', 'glab-malformed-after', 'glab-orphan-body', 'glab-unreadable-body', 'glab-empty-block', 'glab-partial-errors', 'glab-footer'];
     if (hostModes.includes(mode)) {
       const text = fs.readFileSync(new URL(mode + '.txt', import.meta.url), 'utf8');
       // Exercise both streams; glab itself normally prints text status to stderr.
@@ -51,7 +54,10 @@ if (command === 'usagemeter') {
     const file = mode === 'logged-out' ? 'glab-logged-out.txt' : mode === 'glab-self-hosted' ? 'glab-self-hosted.txt' : mode === 'glab-auth-error' ? 'glab-auth-error.txt' : mode === 'glab-no-instances' ? 'glab-no-instances.txt' : 'glab-authenticated.txt';
     process.stderr.write(fs.readFileSync(new URL(file, import.meta.url), 'utf8'));
     if (file !== 'glab-authenticated.txt') fail();
-  } else if (args[0] === 'api' && args[1] === '--hostname' && ['forge-a.test', 'forge-b.test', '10.0.0.5', 'gitlab:3000', 'gitlab.k8s', 'gitlab', 'localhost:3000'].includes(args[2]) && args[3].startsWith('merge_requests?scope=created_by_me&state=merged&updated_after=')) {
+  } else if (args[0] === 'api' && args[1] === '--hostname') {
+    // glab 1.123.0 validates --hostname before constructing any client/request.
+    if (args[2].includes(':') || args[2].includes('/')) { console.error('Error parsing --hostname: invalid hostname.'); fail(); }
+    if (!['forge-a.test', 'forge-b.test', '10.0.0.5', 'gitlab.k8s', 'gitlab', 'ERROR'].includes(args[2]) || !args[3].startsWith('merge_requests?scope=created_by_me&state=merged&updated_after=')) unexpected();
     if (mode === 'glab-host' && args[2] === 'forge-b.test') fail();
     const rows = JSON.parse(fs.readFileSync(new URL('glab-merge-requests.json', import.meta.url), 'utf8'));
     console.log(JSON.stringify(rows[args[2]] || []));

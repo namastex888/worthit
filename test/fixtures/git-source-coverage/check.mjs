@@ -14,7 +14,8 @@ const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
 const expected = expectedData(path.join(folder, 'expected-data.json'));
 const isolated = isolatedEnvironment(), { tmp, bin, home, env } = isolated;
 Object.assign(env, { NODE_OPTIONS: `--import=${path.join(root, 'test/support/clock.mjs')}`, PYTHONPATH: path.join(root, 'test/support'),
-  FIXTURE_MODE: path.join(tmp, 'mode'), FIXTURE_TRACE: path.join(tmp, 'commands.jsonl'), FIXTURE_AUDIT: path.join(tmp, 'audit.log') });
+  FIXTURE_MODE: path.join(tmp, 'mode'), FIXTURE_TRACE: path.join(tmp, 'commands.jsonl'), FIXTURE_AUDIT: path.join(tmp, 'audit.log'),
+  GLAB_CHECK_UPDATE: 'true', GLAB_SHOW_WHATS_NEW: 'true' }); // Discovery must override inherited notice settings.
 const day = '2026-11-10', emptyDay = '2026-11-11';
 const run = args => {
   const r = spawnSync(process.execPath, args, { cwd: tmp, env, encoding: 'utf8', timeout: 30000, maxBuffer: 16 << 20 });
@@ -45,7 +46,9 @@ const auditedCommands = (mode, calls) => {
     return match ? [{ kind: match[1], text: (path.basename(match[2]) + match[3]).replaceAll('"', '').replace(/\s{2,}\(.*$/, '') }] : [];
   });
   for (const entry of entries) if (/^(gh|glab|tea) api /.test(entry.text)) assert.equal(entry.kind, 'net', `${mode}: ${entry.text} is network activity`);
-  for (const { command, args } of calls.filter(x => ['gh', 'usagemeter', 'tea', 'glab'].includes(x.command))) {
+  for (const { command, args, authEnv } of calls.filter(x => ['gh', 'usagemeter', 'tea', 'glab'].includes(x.command))) {
+    if (command === 'glab' && args.join(' ') === 'auth status') assert.deepEqual(authEnv,
+      { GLAB_CHECK_UPDATE: 'false', GLAB_SHOW_WHATS_NEW: 'false' }, `${mode}: discovery disables update requests and notices`);
     // gh's audit displays the endpoint, search and pagination; output-format flags are omitted.
     const shown = command === 'gh' && args[0] === 'api' ? ['api', 'search/issues', args.find(x => x.startsWith('q=')), '--paginate'] : args;
     const text = [command, ...shown].join(' '), index = entries.findIndex(entry => entry.text === text);
@@ -57,9 +60,9 @@ const collect = mode => {
   fs.writeFileSync(env.FIXTURE_MODE, mode); const start = trace().length, data = run([path.join(folder, 'collect.mjs')]);
   auditedCommands(mode, trace().slice(start)); return data;
 };
-const coverage = (data, prs, commits, failed) => {
-  assert.equal(data.git.coverage.prs, prs); assert.equal(data.git.coverage.commits, commits);
-  assert.deepEqual(data.git.coverage.sources.filter(x => !x.answered).map(x => x.source), failed);
+const coverage = (data, prs, commits, failed, name) => {
+  assert.equal(data.git.coverage.prs, prs, `${name}: PR coverage`); assert.equal(data.git.coverage.commits, commits, `${name}: commit coverage`);
+  assert.deepEqual(data.git.coverage.sources.filter(x => !x.answered).map(x => x.source), failed, `${name}: failed sources`);
   const audit = fs.readFileSync(env.FIXTURE_AUDIT, 'utf8');
   for (const source of failed) assert.ok(audit.includes(`git source ${source}: FAILED`), `audit names ${source}`);
 };
@@ -84,7 +87,7 @@ try {
   const failedCLI = run([path.join(root, 'bin/worthit.mjs'), '--json', '--no-files', '--hosts', 'none', '--git', 'yes', '--ai', 'no']);
   const check = (name, data, audit = true) => {
     const e = expected.get(name);
-    if (audit) coverage(data, e.prs, e.commits, e.failed);
+    if (audit) coverage(data, e.prs, e.commits, e.failed, name);
     else {
       assert.equal(data.git.coverage.prs, e.prs); assert.equal(data.git.coverage.commits, e.commits);
       assert.deepEqual(data.git.coverage.sources.filter(x => !x.answered).map(x => x.source), e.failed);
@@ -112,23 +115,27 @@ try {
       assert.ok(!calls.some(x => x.command === 'glab' && x.args[0] === 'api' && x.args[2] === 'gitlab.com'));
     }
     if (mode === 'gh-legacy') assert.deepEqual(data.git.coverage.sources, expected.get('legacy_sources'));
+    if (mode === 'glab-no-instances') assert.ok(fs.readFileSync(env.FIXTURE_AUDIT, 'utf8').includes('glab has no authenticated instance: skipped as a source'), `${mode}: real Fang frame is skipped`);
     if (mode === 'glab-host') assert.equal(data.git.coverage.sources.find(x => x.source === 'glab:forge-a.test').answered, true);
   }
-  // Issue #54: literal real MR rows must survive discovery, routing and both stores.
-  for (const mode of ['glab-ip', 'glab-port', 'glab-digit-tld', 'glab-bare', 'glab-localhost', 'glab-malformed-before', 'glab-malformed-after', 'glab-orphan-body', 'glab-unreadable-body', 'glab-empty-block', 'glab-partial-errors', 'glab-footer']) {
+  // Issue #54: supported host keys count literal MRs; glab's rejected port keys stay floors (#91).
+  for (const mode of ['glab-ip', 'glab-port', 'glab-digit-tld', 'glab-bare', 'glab-localhost', 'glab-error-host', 'glab-malformed-before', 'glab-malformed-after', 'glab-orphan-body', 'glab-unreadable-body', 'glab-empty-block', 'glab-partial-errors', 'glab-footer']) {
     seed(); const start = trace().length, data = collect(mode), e = expected.get(mode);
     assert.equal(data.git.merged_prs, e.live.prs, `${mode}: literal merge request counted`);
     check(mode, data);
-    assert.equal(data.git.sources.gitlab, 1, `${mode}: one GitLab merge request`);
-    assert.ok(data.git.coverage.sources.some(x => x.source === 'glab:' + e.host && x.answered), `${mode}: readable host answered`);
+    assert.equal(data.git.sources.gitlab, e.keys.length, `${mode}: literal GitLab merge request count`);
+    assert.ok(data.git.coverage.sources.some(x => x.source === 'glab:' + e.host && x.answered === !e.portRejected), `${mode}: host answer matches glab validation`);
     const calls = trace().slice(start).filter(x => x.command === 'glab' && x.args[0] === 'api');
-    assert.deepEqual(calls.map(x => x.args), [['api', '--hostname', e.host, 'merge_requests?scope=created_by_me&state=merged&updated_after=2026-08-22T12:00:00.000Z&per_page=100&page=1']], `${mode}: exact configured host and relative REST request; glab owns protocol/api_host/port`);
+    assert.deepEqual(calls.map(x => x.args), [['api', '--hostname', e.host, 'merge_requests?scope=created_by_me&state=merged&updated_after=2026-08-22T12:00:00.000Z&per_page=100&page=1']], `${mode}: exact configured key and relative REST request passed to glab`);
     const db = new DatabaseSync(path.join(env.WORTHIT_HOME, 'worthit.db'), { readOnly: true });
     assert.deepEqual(db.prepare('SELECT key FROM pr_kind ORDER BY key').all().map(x => x.key), e.keys, `${mode}: literal MR identity persisted`); db.close();
     const audit = fs.readFileSync(env.FIXTURE_AUDIT, 'utf8');
-    if (e.line) assert.ok(audit.includes('glab discovery could not read') && audit.includes(e.line), `${mode}: unreadable line named`);
+    if (e.portRejected) {
+      assert.ok(audit.includes('GitLab: no usable answer from logged-in glab: using the pull requests already stored'), `${mode}: rejected hostname has no usable answer`);
+      assert.equal(data.git.merged_prs_change_pct, null, `${mode}: rejected hostname is a floor`);
+    } else if (e.line) assert.ok(audit.includes('glab discovery could not read') && audit.includes(e.line), `${mode}: unreadable line named`);
     else assert.ok(!audit.includes('FAILED'), `${mode}: complete host coverage`);
-    console.log(`${mode}: literal MR counted, exact subprocess target audited as net; coverage.prs=${e.prs}`);
+    console.log(`${mode}: ${e.portRejected ? 'port key rejected before request; no MR counted' : 'literal MR counted'}, exact subprocess target audited as net; coverage.prs=${e.prs}`);
   }
   for (const command of ['gh', 'glab', 'tea']) fs.unlinkSync(path.join(bin, command));
   seed(); const absent = collect('good'); check('no-forges', absent);

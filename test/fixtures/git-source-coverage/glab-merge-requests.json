@@ -8,15 +8,6 @@
       "title": "feat: synthetic host delivery"
     }
   ],
-  "gitlab:3000": [
-    {
-      "merged_at": "2026-11-10T15:00:00Z",
-      "references": {
-        "full": "example/host!102"
-      },
-      "title": "feat: synthetic host delivery"
-    }
-  ],
   "gitlab.k8s": [
     {
       "merged_at": "2026-11-10T15:00:00Z",
@@ -35,13 +26,13 @@
       "title": "feat: synthetic host delivery"
     }
   ],
-  "localhost:3000": [
+  "ERROR": [
     {
       "merged_at": "2026-11-10T15:00:00Z",
       "references": {
-        "full": "example/host!105"
+        "full": "example/host!106"
       },
-      "title": "feat: synthetic host delivery"
+      "title": "feat: synthetic badge-named host delivery"
     }
   ]
 }

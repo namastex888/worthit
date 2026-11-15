@@ -278,17 +278,19 @@ export async function git(cfg, on) {
   }
   let glHosts = [];
   if (optional('glab')) {
-    const st = spawnSync('glab', ['auth', 'status'], { encoding: 'utf8', timeout: 20000 });
+    const st = spawnSync('glab', ['auth', 'status'], { encoding: 'utf8', timeout: 20000,
+      env: { ...process.env, GLAB_CHECK_UPDATE: 'false', GLAB_SHOW_WHATS_NEW: 'false' } });
     const blocks = []; let malformed = false, noInstances = false;
     const unreadable = line => { malformed = true; audit('note', `glab discovery could not read line: ${line.trim()}`); };
     // glab prints unindented host keys and indents their messages by two spaces.
-    // Keep the exact key for --hostname: glab owns api_protocol/api_host/port routing.
+    // Keep the exact key for --hostname; glab rejects port keys before making a request.
     for (const stream of [st.stdout || '', st.stderr || '']) {
       let cur = null, footer = false;
-      for (const line of stream.replace(/\x1b\[[0-9;]*m/g, '').split(/\r?\n/)) {
-        if (!line.trim()) continue;
+      for (const raw of stream.replace(/\x1b\[[0-9;]*m/g, '').split(/\r?\n/)) {
+        const line = raw.trimEnd();
+        if (!line || /^ +ERROR$/.test(line)) continue;
         if (/^\s*[Xx✗×] could not authenticate to one or more of the configured GitLab instances\.?$/.test(line)) { cur = null; continue; }
-        if (/^no GitLab instances have been authenticated with glab; run .+ to authenticate$/.test(line)) { noInstances = true; cur = null; continue; }
+        if (/^\s*no GitLab instances have been authenticated with glab; run .+ to authenticate\.?$/i.test(line)) { noInstances = true; cur = null; continue; }
         if (/^[!⚠] Token is from environment variable \w+\. This takes precedence over tokens stored in config or keyring\.$/.test(line)) { footer = true; cur = null; continue; }
         if (footer && /^  (Run .+ to find the source:|A plain path means it is set in your environment)/.test(line)) continue;
         if (/^\s/.test(line)) {
