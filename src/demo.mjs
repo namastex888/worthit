@@ -29,6 +29,11 @@ export async function demoPricing() { await wait(1100); }
 
 export function demoData() {
   const D = JSON.parse(fs.readFileSync(path.join(ROOT, 'src', 'demo-data.json'), 'utf8')), now = new Date();
+  // Delivery dates follow the same rolling week as the demo header, retaining sample counts and costs.
+  const shift = Date.parse(now.toISOString().slice(0, 10)) - Date.parse(D.week.to);
+  const move = day => new Date(Date.parse(day) + shift).toISOString().slice(0, 10);
+  for (const day of D.delivery?.days || []) day.day = move(day.day);
+  for (const week of D.delivery?.weeks || []) week.to = move(week.to);
   // Bundled git totals are a complete synthetic control using the existing coverage contract.
   if (D.git) D.git.coverage = { prs: true, commits: true, sources: [{ source: 'usagemeter', answered: true, metrics: ['prs', 'commits'] }, { source: 'git log', answered: true, metrics: ['commits'] }, { source: 'gh:demo-coder', answered: true, metrics: ['prs'] }] };
   D.generated_at = now.toISOString(); D.week = { from: new Date(now - 7 * 864e5).toISOString().slice(0, 10), to: now.toISOString().slice(0, 10) };
