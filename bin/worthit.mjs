@@ -159,8 +159,9 @@ function ready(spec) {               // a streamed spec can name children that h
   const el = {}; for (const [k, v] of Object.entries(spec.elements)) if (v && v.type && registry[v.type]) el[k] = { ...v, props: v.props || {}, children: (v.children || []).filter(c => spec.elements[c] && registry[spec.elements[c].type]) };
   return el[spec.root] ? { ...spec, elements: el } : null;
 }
-const View = ({ spec, k }) => { const r = ready(spec); return r ? h(Box, { flexDirection: 'column' },
-  (process.stdout.columns || 80) < W ? h(Text, { color: 'yellow' }, `  Below ${W} columns: dashboard lines wrap.`) : null,
+// Match measurement to the 98-column blocks drawn by Static; the terminal handles narrow wrapping.
+const View = ({ spec, k }) => { const r = ready(spec); return r ? h(Box, { flexDirection: 'column', width: W, flexShrink: 0 },
+  process.stdout.isTTY && process.stdout.columns < W ? h(Text, { color: 'yellow' }, `  Below ${W} columns: dashboard lines wrap.`) : null,
   h(Guard, { key: k }, h(InkRenderer, { spec: r, state: {} }))) : null; };
 // the same spec as plain lines, for the image and the .md
 function specLines(spec) {

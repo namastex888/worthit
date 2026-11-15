@@ -3,75 +3,119 @@
     {
       "name": "demo-80",
       "cli_exit": 0,
+      "capture_exit": 0,
       "signal": null,
-      "columns": 80
+      "stdout_tty": false,
+      "columns": 80,
+      "events_summary_blank_lines": 2
     },
     {
       "name": "demo-120",
       "cli_exit": 0,
+      "capture_exit": 0,
       "signal": null,
-      "columns": 120
+      "stdout_tty": false,
+      "columns": 120,
+      "events_summary_blank_lines": 2
     },
     {
       "name": "demo-pipe",
       "cli_exit": 0,
+      "capture_exit": 0,
       "signal": null,
-      "columns": "pipe (80 fallback)"
+      "stdout_tty": false,
+      "columns": 80,
+      "events_summary_blank_lines": 2
     },
     {
       "name": "retained-80",
       "cli_exit": 0,
+      "capture_exit": 0,
       "signal": null,
-      "columns": 80
+      "stdout_tty": false,
+      "columns": 80,
+      "events_summary_blank_lines": 2
     },
     {
       "name": "retained-120",
       "cli_exit": 0,
+      "capture_exit": 0,
       "signal": null,
-      "columns": 120
+      "stdout_tty": false,
+      "columns": 120,
+      "events_summary_blank_lines": 2
     },
     {
       "name": "retained-pipe",
       "cli_exit": 0,
+      "capture_exit": 0,
       "signal": null,
-      "columns": "pipe (80 fallback)"
-    }
-  ],
-  "first_render": [
-    {
-      "name": "retained-80",
-      "renderer_exit": 0,
-      "renderer_signal": null,
-      "renderer_error": null,
-      "image_written": true,
-      "cli_exit": 0
+      "stdout_tty": false,
+      "columns": 80,
+      "events_summary_blank_lines": 2
     },
     {
-      "name": "retained-120",
-      "renderer_exit": 0,
-      "renderer_signal": null,
-      "renderer_error": null,
-      "image_written": true,
-      "cli_exit": 0
-    }
-  ],
-  "final_render": [
-    {
-      "name": "retained-80",
-      "renderer_exit": 0,
-      "renderer_signal": null,
-      "renderer_error": null,
-      "image_written": true,
-      "cli_exit": 0
+      "name": "demo-pipe-200",
+      "cli_exit": 0,
+      "capture_exit": 0,
+      "signal": null,
+      "stdout_tty": false,
+      "columns": 200,
+      "events_summary_blank_lines": 2
     },
     {
-      "name": "retained-120",
-      "renderer_exit": 2,
-      "renderer_signal": null,
-      "renderer_error": null,
-      "image_written": true,
-      "cli_exit": 0
+      "name": "retained-pipe-200",
+      "cli_exit": 0,
+      "capture_exit": 0,
+      "signal": null,
+      "stdout_tty": false,
+      "columns": 200,
+      "events_summary_blank_lines": 2
+    },
+    {
+      "name": "retained-tty-80",
+      "cli_exit": 0,
+      "capture_exit": 0,
+      "signal": null,
+      "stdout_tty": true,
+      "columns": 80,
+      "events_summary_blank_lines": 2
+    },
+    {
+      "name": "retained-tty-120",
+      "cli_exit": 0,
+      "capture_exit": 0,
+      "signal": null,
+      "stdout_tty": true,
+      "columns": 120,
+      "events_summary_blank_lines": 2
     }
   ],
-  "inspection": "Both final PNGs inspected. Narrow image physically wraps captured lines at 80 columns; machine reason, account rows, $68 open allowance, $24 Total unused and bottom borders remain visible. Wide120 retains the existing layout. Final wide Chrome exited2 after writing the inspected image; product CLI exited0."
+  "repair_baseline": {
+    "head": "c7bae48e60fe0c9c2f74695340a44221cf041139",
+    "valid_cli_cases": 8,
+    "cli_exit": 0,
+    "pipe_columns_200_false_notice": true,
+    "narrow_blank_lines": 65,
+    "wide_blank_lines": 2,
+    "pty_cases_valid": false,
+    "pty_capture_note": "Initial helper shadowed Python stdlib pty; both PTY captures failed before CLI launch. Corrected helper uses capture-pty.py with Python -I. Ten repaired CLI cases, including both PTYs, launched and exited0."
+  },
+  "narrow_render": {
+    "name": "retained-tty-80",
+    "renderer_exit": 2,
+    "renderer_signal": null,
+    "renderer_error": null,
+    "image_written": true,
+    "cli_exit": 0
+  },
+  "wide_artifact": {
+    "source_head": "c7bae48e60fe0c9c2f74695340a44221cf041139",
+    "unchanged": true,
+    "renderer_exit": 2,
+    "image_written": true,
+    "cli_exit": 0,
+    "inspected": true
+  },
+  "inspection": "New80PNG inspected: real stdoutPTY stream with stdin closed, ANSI stripped and physical wrapping rendered; not an interactive terminal frame. Actual notice position, all tables, machine reason, $68 open amount, $24 Total unused, closing footers and Events-to-Summary two-line gap visible. New narrow Chrome exited2 after writing the PNG; all ten productCLI runs exited0. Wide120PNG retained unchanged and previously inspected."
 }

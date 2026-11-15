@@ -13,18 +13,25 @@ const artifacts = process.env.WORTHIT_FIXTURE_ARTIFACTS;
 const errors = [], statuses = [];
 const strip = s => s.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '');
 const compact = s => s.replace(/\s/g, '');
-function check(name, columns, retained) {
+function check(name, columns, retained, { tty = false, pipeColumns = 80 } = {}) {
   const env = { ...isolated.env, NODE_OPTIONS: `--import=${path.join(fixture, 'cli-env.mjs')}`,
     // Static terminal-size fallback, independent of the invoking terminal's /dev/tty.
-    COLUMNS: '80', LINES: '24', FIXTURE_RETAINED: retained ? '1' : '0' };
-  if (columns) env.FIXTURE_COLUMNS = String(columns);
-  const r = spawnSync(process.execPath, [path.join(root, 'bin/worthit.mjs'), '--demo', '--git', 'no', '--ai', 'no'],
-    { cwd: isolated.tmp, env, encoding: 'utf8', timeout: 25000, maxBuffer: 16 << 20 });
-  const output = strip(r.stdout || '');
-  statuses.push({ name, cli_exit: r.status, signal: r.signal, columns: columns || 'pipe (80 fallback)' });
+    COLUMNS: String(pipeColumns), LINES: '24', TERM: 'xterm-256color', FIXTURE_RETAINED: retained ? '1' : '0' };
+  if (columns && !tty) env.FIXTURE_COLUMNS = String(columns);
+  const args = [path.join(root, 'bin/worthit.mjs'), '--demo', '--git', 'no', '--ai', 'no'];
+  const statusFile = path.join(isolated.tmp, name + '-status.json');
+  const r = tty
+    ? spawnSync(isolated.python, ['-I', path.join(fixture, 'capture-pty.py'), String(columns), statusFile, process.execPath, ...args],
+      { cwd: isolated.tmp, env, encoding: 'utf8', timeout: 30000, maxBuffer: 16 << 20 })
+    : spawnSync(process.execPath, args, { cwd: isolated.tmp, env, encoding: 'utf8', timeout: 25000, maxBuffer: 16 << 20 });
+  const output = strip(r.stdout || '').replaceAll('\r\n', '\n');
+  const cliExit = tty ? (fs.existsSync(statusFile) ? JSON.parse(fs.readFileSync(statusFile)).cli_exit : null) : r.status;
+  const status = { name, cli_exit: cliExit, capture_exit: r.status, signal: r.signal, stdout_tty: tty, columns: columns || pipeColumns };
+  statuses.push(status);
   if (artifacts) { fs.mkdirSync(artifacts, { recursive: true }); fs.writeFileSync(path.join(artifacts, name + '.txt'), output); }
   const verify = (label, fn) => { try { fn(); } catch (e) { errors.push(`${name}: ${label}: ${e.message}`); } };
-  verify('CLI status', () => assert.equal(r.status, 0, r.stderr || String(r.error || r.signal || '')));
+  verify('capture status', () => assert.equal(r.status, 0, r.stderr || String(r.error || r.signal || '')));
+  verify('CLI status', () => assert.equal(cliExit, 0));
   const lines = output.split('\n');
   const section = (start, end) => { const a = lines.findIndex(l => l.includes(start)); const b = lines.findIndex((l, i) => i > a && l.includes(end)); return lines.slice(a, b).join('\n'); };
   const waste = compact(section('SUBSCRIPTION WASTE', 'MONTH BY MONTH'));
@@ -40,7 +47,17 @@ function check(name, columns, retained) {
   const heat = section('WHEN YOU WORKED', 'SUBSCRIPTION WASTE');
   verify('heatmap footer and later legend', () => { assert.ok(heat.includes('quiet Sun')); assert.match(heat, /╰─+╯/); });
   verify('later events', () => assert.ok(output.includes('EVENTS THIS WEEK') && output.includes('Gemini 4 Hydrogen launch')));
-  verify('width notice', () => assert.equal(/98 columns.*wrap/i.test(output), !columns || columns < 98));
+  verify('width notice only on narrow stdout TTY', () => assert.equal(/98 columns.*wrap/i.test(output), tty && columns < 98));
+  const eventTop = lines.findIndex(l => l.includes('EVENTS THIS WEEK'));
+  const eventFoot = lines.findIndex((l, i) => i > eventTop && l.startsWith('╰'));
+  let next = eventFoot + 1;
+  while (next < lines.length && !lines[next].trim()) next++;
+  status.events_summary_blank_lines = next - eventFoot - 1;
+  console.log(`${name}: Events-to-Summary blank lines ${status.events_summary_blank_lines}`);
+  verify('Events-to-Summary spacing', () => {
+    assert.ok(eventFoot > eventTop && lines[next]?.includes('SUMMARY'), 'missing Events footer / following Summary');
+    assert.equal(status.events_summary_blank_lines, 2, 'Events-to-Summary must keep the existing two-line gap');
+  });
   if (retained) verify('retained lower-bound reason and legend', () => {
     assert.ok(output.includes('box-z: kept 1 older day'), 'machine reason vanished');
     assert.ok(output.includes('floor') && output.includes('value ≥ shown'), 'proof legend vanished');
@@ -53,6 +70,10 @@ try {
   check('retained-80', 80, true);
   check('retained-120', 120, true);
   check('retained-pipe', undefined, true);
+  check('demo-pipe-200', undefined, false, { pipeColumns: 200 });
+  check('retained-pipe-200', undefined, true, { pipeColumns: 200 });
+  check('retained-tty-80', 80, true, { tty: true });
+  check('retained-tty-120', 120, true, { tty: true });
   if (artifacts) fs.writeFileSync(path.join(artifacts, 'cli-status.json'), JSON.stringify(statuses, null, 2) + '\n');
   for (const s of statuses) console.log(`${s.name}: CLI exit ${s.cli_exit}`);
   assert.equal(errors.length, 0, '\n' + errors.join('\n'));
