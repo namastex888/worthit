@@ -6,6 +6,7 @@ import { spawn, spawnSync } from 'node:child_process'; import { createRequire } 
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');   // loaded here, after quiet.mjs, so its 'experimental' warning stays silent
 import { C } from './draw.mjs';
 import { readHosts, writeHosts, activeHosts, retirementBlocks, retirementStatement } from './hosts.mjs';
+import { copyFileAtomic, cleanSavedTemps } from './atomic.mjs';
 
 export const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 export const HOME = process.env.WORTHIT_HOME || path.join(os.homedir(), '.worthit');
@@ -53,6 +54,7 @@ export const saveHosts = sel => { writeHosts(HOME, { ...readHosts(HOME), selecte
 // ---------------------------------------------------------------- step 1: scan
 const SPAN = { claude: [0, .68], codex: [.68, .97], antigravity: [.97, 1] }, TOOL = { claude: 'Claude Code', codex: 'Codex', antigravity: 'Antigravity', omp: 'omp', dsh: 'dsh', meter: 'usagemeter store' };
 export async function scan(cfg, on) {
+  cleanSavedTemps(HOME);
   const startedAt = Date.now(), retirement = readHosts(HOME).retired;
   cfg = { ...cfg, hosts: activeHosts(HOME, cfg.hosts || []) };
   for (const r of retirement) {
@@ -66,7 +68,10 @@ export async function scan(cfg, on) {
   fs.mkdirSync(runDir, { recursive: true });
   const script = path.join(ROOT, 'core', 'extract_usage.py'), counts = { claude: 0, codex: 0, antigravity: 0 };
   const cache = path.join(HOME, 'run-counts.json'), keepDir = path.join(HOME, 'run-keep');
-  if (!cfg.fresh && !retirement.length && process.env.WORTHIT_REUSE && fs.existsSync(path.join(keepDir, 'local.json'))) { fs.cpSync(keepDir, runDir, { recursive: true, filter: f => f !== path.join(keepDir, 'retired') }); audit('note', 'WORTHIT_REUSE: using the previous scan'); return { runDir, counts: JSON.parse(fs.readFileSync(cache, 'utf8')), hosts: [], started_at: 0 }; }
+  if (!cfg.fresh && !retirement.length && process.env.WORTHIT_REUSE && fs.existsSync(path.join(keepDir, 'local.json'))) {
+    for (const f of fs.readdirSync(keepDir, { withFileTypes: true })) if (f.isFile() && f.name.endsWith('.json')) fs.copyFileSync(path.join(keepDir, f.name), path.join(runDir, f.name));
+    audit('note', 'WORTHIT_REUSE: using the previous scan'); return { runDir, counts: JSON.parse(fs.readFileSync(cache, 'utf8')), hosts: [], started_at: 0 };
+  }
   let cached = 0; const names = cfg.hosts || [], pcts = { local: 0 }; names.forEach(a => { pcts[a] = 0; });
   const emit = detail => { const v = Object.values(pcts); on({ pct: v.reduce((a, b) => a + b, 0) / v.length, detail, counts }); };
   audit('run', `${py} core/extract_usage.py ${cfg.days}   (reads local session logs, read-only)`);
@@ -115,7 +120,11 @@ export async function scan(cfg, on) {
     let used = false; try { used = !/"buckets"\s*:\s*\[\s*\]/.test(fs.readFileSync(k, 'utf8')); } catch { /* unreadable: not counted as use */ } if (used) leftOut.push(h.alias); }
   if (leftOut.length) audit('note', `saved machines with usage left out of this run: ${leftOut.join(', ')}`);
   fs.writeFileSync(cache, JSON.stringify(counts));
-  fs.cpSync(runDir, keepDir, { recursive: true, force: true, filter: f => !retirement.some(r => path.basename(f) === r.machine + '.json') });
+  fs.mkdirSync(keepDir, { recursive: true });
+  for (const f of fs.readdirSync(runDir, { withFileTypes: true })) {
+    if (!f.isFile() || !f.name.endsWith('.json') || retirement.some(r => f.name === r.machine + '.json')) continue;
+    copyFileAtomic(path.join(runDir, f.name), path.join(keepDir, f.name));
+  }
   return { runDir, counts, hosts, cached, left_out: leftOut, retained, retired, retirement, retirement_conflicts: conflicts, started_at: startedAt };
 }
 

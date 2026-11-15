@@ -93,6 +93,20 @@ only when an intentional contract or fixture change explains the new number.
 Run `make check` before pushing. Deliberate regression experiments belong in a
 private throwaway copy; leave the checked-out implementation intact.
 
+`run-keep-atomic` uses the literal source logs above and a fixture-only filesystem
+preload to kill the actual CLI with SIGKILL after a same-folder `.json.tmp` is
+created and partially written. Both active SSH and local saved JSON stay readable
+and byte-for-byte unchanged. The next actual offline scan uses the saved SSH scan;
+the next actual reuse run reads the complete local scan. Both clean interrupted
+temps. An interrupted hosts-state write also leaves the prior state unchanged.
+Separate controls leave stale temps present to prove hosts inventory,
+reuse copying and both Python readers ignore them independently of cleanup.
+Normal scans and hosts commands clean stale active, nested, retired and hosts
+temps. RFC 0002 context checks preserve frozen bytes through scans and
+retire/unretire renames, including rollback when hosts replacement fails.
+The private plain-copy negative control must fail the named case
+`run-keep-atomic / interrupted active scan preserves saved bytes`.
+
 `weekly-checkpoint` runs `worthit weekly` with closed stdin on those source logs.
 It checks complete, missing, explicitly allowed partial, left-out, floor-only,
 current retained and prior retained results; unsafe reasons name machines and
