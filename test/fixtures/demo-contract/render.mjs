@@ -22,7 +22,7 @@ try {
     const end = dashboard.findIndex((l, i) => i > start && strip(l).startsWith('╰'));
     assert.ok(start >= 0 && end > start, 'actual CLI must have a complete Delivery block');
     lines = dashboard.slice(start, end + 1);
-  } else lines = [...blocks.PlanRanking(D), '', ...blocks.LimitTrend(D)];
+  } else lines = [...blocks.Tiles(D), '', ...blocks.PlanRanking(D), '', ...blocks.LimitTrend(D), '', ...blocks.Delivery(D)];
   const esc = text => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
   const ansi = lines.join('\n').split(/(\x1b\[[0-9;]*m)/).map(part => {
     const rgb = /^\x1b\[38;2;(\d+);(\d+);(\d+)m$/.exec(part);
@@ -31,7 +31,7 @@ try {
   }).join('');
   const html = path.join(isolated.tmp, 'dashboard.html'), png = path.join(isolated.tmp, 'dashboard.png');
   fs.writeFileSync(html, `<meta charset="utf-8"><style>body{margin:0;padding:40px;background:#0a0a0c;color:#f4f4f2;font:20px/1.4 Menlo,monospace}h1{font:24px Menlo;color:#b4b4ae}pre{font:inherit}</style><h1>WORTHIT · synthetic demo · ${esc(mode)}</h1><pre><span>${ansi}</span></pre>`);
-  const width = mode === 'default' ? 1400 : 900, height = 1000;
+  const width = 1400, height = mode === 'default' ? 1000 : 1900;
   const r = spawnSync(chrome, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run', '--no-default-browser-check',
     '--disable-background-networking', '--disable-component-update', '--disable-sync', '--disable-default-apps', '--metrics-recording-only',
     '--host-resolver-rules=MAP * ~NOTFOUND', '--user-data-dir=' + path.join(isolated.tmp, 'profile'),

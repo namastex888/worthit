@@ -30,11 +30,15 @@ try {
     if (!Array.isArray(D[key])) failures.push(`${key}: required array missing from actual --demo --json`);
   if (!D.delivery?.kinds?.length || !D.delivery.features || D.delivery.usd_per_feature == null)
     failures.push('delivery: actual --demo --json has no usable kinds/features/cost per feature');
+  const v = D.delivery, current = v?.weeks?.find(w => w.weeks_ago === 0), previous = v?.weeks?.find(w => w.weeks_ago === 1);
+  if (current && previous && D.git.usd_per_pr_change_pct !== pct(current.usd / current.prs, previous.usd / previous.prs))
+    failures.push('cost per PR change contradicts the explicit delivery weeks');
+  for (const p of D.plans) if (p.proof === 'floor' && p.change_vs_last_week_pct !== null)
+    failures.push(`${p.key}: a default demo floor must have a null plan comparison`);
   assert.deepEqual(failures, [], failures.join('\n'));
   for (const key of ['machines_missing', 'machines_left_out', 'machines_retained', 'machines_retired'])
     assert.deepEqual(D[key], [], 'ordinary default demo: ' + key);
 
-  const v = D.delivery, current = v.weeks.find(w => w.weeks_ago === 0), previous = v.weeks.find(w => w.weeks_ago === 1);
   assert.ok(D.git.coverage.prs, 'default demo has complete synthetic PR sources');
   assert.equal(sum(v.kinds, 'prs'), D.git.merged_prs);
   assert.equal(v.features, v.kinds.find(k => k.kind === 'feat').prs);
@@ -57,6 +61,7 @@ try {
   assert.equal(v.usd_per_feature_change_pct, pct(current.usd_per_feature, previous.usd_per_feature));
   assert.equal(D.totals.api_value_change_pct, pct(current.usd, previous.usd));
   assert.equal(D.git.merged_prs_change_pct, pct(current.prs, previous.prs));
+  assert.equal(D.git.usd_per_pr_change_pct, pct(current.usd / current.prs, previous.usd / previous.prs));
   assert.equal(v.days.length, 14);
   for (const [index, week] of [previous, current].entries()) {
     const days = v.days.slice(index * 7, index * 7 + 7);
@@ -106,7 +111,7 @@ console.log(JSON.stringify(buildData({prices,this_week:{claude:w,codex:w,google:
     const plans = JSON.parse(run(['--input-type=module', '-e', proofScript], { input: JSON.stringify(variant), env: { ...env, WORTHIT_HOME: path.join(isolated.tmp, name) } }));
     for (const p of variant.plans) {
       assert.equal(p.proof, plans.find(q => q.key === p.key).proof, name + ' matches buildData proof');
-      if (p.proof === 'floor' && name !== 'retained-old') assert.equal(p.change_vs_last_week_pct, null);
+      assert.ok(p.proof !== 'floor' || p.change_vs_last_week_pct === null, name + ': floors have no plan comparison');
     }
     assert.deepEqual(machineNotes(variant), expectedNotes[name]);
     const ranking = blocks.PlanRanking(variant).map(strip).join('\n');
@@ -115,7 +120,7 @@ console.log(JSON.stringify(buildData({prices,this_week:{claude:w,codex:w,google:
       assert.ok(variant.plans.every(p => p.proof === 'floor'));
       assert.doesNotMatch(blocks.LimitTrend(variant).map(strip).join('\n'), /[▲▼]/, 'floor limits are never compared');
       assert.ok(cardSpec('allowance', variant).rows.every(r => r.note === 'at least'));
-      assert.match(blocks.Delivery(variant).map(strip).join('\n'), /cost per feature\s+n\/a/);
+      // Issue #102 tracks production usage totals and delivery-cost comparisons for incomplete machines.
       assert.ok(variant.git.coverage.prs, 'missing usage must not invent incomplete PR coverage');
     } else assert.equal(variant.plans.find(p => p.key === 'claude').proof, 'measured', 'old retained days do not demote this week');
     save(name + '.json', JSON.stringify(variant, null, 2));

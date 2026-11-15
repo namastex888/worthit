@@ -6,7 +6,9 @@ The ordinary shipped demo includes empty `machines_missing`, `machines_left_out`
 $4,180 of weekly usage divided by 32 features rounds to $131 per feature.
 The earlier week has 59 PRs, 24 features and $3,835 of usage ($160 per feature).
 Those totals give the existing +8% PR and +9% usage changes, and an 18% decrease
-in rounded cost per feature. Daily rows sum to each week and the current daily
+in rounded cost per feature. Cost per PR changes by 0% ($65.31 versus $65.00).
+Every floor plan has a null plan comparison, including Codex in the default and
+the older-retained control. Daily rows sum to each week and the current daily
 rows match the existing git and usage arrays. Delivery dates move with the demo
 week; unrelated sample dates, game and model data are preserved. Only two weeks
 of delivery are supplied; older weeks and monthly delivery history are absent.
@@ -31,10 +33,13 @@ The Orchestrator approved fixture-only warning variants without a public flag:
 
 Proof labels are checked against production `buildData` with a synthetic meter
 report in a fresh isolated store per scenario. Real `machineNotes`, PlanRanking,
-LimitTrend and allowance card functions are exercised. In incomplete usage
-variants, totals are not compared and delivery costs are unavailable (`null`),
-while independently complete synthetic PR coverage stays complete. No real store,
-scan, usage, SSH connection, model, account or desktop data is used.
+LimitTrend and allowance card functions are exercised. Per the Orchestrator's
+repair ruling, variants do not hand-set totals or delivery costs to null.
+Production still compares usage totals and costs with incomplete machines;
+[issue #102](https://github.com/namastex888/worthit/issues/102) tracks that separate
+bug. This fixture neither certifies those comparisons nor pins their current
+values. Independently complete synthetic PR coverage stays complete. No real
+store, scan, usage, SSH connection, model, account or desktop data is used.
 
 ## Reproduction and visual evidence
 
@@ -56,9 +61,11 @@ Chrome profile, blocks network resolution and renders one image per invocation.
 reconstructing or stubbing that block. Warning images render the real drawing
 functions from saved fixture variants. All four PNGs were opened and inspected:
 the default shows the kinds, $131 cost and weekly trend; every warning note is
-complete and all affected plan values say floor. The unchanged narrow LimitTrend
+complete and all affected plan values say floor. Re-rendered warning images also
+show the actual Tiles and Delivery blocks, including the production comparisons
+tracked separately in #102. The unchanged narrow LimitTrend
 box clips the end of its existing `floor: not compared` text; assertions separately
-verify no comparison arrows are rendered.
+verify no plan comparison arrows are rendered in LimitTrend.
 
 All four render commands exited 0 after validating newly created signed PNGs
 with the expected dimensions. Each underlying Chrome process exited 2 with its
