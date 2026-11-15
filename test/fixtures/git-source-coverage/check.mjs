@@ -114,6 +114,22 @@ try {
     if (mode === 'gh-legacy') assert.deepEqual(data.git.coverage.sources, expected.get('legacy_sources'));
     if (mode === 'glab-host') assert.equal(data.git.coverage.sources.find(x => x.source === 'glab:forge-a.test').answered, true);
   }
+  // Issue #54: literal real MR rows must survive discovery, routing and both stores.
+  for (const mode of ['glab-ip', 'glab-port', 'glab-digit-tld', 'glab-bare', 'glab-localhost', 'glab-malformed-before', 'glab-malformed-after', 'glab-orphan-body', 'glab-unreadable-body', 'glab-empty-block', 'glab-partial-errors', 'glab-footer']) {
+    seed(); const start = trace().length, data = collect(mode), e = expected.get(mode);
+    assert.equal(data.git.merged_prs, e.live.prs, `${mode}: literal merge request counted`);
+    check(mode, data);
+    assert.equal(data.git.sources.gitlab, 1, `${mode}: one GitLab merge request`);
+    assert.ok(data.git.coverage.sources.some(x => x.source === 'glab:' + e.host && x.answered), `${mode}: readable host answered`);
+    const calls = trace().slice(start).filter(x => x.command === 'glab' && x.args[0] === 'api');
+    assert.deepEqual(calls.map(x => x.args), [['api', '--hostname', e.host, 'merge_requests?scope=created_by_me&state=merged&updated_after=2026-08-22T12:00:00.000Z&per_page=100&page=1']], `${mode}: exact configured host and relative REST request; glab owns protocol/api_host/port`);
+    const db = new DatabaseSync(path.join(env.WORTHIT_HOME, 'worthit.db'), { readOnly: true });
+    assert.deepEqual(db.prepare('SELECT key FROM pr_kind ORDER BY key').all().map(x => x.key), e.keys, `${mode}: literal MR identity persisted`); db.close();
+    const audit = fs.readFileSync(env.FIXTURE_AUDIT, 'utf8');
+    if (e.line) assert.ok(audit.includes('glab discovery could not read') && audit.includes(e.line), `${mode}: unreadable line named`);
+    else assert.ok(!audit.includes('FAILED'), `${mode}: complete host coverage`);
+    console.log(`${mode}: literal MR counted, exact subprocess target audited as net; coverage.prs=${e.prs}`);
+  }
   for (const command of ['gh', 'glab', 'tea']) fs.unlinkSync(path.join(bin, command));
   seed(); const absent = collect('good'); check('no-forges', absent);
   assert.deepEqual(absent.git.coverage.sources, expected.get('meter_only'));

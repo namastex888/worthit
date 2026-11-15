@@ -1,0 +1,7 @@
+gitlab
+  ✓ Logged in to gitlab as coder-a (keyring)
+  ✓ Git operations for gitlab configured to use ssh protocol.
+  ✓ API calls for gitlab are made over https protocol.
+  ✓ REST API Endpoint: https://gitlab/api/v4/
+  ✓ GraphQL Endpoint: https://gitlab/api/graphql/
+  ✓ Token found in operating system keyring: **************************

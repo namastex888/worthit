@@ -141,6 +141,20 @@ cover token-less gitlab.com alone, a self-hosted login beside it, token-bearing
 host errors, and the no-authenticated-instances message. Only synthetic identities
 are used; source references are recorded with the PR.
 
+Issue #54 adds literal merged-request rows for `10.0.0.5`, `gitlab:3000`,
+`localhost:3000`, `gitlab.k8s` and bare `gitlab`. Each must contribute one MR
+and its exact persisted identity, replace the seeded daily counts in both stores,
+and pass its unchanged host key plus a relative REST path to the actual synthetic
+subprocess. HTTP/port and HTTPS/custom-api-host status blocks ensure routing stays
+with glab; source inspection establishes how glab applies its configuration, not a
+live server test. Every traced API call must have its own `net` audit entry.
+Malformed headers before and after token-less gitlab.com, an orphan/unreadable body, an empty
+block and token-read/client-init errors force PR coverage false, name the offending
+line and preserve PR MAX independently of commits while a readable IP host still
+counts. Both output streams and the environment-token footer are covered. Expected
+counts and MR identities are literal; the old-regex negative control belongs only
+in a private copy. Existing fixture registrations remain intact.
+
 `retire-machine` primes a real scan with fourteen literal daily Claude source rows
 (Oct 25–Nov 7, 200,000 output tokens and $2 per day), retires box-b, and verifies
 all fourteen frozen days, empty missing/left-out lists, measured $6 Claude allowance
