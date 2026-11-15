@@ -106,7 +106,7 @@ def walk(root, suffix):
                 yield os.path.join(d, f)
 
 # ---------------- per-file cache: a log file that has not changed is not read again ----------------
-# ~/.worthit/scan-cache.db keeps, per log file, only the few fields the scanner uses from each relevant line (no prompts, no code).
+# The selected store's scan-cache.db keeps, per log file, only the few fields the scanner uses from each relevant line (no prompts, no code).
 # Unchanged file (same size and time) -> replayed from the cache. File that only grew -> only the new lines are read.
 CACHE_VER = 1
 _cdb = None
@@ -118,7 +118,7 @@ def cache_db():
     if os.environ.get('WORTHIT_NO_CACHE'): return None
     try:
         import sqlite3
-        d = os.path.join(H, '.worthit'); os.makedirs(d, exist_ok=True)
+        d = os.environ.get('WORTHIT_HOME') or os.path.join(H, '.worthit'); os.makedirs(d, exist_ok=True)
         c = sqlite3.connect(os.path.join(d, 'scan-cache.db'), timeout=5)
         c.execute('CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, tool TEXT, ver INTEGER, size INTEGER, mtime REAL, tail BLOB, data BLOB)')
         _cdb = c
