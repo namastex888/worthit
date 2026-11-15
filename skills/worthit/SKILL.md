@@ -87,6 +87,14 @@ worthit days --group day --tool codex --since 2026-11-05
 - `--tool claude|codex|google|omp|dsh`, `--model <part of the id>`
 - Each row has `api_usd`, `output_tokens`, `days` (days with data in the period), and `requests` unless grouped by model.
 
+`day_provider` uses local days; `day_model` (including `--by model` and `--model`)
+uses UTC days. Each replaces every field on a fully scanned day whose start is on
+or after every retirement, with every machine covered; any other day keeps per-field MAX,
+including partial oldest days and the current day. Missing or left-out machines
+prevent replacement. In `day`, PRs and commits replace independently inside git's
+14-day window when all that metric's sources answered; otherwise they keep MAX,
+including outside that window.
+
 ## `worthit sql "SELECT …"` and `worthit schema`
 
 One read-only `SELECT` or `WITH` statement over `~/.worthit/worthit.db`. Run `worthit schema` first: it returns every table and column with its meaning. At most 500 rows come back.

@@ -2,10 +2,22 @@
 
 `make check` calls `node test/run-fixtures.mjs`. Every directory under `test/fixtures/`
 must contain a plain `check.mjs`. Checks run sequentially in separate processes; a failure
-names the folder, and the remaining folders still run. The four original regression
-folders are required, so deleting a folder or its check fails the gate too. Empty or
+names the folder, and the remaining folders still run. The regression folders listed
+in `test/run-fixtures.mjs` are required, so deleting a folder or its check fails the gate too. Empty or
 whitespace-only scripts fail with the folder's name while other checks still run. Add another
 folder with a `check.mjs` to add a case; no registration or framework is needed.
+
+`day-model-complete-day` copies the application source into scratch and reprices the
+same literal Claude requests from two synthetic machines from $20/M to $10/M output
+tokens. The complete Nov 10 UTC day falls from $6 to $3 through the real scanner,
+pricing and CLI `days --by model` / `days --by total`; the partial Nov 7 and current
+Nov 14 days keep $6, including on rerun. Its literal `expected-data.json` also pins
+independent token/USD replacement and MAX, UTC versus local boundaries in both
+directions, exact midnight, a scan crossing midnight, missing/cached/left-out machines,
+and the existing retirement guard (including its exact boundary and UTC/local
+distinction). Schema assertions check both usage day rules and Git's separate
+14-day coverage. The case is required by the runner. Price changes and deliberate
+regression experiments only touch private scratch copies.
 
 The first three folders share literal **source logs** in `test/sources/box-a/`,
 `box-b/` and the left-out control `box-c/`, rather than scan responses. `support/materialize.py` puts the Claude Code,
