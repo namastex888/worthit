@@ -26,6 +26,14 @@ sourceCase(folder, ({ cli, expected, tmp, env, python, root, run, trace }) => {
   const clone = name => { const store = path.join(tmp, name); fs.cpSync(baseline, store, { recursive: true }); return store; };
   totals(good(clone('local-control'), scanArgs.map(a => a === 'box-b' ? 'none' : a)), local, 'local-only source control');
   const bytes = file => fs.readFileSync(file);
+  const age = file => fs.utimesSync(file, new Date('2026-11-14T10:00:00Z'), new Date('2026-11-14T10:00:00Z'));
+  const interruptedTemp = (receipt, file, pid) => {
+    const { file: temp } = JSON.parse(bytes(receipt));
+    assert.equal(path.dirname(temp), path.dirname(file));
+    assert.ok(temp.startsWith(file + '.' + pid + '.') && temp.endsWith('.tmp'), 'run-keep-atomic / actual unique temp was created');
+    assert.equal(bytes(temp).toString(), '{"interrupted":');
+    return temp;
+  };
   const unchanged = (file, before, name) => {
     assert.deepEqual(bytes(file), before, 'run-keep-atomic / ' + name);
     assert.ok(JSON.parse(bytes(file)).host, 'run-keep-atomic / saved JSON stays readable');
@@ -39,12 +47,12 @@ sourceCase(folder, ({ cli, expected, tmp, env, python, root, run, trace }) => {
     assert.equal(r.signal, 'SIGKILL', 'run-keep-atomic / real process interruption after file creation');
     // Keep this assertion first: the plain-copy negative control must name this case.
     unchanged(file, before, `interrupted ${machine === 'local' ? 'local' : 'active'} scan preserves saved bytes`);
-    assert.deepEqual(JSON.parse(bytes(receipt)), { file: file + '.tmp' });
-    assert.equal(bytes(file + '.tmp').toString(), '{"interrupted":');
+    const temp = interruptedTemp(receipt, file, r.pid);
+    age(temp); // Only expired scratch is eligible for next-run cleanup.
     const start = trace().length;
     const recovered = good(store, scanArgs, machine === 'local' ? { WORTHIT_REUSE: '1' } : { FIXTURE_OFFLINE: '1' });
     totals(recovered, complete, 'next actual run uses saved ' + machine + ' scan');
-    assert.ok(!fs.existsSync(file + '.tmp'), 'run-keep-atomic / next actual run cleans interrupted temp');
+    assert.ok(!fs.existsSync(temp), 'run-keep-atomic / next actual run cleans expired interrupted temp');
     if (machine === 'box-b') {
       assert.ok(recovered.machines_missing.some(m => m.machine === 'box-b' && m.saved_scan_at));
       unchanged(file, before, 'offline recovery keeps entire active scan');
@@ -63,29 +71,41 @@ sourceCase(folder, ({ cli, expected, tmp, env, python, root, run, trace }) => {
   assert.equal(hostsWrite.signal, 'SIGKILL', 'run-keep-atomic / interrupt hosts after temp creation');
   assert.deepEqual(bytes(hostsFile), hostsBefore, 'run-keep-atomic / interrupted hosts write preserves state bytes');
   assert.deepEqual(JSON.parse(bytes(hostsFile)), { selected: ['box-b'], retired: [] });
-  assert.deepEqual(JSON.parse(bytes(hostsReceipt)), { file: hostsFile + '.tmp' });
+  const hostsTemp = interruptedTemp(hostsReceipt, hostsFile, hostsWrite.pid);
+  age(hostsTemp);
   assert.equal(good(hostsStore, ['hosts']).find(h => h.machine === 'box-b').status, 'selected');
-  assert.ok(!fs.existsSync(hostsFile + '.tmp'), 'run-keep-atomic / hosts recovery cleans interrupted temp');
+  assert.ok(!fs.existsSync(hostsTemp), 'run-keep-atomic / hosts recovery cleans expired interrupted temp');
+
+  run(process.execPath, [path.join(folder, 'interleave.mjs'), 'coordinate', clone('concurrent')]);
 
   const store = clone('stale'), keep = path.join(store, 'run-keep');
   fs.mkdirSync(path.join(keep, 'retired'), { recursive: true });
   fs.mkdirSync(path.join(keep, 'nested'), { recursive: true });
-  const stale = ['local.json.tmp', 'box-b.json.tmp', 'ghost.json.tmp', 'retired/ghost.json.tmp', 'nested/ghost.json.tmp'];
+  const stale = ['local.json.tmp', 'box-b.json.tmp', 'ghost.json.tmp', 'retired/ghost.json.tmp', 'nested/ghost.json.tmp', 'ghost.json.123.fixture.tmp'];
   const seedTemps = () => {
-    for (const name of stale) fs.writeFileSync(path.join(keep, name), '{broken');
+    for (const name of stale) {
+      const file = path.join(keep, name);
+      fs.writeFileSync(file, '{broken');
+      fs.utimesSync(file, new Date('2026-11-14T11:30:00Z'), new Date('2026-11-14T11:30:00Z'));
+    }
     fs.writeFileSync(path.join(store, 'hosts.json.tmp'), '{broken');
   };
   seedTemps();
-  const inventory = good(store, ['hosts'], faultEnv({ FIXTURE_KEEP_TEMPS: '1' }));
+  const inventory = good(store, ['hosts']);
   assert.deepEqual(inventory.map(h => h.machine), ['box-b', 'box-c'], 'run-keep-atomic / inventory ignores temp-only aliases');
-  const reused = good(store, scanArgs, faultEnv({ WORTHIT_REUSE: '1', FIXTURE_KEEP_TEMPS: '1' }));
+  const reused = good(store, scanArgs, { WORTHIT_REUSE: '1' });
   totals(reused, complete, 'reuse ignores stale temps');
   assert.deepEqual(fs.readdirSync(runFolder(store)).sort(), ['box-b.json', 'local.json'], 'run-keep-atomic / reuse never recursively copies temp files or retired folders');
-  assert.ok(fs.existsSync(path.join(keep, 'ghost.json.tmp')), 'ignore control really left stale temps in place');
+  for (const name of stale) {
+    assert.ok(fs.existsSync(path.join(keep, name)), 'run-keep-atomic / fresh temp is preserved and ignored');
+    age(path.join(keep, name));
+  }
+  assert.ok(fs.existsSync(path.join(store, 'hosts.json.tmp')));
+  age(path.join(store, 'hosts.json.tmp'));
   totals(good(store, scanArgs, { FIXTURE_OFFLINE: '1' }), complete, 'fresh scan ignores and cleans stale temps');
   for (const name of stale) assert.ok(!fs.existsSync(path.join(keep, name)), 'run-keep-atomic / cleans ' + name);
   assert.ok(!fs.existsSync(path.join(store, 'hosts.json.tmp')));
-  seedTemps(); good(store, ['hosts']);
+  seedTemps(); for (const name of stale) age(path.join(keep, name)); age(path.join(store, 'hosts.json.tmp')); good(store, ['hosts']);
   for (const name of stale) assert.ok(!fs.existsSync(path.join(keep, name)), 'run-keep-atomic / hosts also cleans ' + name);
   assert.ok(!fs.existsSync(path.join(store, 'hosts.json.tmp')));
 
@@ -124,6 +144,7 @@ sourceCase(folder, ({ cli, expected, tmp, env, python, root, run, trace }) => {
   unchanged(frozen, before, 'retirement preserves frozen bytes');
   const retiredState = bytes(path.join(retiredStore, 'hosts.json'));
   fs.writeFileSync(frozen + '.tmp', '{broken');
+  age(frozen + '.tmp');
   totals(good(retiredStore, scanArgs, { WORTHIT_REUSE: '1', FIXTURE_OFFLINE: '1' }), complete, 'actual scan uses frozen saved scan');
   unchanged(frozen, before, 'actual scan never rewrites retired snapshot');
   assert.ok(!fs.existsSync(frozen + '.tmp'));
@@ -134,6 +155,7 @@ sourceCase(folder, ({ cli, expected, tmp, env, python, root, run, trace }) => {
   assert.ok(!fs.existsSync(active));
   fs.writeFileSync(active + '.tmp', '{broken');
   fs.writeFileSync(path.join(retiredStore, 'hosts.json.tmp'), '{broken');
+  age(active + '.tmp'); age(path.join(retiredStore, 'hosts.json.tmp'));
   good(retiredStore, ['hosts', 'unretire', 'box-b']);
   unchanged(active, before, 'unretirement restores frozen bytes');
   assert.deepEqual(JSON.parse(bytes(path.join(retiredStore, 'hosts.json'))), { selected: ['box-b'], retired: [] });

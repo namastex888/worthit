@@ -1,9 +1,9 @@
 // Fixture-only filesystem faults. No application hook or real store is involved.
 import fs from 'node:fs';
 import path from 'node:path';
-const { writeFileSync, copyFileSync, cpSync, renameSync, rmSync } = fs;
+const { writeFileSync, copyFileSync, cpSync, renameSync } = fs;
 const target = process.env.FIXTURE_INTERRUPT_FILE;
-const matches = file => target && [target, target + '.tmp'].includes(String(file));
+const matches = file => target && (String(file) === target || String(file).startsWith(target + '.') && String(file).endsWith('.tmp'));
 function interrupt(file) {
   // Both the atomic and plain-copy controls stop at the same partial-write boundary.
   writeFileSync(file, '{"interrupted":');
@@ -25,6 +25,3 @@ fs.renameSync = (from, to) => {
   }
   return renameSync(from, to);
 };
-// Leave stale files in place in one control to independently prove reuse filters
-// them, rather than accidentally relying on the preceding cleanup to hide them.
-fs.rmSync = (file, ...args) => process.env.FIXTURE_KEEP_TEMPS === '1' && String(file).endsWith('.tmp') ? undefined : rmSync(file, ...args);
