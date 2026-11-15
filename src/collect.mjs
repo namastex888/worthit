@@ -144,41 +144,94 @@ export const kindOf = title => { const m = /^\s*\[?([a-z]+)\]?\s*(\([^)]*\))?\s*
 const HIST = 84 * DAY;                 // merged pull requests are kept for 12 weeks, so delivery can be shown week by week and month by month
 export async function git(cfg, on) {
   const since = Date.now() - 14 * DAY, prs = new Map(), commits = new Map(), src = { github: 0, meter: 0, gitea: 0, gitlab: 0 }; let repos = 0, meter = null;
+  const answers = [], answer = (source, answered, metrics) => {
+    answers.push({ source, answered, metrics });
+    audit('note', `git source ${source}: ${answered ? 'answered' : 'FAILED'} (${metrics.join(', ')})`);
+  };
+  let meterOK = false, storeOK = false, logsOK = true, recentNoCheckout = false;
   try {
     meter = await meterBin(on);
     on({ pct: .15, detail: 'usagemeter sync · reading new usage into its local store' });
     audit('run', `${tilde(meter.bin)} sync --no-publish --budget-secs 20`);
-    await runOut(meter.bin, ['sync', '--no-publish', '--budget-secs', '20'], 90000);
-    const st = JSON.parse(spawnSync(meter.bin, ['status'], { encoding: 'utf8', timeout: 20000 }).stdout); meter.version = meter.version || st.version;
+    const sync = await runOut(meter.bin, ['sync', '--no-publish', '--budget-secs', '20'], 90000);
+    if (sync.code !== 0) audit('note', 'usagemeter sync did not complete; reading existing meter data, keeping stored PR and commit counts');
+    const status = spawnSync(meter.bin, ['status'], { encoding: 'utf8', timeout: 20000 });
+    if (status.status !== 0) throw new Error('status did not answer');
+    const st = JSON.parse(status.stdout); meter.version = meter.version || st.version;
+    const pending = st.pending_bytes > 0 || st.pending_files > 0;
+    if (pending) audit('note', 'usagemeter sync has pending files; reading existing meter data, keeping stored PR and commit counts');
     const db = path.join(st.state_dir, 'meter.db'); audit('read', tilde(db) + '  (tables pr, cwd_repo; read-only)');
     const d = new DatabaseSync(db, { readOnly: true });
-    for (const r of d.prepare('select repo, pr, merged_ms from pr where merged_ms >= ?').all(since)) { const k = (r.repo + '#' + r.pr).toLowerCase(); if (!prs.has(k)) { prs.set(k, r.merged_ms); src.meter++; } }
-    const seen = new Set(), dirs = [];
-    for (const r of d.prepare('select repo, cwd from cwd_repo where repo is not null order by checked_ms desc').all()) { if (seen.has(r.repo) || !fs.existsSync(r.cwd)) continue; seen.add(r.repo); dirs.push(r.cwd); }
-    d.close(); repos = dirs.length;
+    const seen = new Set(), candidates = new Set(), dirs = [];
+    try {
+      for (const r of d.prepare('select repo, pr, merged_ms from pr where merged_ms >= ?').all(since)) { const k = (r.repo + '#' + r.pr).toLowerCase(); if (!prs.has(k)) { prs.set(k, r.merged_ms); src.meter++; } }
+      for (const r of d.prepare('select repo, cwd from cwd_repo where repo is not null order by checked_ms desc').all()) {
+        candidates.add(r.repo); if (seen.has(r.repo) || !r.cwd || !fs.existsSync(r.cwd)) continue;
+        seen.add(r.repo); dirs.push(r.cwd);
+      }
+      const missing = [...candidates].filter(repo => !seen.has(repo));
+      if (missing.length) {
+        audit('note', `${missing.length} repos have no checkout left; their commits from earlier runs are kept while the repo had a session in the last 14 days`);
+        // Exact sessions cover known context IDs; main Claude transcripts may hold only cwd.
+        // Their file mtime is an additional conservative witness of recent repo use.
+        try {
+          const recent = d.prepare(`SELECT DISTINCT c.repo FROM sessions s JOIN files f
+            ON f.source = s.harness AND COALESCE(json_extract(f.ctx, '$.session'), json_extract(f.ctx, '$.codex.thread')) = s.session
+            JOIN cwd_repo c ON c.cwd = COALESCE(json_extract(f.ctx, '$.cwd'), json_extract(f.ctx, '$.codex.cwd'))
+            WHERE s.last_ms >= ? AND s.first_ms <= ?
+            UNION SELECT c.repo FROM files f JOIN cwd_repo c
+            ON c.cwd = COALESCE(json_extract(f.ctx, '$.cwd'), json_extract(f.ctx, '$.codex.cwd'))
+            WHERE f.mtime_ms >= ?`).all(since, Date.now(), since);
+          recentNoCheckout = recent.some(r => missing.includes(r.repo));
+        } catch {
+          recentNoCheckout = true;
+          audit('note', 'no-checkout recency query unavailable; stored commits kept conservatively, readable checkouts still counted');
+        }
+      }
+      storeOK = true; meterOK = sync.code === 0 && !pending;
+    } finally { d.close(); }
+    repos = dirs.length;
     dirs.forEach((cwd, i) => { on({ pct: .3 + .4 * i / Math.max(1, dirs.length), detail: 'git log · ' + tilde(cwd) }); audit('run', `git -C ${tilde(cwd)} log --all --since="14 days ago" --format="%H %ct"`);
-      const o = spawnSync('git', ['-C', cwd, 'log', '--all', '--since=14 days ago', '--format=%H %ct'], { encoding: 'utf8', timeout: 8000, maxBuffer: 64 << 20 }).stdout || '';
-      for (const l of o.split('\n')) { const [hh, ct] = l.split(' '); if (hh && ct) commits.set(hh, +ct * 1000); } });
+      const result = spawnSync('git', ['-C', cwd, 'log', '--all', '--since=14 days ago', '--format=%H %ct'], { encoding: 'utf8', timeout: 8000, maxBuffer: 64 << 20 });
+      if (result.status !== 0) logsOK = false;
+      for (const l of (result.stdout || '').split('\n')) { const [hh, ct] = l.split(' '); if (hh && ct) commits.set(hh, +ct * 1000); } });
   } catch (e) { audit('note', 'usagemeter not used: ' + e.message); }
+  answer('usagemeter', meterOK, ['prs', 'commits']);
+  answer('git log', storeOK && logsOK, ['commits']);
   // Merged pull requests, with what each one was, live in ~/.worthit/worthit.db (table pr_kind): each run only asks the forges for what is new.
   const histFrom = Date.now() - HIST, fresh = []; let db = null;
   try { fs.mkdirSync(HOME, { recursive: true }); db = new DatabaseSync(path.join(HOME, 'worthit.db')); db.exec('CREATE TABLE IF NOT EXISTS pr_kind (key TEXT PRIMARY KEY, merged_ms INTEGER, kind TEXT); CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);'); } catch { db = null; }
   const mv = k => { try { const r = db && db.prepare('SELECT v FROM meta WHERE k = ?').get(k); return r ? +r.v : null; } catch { return null; } };
   const sv = (k, v) => { try { if (db) db.prepare('INSERT OR REPLACE INTO meta VALUES (?, ?)').run(k, String(v)); } catch { /* bookkeeping only */ } };
   const keep = rows => { fresh.push(...rows); if (!db || !rows.length) return; try { const up = db.prepare('INSERT OR REPLACE INTO pr_kind VALUES (?, ?, ?)'); db.exec('BEGIN'); for (const [k, t, kind] of rows) up.run(k, t, kind); db.exec('COMMIT'); } catch { /* the rows stay in memory for this run */ } };
-  if (has('gh')) {                                             // GitHub: PRs you authored that merged, with their titles
-    on({ pct: .75, detail: 'GitHub · your merged pull requests (gh search)' }); audit('net', 'api.github.com/search/issues (through your gh login)');
+  const optional = cli => {
+    if (has(cli)) return true;
+    audit('note', `${cli} CLI not found: source skipped`); return false;
+  };
+  if (optional('gh')) {                                             // GitHub: PRs you authored that merged, with their titles
+    on({ pct: .75, detail: 'GitHub · your merged pull requests (gh search)' });
     const iso = t => new Date(t).toISOString().slice(0, 19) + 'Z';
     // one search answers at most 1,000 rows, so the time is asked in slices of a week (and a full slice is asked again in halves)
     // every github.com account logged in to gh is you (the active one first): each is asked, and each keeps its own mark of how far back it got
-    const st = spawnSync('gh', ['auth', 'status', '--hostname', 'github.com'], { encoding: 'utf8', timeout: 10000 }), logins = [...((st.stdout || '') + (st.stderr || '')).matchAll(/Logged in to github\.com account (\S+)[^\n]*\n\s*- Active account: (true|false)/g)];
-    const authors = [...new Set(logins.sort((a, b) => (b[2] === 'true') - (a[2] === 'true')).map(x => x[1]))]; if (!authors.length) authors.push('@me');
+    const st = spawnSync('gh', ['auth', 'status', '--hostname', 'github.com'], { encoding: 'utf8', timeout: 10000 });
+    const txt = (st.stdout || '') + '\n' + (st.stderr || '');
+    const logins = [...txt.matchAll(/Logged in to github\.com account (\S+)[^\n]*\n\s*- Active account: (true|false)/g)];
+    const authors = [...new Set([
+      ...logins.sort((a, b) => (b[2] === 'true') - (a[2] === 'true')).map(x => x[1]),
+      ...[...txt.matchAll(/Logged in to github\.com as (\S+)/g)].map(x => x[1]),
+    ])];
+    const loggedOut = st.status != null && !authors.length && /You are not logged into any (?:GitHub hosts|accounts(?: on github\.com)?)/i.test(txt);
+    if (loggedOut) audit('note', 'gh has no logged-in account: source skipped');
+    else if (st.status !== 0 || !authors.length) answer('gh discovery', false, ['prs']);
+    if (authors.length) audit('net', 'api.github.com/search/issues (through your gh login)');
     for (const [ai, au] of authors.entries()) { const kFrom = 'gh_kind_from_ms' + (ai ? ':' + au : ''), kAt = 'gh_kind_fetched_ms' + (ai ? ':' + au : '');
+    let answered = true;
     const range = async (a, b) => { audit('run', `gh api search/issues q="is:pr is:merged author:${au} merged:${iso(a)}..${iso(b)}" --paginate`);
       const o = await runOut('gh', ['api', '-X', 'GET', 'search/issues', '-f', `q=is:pr is:merged author:${au} merged:${iso(a)}..${iso(b)}`, '-f', 'per_page=100', '--paginate', '-q', '.items[] | [.repository_url, .number, .pull_request.merged_at, .title] | @tsv'], 90000);
       const rows = []; for (const l of o.out.split('\n')) { const [url, n, at, ...ti] = l.split('\t'); if (!url || !at) continue; rows.push([('github.com/' + url.split('/repos/')[1] + '#' + n).toLowerCase(), Date.parse(at), kindOf(ti.join(' '))]); }
       if (o.code === 0 && rows.length >= 1000 && b - a > DAY) { const mid = a + Math.floor((b - a) / 2), x = await range(a, mid), y = await range(mid, b); return x && y; }
-      if (o.code !== 0) return false; keep(rows); return true; };
+      if (rows.length >= 1000) { answered = false; return false; }
+      if (o.code !== 0 || rows.some(r => !Number.isFinite(r[1]))) { answered = false; return false; } keep(rows); return true; };
     const slices = async (from, to) => { let done = to; for (let b = to; b > from; b -= 7 * DAY) { const a = Math.max(from, b - 7 * DAY); if (!await range(a, b)) break; done = a; } return done; };   // newest first; returns how far back it got
     const cov = mv(kFrom), fetched = mv(kAt), now0 = Date.now();
     const recentFrom = cov != null && fetched ? Math.max(cov, fetched - DAY) : since, got = await slices(recentFrom, now0);
@@ -186,23 +239,54 @@ export async function git(cfg, on) {
       if (from > histFrom) { on({ pct: .8, detail: `GitHub · earlier weeks of merged pull requests${ai ? ' by ' + au : ''} (asked once, then kept)` }); from = await slices(histFrom, from); }   // an unanswered slice (rate limit) is asked again on the next run
       sv(kFrom, from); }
     else audit('note', `gh search did not answer for ${au}: using the pull requests already stored`);
+    answer('gh:' + au, answered, ['prs']);
     }
-  } else audit('note', 'gh CLI not found: GitHub PRs not counted');
-  // Gitea (tea) and GitLab (glab) are optional: not installed, logged out or not answering means skipped with a note, never an error.
+  }
+  // Optional forges are skipped only when absent or explicitly logged out. Unusable discovery and failed logged-in requests remain uncovered.
   // A few bounded calls per forge (your own merged pull requests), not one per repository; later runs only ask for what changed since the last one.
-  const forge = async (name, cli, id, argsFor, pick, pageSize) => { if (!has(cli)) return; on({ pct: .9, detail: `${name} · your merged pull requests (${cli})` });
+  const forge = async (name, cli, id, argsFor, pick, pageSize) => { const source = cli === 'tea' ? 'tea' : id.replace(/^gitlab:/, 'glab:'); on({ pct: .9, detail: `${name} · your merged pull requests (${cli})` });
     const last = mv('forge_fetched_ms:' + id), from = new Date(last ? Math.max(histFrom, last - DAY) : histFrom).toISOString(), t0 = Date.now(), rows = [];
     for (let page = 1; page <= 60; page++) { const args = argsFor(page, from); audit('run', `${cli} ${args.join(' ')}`); const o = await runOut(cli, args, 30000); let list = null; try { list = JSON.parse(o.out); } catch { /* not JSON */ }
-      if (o.code !== 0 || !Array.isArray(list)) { audit('note', `${name}: no usable answer from ${cli} (not logged in?): its pull requests are not counted`); keep(rows); return; }
+      if (o.code !== 0 || !Array.isArray(list)) { audit('note', `${name}: no usable answer from logged-in ${cli}: using the pull requests already stored`); keep(rows); answer(source, false, ['prs']); return; }
       for (const x of list) { let r = null; try { r = pick(x); } catch { /* odd row */ } if (r && r[1] >= histFrom) rows.push(r); }
-      if (list.length < pageSize) { keep(rows); sv('forge_fetched_ms:' + id, t0); return; } }
-    keep(rows); };
-  await forge('Gitea', 'tea', 'gitea', (page, from) => ['api', `/repos/issues/search?type=pulls&state=closed&created=true&since=${from}&limit=50&page=${page}`],
+      if (list.length < pageSize) { keep(rows); sv('forge_fetched_ms:' + id, t0); answer(source, true, ['prs']); return; } }
+    keep(rows); answer(source, false, ['prs']); };
+  if (optional('tea')) {
+    audit('run', 'tea login list --output json   (local login inventory)');
+    const st = spawnSync('tea', ['login', 'list', '--output', 'json'], { encoding: 'utf8', timeout: 20000 });
+    let logins; try { logins = JSON.parse(st.stdout); } catch { /* malformed inventory */ }
+    if (st.status !== 0 || !Array.isArray(logins) || logins.some(x => !x || !x.name || typeof x.url !== 'string' || typeof x.user !== 'string')) answer('tea discovery', false, ['prs']);
+    else if (!logins.length) audit('note', 'tea has no logged-in account: source skipped');
+    else {
+      await forge('Gitea', 'tea', 'gitea', (page, from) => ['api', `/repos/issues/search?type=pulls&state=closed&created=true&since=${from}&limit=50&page=${page}`],
     x => x.pull_request && x.pull_request.merged && x.pull_request.merged_at ? [('gitea/' + (x.repository ? x.repository.full_name : x.html_url) + '#' + x.number).toLowerCase(), Date.parse(x.pull_request.merged_at), kindOf(x.title)] : null, 50);
+    }
+  }
   let glHosts = [];
-  if (has('glab')) { const st = spawnSync('glab', ['auth', 'status'], { encoding: 'utf8', timeout: 20000 }), txt = (st.stdout || '') + '\n' + (st.stderr || '');   // host names sit unindented, each followed by its login lines
-    let cur = null; for (const l of txt.split('\n')) { const h = /^([a-z0-9][a-z0-9.-]*\.[a-z]{2,})\s*$/i.exec(l); if (h) cur = h[1].toLowerCase(); else if (cur && /Logged in to/.test(l) && !glHosts.includes(cur)) glHosts.push(cur); }
-    audit('run', 'glab auth status' + `   (GitLab hosts you are logged in to: ${glHosts.join(', ') || 'none'})`); }
+  if (optional('glab')) {
+    const st = spawnSync('glab', ['auth', 'status'], { encoding: 'utf8', timeout: 20000 });
+    const txt = ((st.stdout || '') + '\n' + (st.stderr || '')).replace(/\x1b\[[0-9;]*m/g, '');
+    const blocks = new Map(); let cur = null;
+    for (const line of txt.split('\n')) {
+      const h = /^([a-z0-9][a-z0-9.-]*\.[a-z]{2,}(?::\d+)?)\s*$/i.exec(line);
+      if (h) { cur = h[1].toLowerCase(); if (!blocks.has(cur)) blocks.set(cur, ''); }
+      else if (cur) blocks.set(cur, blocks.get(cur) + '\n' + line);
+    }
+    // glab can exit 1 because its default gitlab.com host has no token, while other hosts answer.
+    // Classify each host's actual auth result; the aggregate process exit cannot select sources.
+    let failed = !!st.error || st.signal != null || st.status == null ||
+      (!blocks.size && !/no GitLab instances have been authenticated with glab/i.test(txt));
+    for (const [host, block] of blocks) {
+      const loggedIn = /Logged in to\s+/i.test(block), noToken = /No token found/i.test(block);
+      const error = /API call failed:|could not read the token:|failed to initialize api client:/i.test(block);
+      if (noToken && !loggedIn) audit('note', `glab ${host} has no token: skipped as a source`);
+      else if (error || !loggedIn || noToken) failed = true;
+      else glHosts.push(host);
+    }
+    if (!blocks.size && !failed) audit('note', 'glab has no authenticated instance: skipped as a source');
+    if (failed) answer('glab discovery', false, ['prs']);
+    audit('run', 'glab auth status' + `   (GitLab hosts you are logged in to: ${glHosts.join(', ') || 'none'}; discovery may contact gitlab.com even without a token)`);
+  }
   for (const host of glHosts) await forge('GitLab', 'glab', 'gitlab:' + host, (page, from) => ['api', '--hostname', host, `merge_requests?scope=created_by_me&state=merged&updated_after=${from}&per_page=100&page=${page}`],
     x => x.merged_at ? [(host + '/' + ((x.references && x.references.full) || x.web_url)).toLowerCase(), Date.parse(x.merged_at), kindOf(x.title)] : null, 100);
   // every forge row of the last 12 weeks (stored + this run); the last 14 days of them join the usagemeter rows
@@ -214,7 +298,8 @@ export async function git(cfg, on) {
     if (!prs.has(k)) src[k.startsWith('github.com/') ? 'github' : k.startsWith('gitea/') ? 'gitea' : 'gitlab']++; prs.set(k, t); }
   for (const [k, t] of prs) if (!kinds.has(k)) kinds.set(k, [t, 'other']);      // a pull request only the usagemeter store knows has no title here
   on({ pct: 1, detail: 'done' });
-  return { prs: [...prs.values()], kinds: [...kinds.values()], commits: [...commits.values()], repos, src, meter: meter && { version: meter.version, downloaded: meter.downloaded } };
+  const coverage = { sources: answers, prs: answers.filter(x => x.metrics.includes('prs')).every(x => x.answered), commits: !recentNoCheckout && answers.filter(x => x.metrics.includes('commits')).every(x => x.answered) };
+  return { coverage, prs: [...prs.values()], kinds: [...kinds.values()], commits: [...commits.values()], repos, src, meter: meter && { version: meter.version, downloaded: meter.downloaded } };
 }
 
 // ---------------------------------------------------------------- shape the data the dashboard draws
@@ -304,7 +389,7 @@ export function buildData(report, g, cfg, scanInfo) {
     const inw = (t, a, b) => t >= a && t < b, mc = g.prs.filter(t => inw(t, w1, now)).length, mp = g.prs.filter(t => inw(t, w0, w1)).length, per = Array(7).fill(0); for (const t of g.prs) { const i = di(t); if (i >= 0 && i < 7) per[i]++; }
     const cost = mc ? D.totals.api_value_usd / mc : null, costPrev = mp ? sum(prev, 'usd') / mp : null;
     D.git = { merged_prs: mc, merged_prs_change_pct: pctChange(mc, mp), commits: g.commits.filter(t => t >= w1).length, repos: g.repos, usd_per_merged_pr: cost, usd_per_pr_change_pct: cost != null && costPrev ? pctChange(cost, costPrev) : null,
-      prs_per_day: per, usd_per_pr_per_day: per.map((k, i) => k ? D.totals.value_per_day[i] / k : 0), sources: g.src, meter: g.meter };
+      prs_per_day: per, usd_per_pr_per_day: per.map((k, i) => k ? D.totals.value_per_day[i] / k : 0), sources: g.src, meter: g.meter, coverage: g.coverage };
   }
 
   // player history: one small row per day, kept forever; XP, level, streak and bests are computed from it
@@ -319,9 +404,11 @@ export function buildData(report, g, cfg, scanInfo) {
     return !missing.length && !leftOut.length && +start >= scanFrom && +end <= scanTo;
   };
   // Git has its own 14-day window; usage coverage and machine selection do not govern delivery counts.
-  const gitCovered = k => !!g && +new Date(k + 'T00:00:00') >= now - 14 * DAY;
+  const gitCovered = (k, metric) => !!g?.coverage?.[metric] && +new Date(k + 'T00:00:00') >= now - 14 * DAY;
+  // A complete empty answer also replaces a saved delivery day with zero.
+  for (const [k, old] of Object.entries(hist.days)) if (!agg[k]) agg[k] = { out: old.out || 0, usd: old.usd || 0, prs: 0, commits: 0 };
   const was = (k, f, covered) => covered ? 0 : (hist.days[k] || {})[f] || 0;
-  for (const [k, o] of Object.entries(agg)) hist.days[k] = { out: Math.max(Math.round(o.out), was(k, 'out', complete(k))), usd: Math.max(Math.round(o.usd), was(k, 'usd', complete(k))), prs: Math.max(o.prs, was(k, 'prs', gitCovered(k))), commits: Math.max(o.commits, was(k, 'commits', gitCovered(k))) };
+  for (const [k, o] of Object.entries(agg)) hist.days[k] = { out: Math.max(Math.round(o.out), was(k, 'out', complete(k))), usd: Math.max(Math.round(o.usd), was(k, 'usd', complete(k))), prs: Math.max(o.prs, was(k, 'prs', gitCovered(k, 'prs'))), commits: Math.max(o.commits, was(k, 'commits', gitCovered(k, 'commits'))) };
   fs.mkdirSync(HOME, { recursive: true }); fs.writeFileSync(hf, JSON.stringify(hist)); audit('write', tilde(hf) + `  (${Object.keys(hist.days).length} daily rows)`);
   // delivery: what the merged pull requests were (title prefix), ranked, and how features and their cost moved day by day, week by week, month by month
   if (g && g.kinds && g.kinds.length) {
@@ -354,12 +441,11 @@ export function buildData(report, g, cfg, scanInfo) {
     // Both stores replace covered days and keep per-field maxima outside each source's coverage.
     const replaceP = db.prepare('INSERT OR REPLACE INTO day_provider VALUES (?, ?, ?, ?, ?)');
     const upP = db.prepare('INSERT INTO day_provider VALUES (?, ?, ?, ?, ?) ON CONFLICT (day, provider) DO UPDATE SET api_usd = MAX(api_usd, excluded.api_usd), output_tokens = MAX(output_tokens, excluded.output_tokens), requests = MAX(requests, excluded.requests)');
-    const replaceD = db.prepare('INSERT OR REPLACE INTO day VALUES (?, ?, ?)');
-    const upD = db.prepare('INSERT INTO day VALUES (?, ?, ?) ON CONFLICT (day) DO UPDATE SET prs = MAX(prs, excluded.prs), commits = MAX(commits, excluded.commits)');
+    const upD = db.prepare('INSERT INTO day VALUES (?, ?, ?) ON CONFLICT (day) DO UPDATE SET prs = CASE WHEN ? THEN excluded.prs ELSE MAX(prs, excluded.prs) END, commits = CASE WHEN ? THEN excluded.commits ELSE MAX(commits, excluded.commits) END');
     const upV = db.prepare('INSERT OR REPLACE INTO plan_value VALUES (?, ?, ?, ?, ?, ?, ?)');
     db.exec('BEGIN');
     for (const [k, o] of Object.entries(dp)) { const [day, provider] = k.split('|'); (complete(day) ? replaceP : upP).run(day, provider, +o.usd.toFixed(2), Math.round(o.out), o.req); }
-    for (const [k, o] of Object.entries(hist.days)) (gitCovered(k) ? replaceD : upD).run(k, o.prs || 0, o.commits || 0);
+    for (const [k, o] of Object.entries(hist.days)) upD.run(k, o.prs || 0, o.commits || 0, +gitCovered(k, 'prs'), +gitCovered(k, 'commits'));
     for (const p of plans) upV.run(dayKey(now), p.key, p.plan, p.usd_per_full_week, p.times_plan_price, p.stretches || 1, p.proof);
     db.exec('COMMIT');
     const lim = {}; for (const r of db.prepare('SELECT substr(day, 1, 7) AS month, provider, ROUND(AVG(usd_per_full_week)) AS v, COUNT(*) AS n FROM plan_value GROUP BY 1, 2').all()) lim[r.month + '|' + r.provider] = r;

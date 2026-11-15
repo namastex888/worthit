@@ -7,6 +7,7 @@ import { isolatedEnvironment } from '../../support/environment.mjs';
 import { expectedData } from '../../support/expected-data.mjs';
 
 const folder = path.dirname(fileURLToPath(import.meta.url)), root = path.resolve(folder, '../../..');
+const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
 const support = path.join(root, 'test/support');
 const isolated = isolatedEnvironment(), { tmp, bin, home, python, env } = isolated;
 Object.assign(env, { NODE_OPTIONS: `--import=${path.join(support, 'clock.mjs')}`, PYTHONPATH: support,
@@ -31,8 +32,8 @@ try {
   fs.mkdirSync(path.join(home, '.meter'));
   run(python, ['-c', 'import sqlite3,sys; d=sqlite3.connect(sys.argv[1]); d.executescript("CREATE TABLE pr (repo TEXT, pr INTEGER, merged_ms INTEGER); CREATE TABLE cwd_repo (repo TEXT, cwd TEXT, checked_ms INTEGER);")', path.join(home, '.meter/meter.db')]);
   fs.mkdirSync(path.join(home, '.ssh')); fs.writeFileSync(path.join(home, '.ssh/config'), 'Host box-b\n  HostName box-b.invalid\n');
-  // Shell-free command wrappers use only synthetic homes and never contact a host.
-  for (const command of ['ssh', 'gh', 'usagemeter']) fs.writeFileSync(path.join(bin, command), `#!${process.execPath}\nprocess.argv.splice(1,1,${JSON.stringify(path.join(support, 'commands.mjs'))},${JSON.stringify(command)}); await import(${JSON.stringify(path.join(support, 'commands.mjs'))});\n`, { mode: 0o755 });
+  // Command wrappers use only synthetic homes and never contact a host.
+  for (const command of ['ssh', 'gh', 'usagemeter']) fs.writeFileSync(path.join(bin, command), `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(path.join(support, 'commands.mjs'))} ${command} \"$@\"\n`, { mode: 0o755 });
   cli(21, 'box-b');
   check('baseline', history());
   const short = cli(7, 'box-b');

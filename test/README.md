@@ -80,3 +80,28 @@ Repeated checks against one expectation are allowed. Edit expected values
 only when an intentional contract or fixture change explains the new number.
 Run `make check` before pushing. Deliberate regression experiments belong in a
 private throwaway copy; leave the checked-out implementation intact.
+
+`git-source-coverage` seeds literal daily PR and commit counts in both stores and
+uses synthetic meter, local git, gh (two accounts), glab (two hosts), and tea
+commands. A meter sync failure through `--json` preserves both metrics; the next
+good answer replaces them, including a stored day with no current rows. Status,
+discovery, individual account/host and git-log failures check
+independent per-metric MAX behavior and named audit failures. Expectations live
+in `expected-data.json`; every root key is exercised.
+
+The same case checks absent gh/glab/tea executables and explicit logged-out
+inventories (skipped without FAILED), malformed inventories and logged-in auth
+errors (failed), older gh login output, and a partial tea page followed by failure.
+Nonzero sync and successful budget-limited sync still read existing PRs and logs
+while keeping stored maxima. A repo whose newest cwd disappeared falls back to
+its older checkout. No-checkout controls pin exact session milliseconds at the
+14-day lower boundary and one millisecond before it, with no FAILED audit label.
+Main Claude files use the published meter shape `{cwd}` and `<session>.jsonl`;
+a separate sub-agent row has session context. Additive mtime and exact-session
+controls each make the other path stale, pinning the boundary and one millisecond
+before it independently. The minimal tables include the published `files.mtime_ms`,
+not checked_ms as a proxy. A missing-query-table case keeps conservative commit MAX
+and still counts another readable checkout. Literal glab 1.123.0 output shapes
+cover token-less gitlab.com alone, a self-hosted login beside it, token-bearing
+host errors, and the no-authenticated-instances message. Only synthetic identities
+are used; source references are recorded with the PR.

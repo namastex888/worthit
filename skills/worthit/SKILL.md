@@ -43,6 +43,33 @@ Parts of the last run. Dots walk into objects and arrays (`plans.0.usd_per_full_
 
 When `machines_retained` has a unit inside this week, that week's totals are a lower bound too.
 
+`git.coverage` reports `prs` and `commits` booleans and `sources`, an array of
+`{source, answered, metrics}`. Sources are `usagemeter`, `git log`, `gh:<account>`,
+`glab:<host>` and `tea`. Absent CLIs and explicit empty login inventories are
+skipped as a source with an audit note, omitted from `sources`, and do not reduce coverage.
+For glab, each host with `No token found` and no login line is skipped; a successful
+self-hosted login still counts when token-less gitlab.com makes auth exit 1. Host
+errors with a token and process execution failures remain uncovered. Discovery
+can contact gitlab.com even without a token; source selection does not imply no network request.
+Malformed inventories and command errors remain failures, named `gh discovery`,
+`glab discovery` or `tea discovery`. Both multi-account and older `gh` login
+output are supported. A logged-in source that gives a partial answer is uncovered.
+PR coverage needs the meter and every selected forge answer. Commit coverage needs
+meter repository discovery and every local git log; forge failures do not affect it.
+A nonzero sync or pending meter work leaves meter-fed metrics uncovered, while
+existing meter PRs and local git logs are still read. For each repo, the newest
+existing checkout is used. No checkout left is an audit note, not a failed source;
+commit coverage stays false if its exact session overlaps the inclusive interval
+from now minus 14 days through now OR a meter file mapped to it has `mtime_ms`
+at or after that lower bound. These paths are additive; main Claude transcript
+context may contain only cwd. An unavailable session/file recency query keeps MAX
+conservatively while readable checkouts still contribute live git-log counts.
+Within git's 14-day window, each metric replaces stored daily counts only with full
+coverage. Otherwise `history.json` and SQLite `day` keep the per-metric MAX, also
+outside the window. Name sources with `answered: false` when reporting failures;
+use the audit note to explain no-checkout retention. The audit log names each
+source's answer, failure or skip too.
+
 ## `worthit days`
 
 Sums from the local store over any period.
