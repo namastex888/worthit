@@ -155,7 +155,9 @@ worthit weekly [--hosts all|none|a,b] [--allow-partial] [--no-files]
 Fresh headless scan, all SSH hosts by default, git and AI off. It ignores scan-reuse
 shortcuts and always uses the fixed `SHARE_TOPICS.allowance` template. No TTY, questions,
 browser UI, clipboard or posting. Chrome or Chromium is required to render
-`<date>-worthit-share-allowance.png` in the current folder; `--no-files` skips it.
+`<date>-worthit-share-allowance.png` in the current folder. Alongside it,
+`<date>-worthit-audit.log` lists scan reads, commands, selected SSH hosts and output
+writes in the same format as a plain scan. `--no-files` skips both output files.
 The local store is updated in either case.
 `--demo` uses bundled synthetic data and leaves all stores and files untouched;
 its baseline is always null.
@@ -163,7 +165,8 @@ its baseline is always null.
 JSON fields (also documented by `worthit schema`):
 
 - `week: {from, to}` (YYYY-MM-DD), `generated_at` (ISO time), `text` (fixed post),
-  `image` (absolute PNG path, or null with `--no-files`).
+  `image` (absolute PNG path), `audit_log` (absolute audit log path beside the PNG).
+  Both paths are null with `--no-files` or `--demo`.
 - `plans: [{plan, usd_per_full_week, times_plan_price, proof, change_vs_last_week_pct, retirement_note?}]`.
   Proof is `measured` or `floor`; change is a number or null.
 - `machines_read` (number included), `machines_missing: [{machine, saved_scan_at}]`,
@@ -184,7 +187,7 @@ JSON fields (also documented by `worthit schema`):
 
 Exit **0**: safe, or `--allow-partial` supplied. Exit **3**: unsafe, JSON still printed.
 The override keeps `safe_to_post: false` and its reasons. Exit **1**: no result due to
-scan failure, no allowance data this week, or PNG/store failure.
+scan failure, no allowance data this week, or PNG/audit/store failure.
 
 SQLite `weekly (generated_at TEXT PRIMARY KEY, week_to TEXT, safe INTEGER, json TEXT)`
 records one row per successful checkpoint, including unsafe runs and `--no-files`.

@@ -23,7 +23,7 @@ import { createRenderer } from '@json-render/ink';
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import { blocks, C, W, bar, fg, bold, d, m, w, pad, lpad, len, strip, grad, fmtTok, usd, machineNotes } from '../src/draw.mjs';
-import { scan, analyse, git, buildData, audit, AUDIT, has, tilde, ROOT, HOME, sshHosts, savedHosts, saveHosts } from '../src/collect.mjs';
+import { scan, analyse, git, buildData, audit, writeAudit, has, tilde, ROOT, HOME, sshHosts, savedHosts, saveHosts } from '../src/collect.mjs';
 import { activeHosts, readHosts, hostsCommand } from '../src/hosts.mjs';
 import { query, run as runQuery, QUERY_COMMANDS } from '../src/query.mjs';
 import { cardSpec, customSpec, renderCardImage } from '../src/card.mjs';
@@ -257,8 +257,7 @@ function writeFiles(spec) {
     audit('run', 'headless Chrome screenshot of the dashboard (local file, no network)');
     spawnSync(chrome, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=2', `--window-size=${Math.round(W * 9.05 + 64)},${Math.round(all.length * 18.6 + 60)}`, '--screenshot=' + path.resolve(f2), 'file://' + hp], { stdio: 'ignore', timeout: 60000 });
     fs.rmSync(hp, { force: true }); if (fs.existsSync(f2)) { audit('write', './' + f2); out.push(f2); } }
-  const f3 = `${STAMP}-worthit-audit.log`; audit('write', './' + f3);
-  fs.writeFileSync(f3, [`worthit ${VERSION} audit log · ${new Date().toISOString()}`, "Recorded session-log reads and cache hits, collector commands, network activity, agent calls, sent data and output writes. It does not list executable lookup (which), hardware probes, the zstd decompressor used for .zst logs, the account ids read from Claude and Codex login files (.claude.json, auth.json; hashed), ~/.ssh/config, or worthit's own store files. Kinds: read, cache, run, net, agent, sent, write, note.", '', ...AUDIT, ''].join('\n')); out.push(f3);
+  const f3 = `${STAMP}-worthit-audit.log`; writeAudit('./' + f3, VERSION); out.push(f3);
   return out;
 }
 
@@ -553,10 +552,14 @@ if (WEEKLY) {
       while (exists.get(D.generated_at)) D.generated_at = new Date(Date.parse(D.generated_at) + 1).toISOString();
     }
     const checkpoint = prepareWeekly(D, db ? weeklyBaseline(db, D) : null);
+    checkpoint.audit_log = NO_FILES ? null : path.resolve(`${STAMP}-worthit-audit.log`);
+    if (!NO_FILES) audit('run', 'headless Chrome screenshot of the allowance card (local file, no network)');
     const result = await makeShare(D, 'allowance', { agent: null, clipOk: false, files: !NO_FILES });
     if (!NO_FILES && !result.image) throw new Error('allowance PNG could not be rendered; install Chrome or Chromium, or use --no-files');
     checkpoint.text = result.text; checkpoint.image = result.image;
-    if (db) saveWeekly(db, checkpoint);
+    if (result.image) audit('write', result.image);
+    if (db) { saveWeekly(db, checkpoint); audit('write', tilde(path.join(HOME, 'worthit.db')) + '  (weekly checkpoint)'); }
+    if (checkpoint.audit_log) writeAudit(checkpoint.audit_log, VERSION);
     console.log(JSON.stringify(checkpoint, null, 1));
     process.exitCode = checkpoint.safe_to_post || flag('--allow-partial') ? 0 : 3;
   } catch (e) { console.error('worthit weekly: ' + e.message); process.exitCode = 1; }
