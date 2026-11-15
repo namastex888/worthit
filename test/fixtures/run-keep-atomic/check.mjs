@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { sourceCase } from '../../support/source-case.mjs';
 
 const folder = path.dirname(fileURLToPath(import.meta.url));
-sourceCase(folder, ({ cli, expected, tmp, env, python, root, run, trace }) => {
+sourceCase(folder, ({ cli, expected, tmp, env, python, root, run, query, trace }) => {
   const entry = path.join(root, 'bin/worthit.mjs'), fault = path.join(folder, 'fault.mjs');
   const complete = expected.get('complete'), local = expected.get('local');
   const totals = (data, want, name) => assert.deepEqual({ output_tokens: data.totals.output_tokens, api_value_usd: data.totals.api_value_usd }, want, 'run-keep-atomic / ' + name);
@@ -60,6 +60,31 @@ sourceCase(folder, ({ cli, expected, tmp, env, python, root, run, trace }) => {
     } else unchanged(path.join(runFolder(store), 'local.json'), before, 'reuse reads complete saved local bytes');
   }
 
+  // These literal days predate both scan and Git coverage. Source logs cannot
+  // reconstruct them if an interrupted history write loses the only history rows.
+  const historyStore = clone('interrupt-history'), historyFile = path.join(historyStore, 'history.json');
+  const historicalDays = expected.get('historical_days');
+  const historySeed = JSON.parse(bytes(historyFile));
+  Object.assign(historySeed.days, historicalDays);
+  fs.writeFileSync(historyFile, JSON.stringify(historySeed));
+  const historyBefore = bytes(historyFile), historyReceipt = path.join(tmp, 'history-interruption.json');
+  const historyWrite = invoke(historyStore, scanArgs, faultEnv({ FIXTURE_INTERRUPT_FILE: historyFile, FIXTURE_FAULT_RECEIPT: historyReceipt }));
+  assert.equal(historyWrite.signal, 'SIGKILL', 'run-keep-atomic / real history interruption after temp creation');
+  assert.deepEqual(bytes(historyFile), historyBefore, 'run-keep-atomic / interrupted history write preserves saved bytes');
+  const assertHistoricalDays = name => {
+    const days = JSON.parse(bytes(historyFile)).days;
+    for (const [day, row] of Object.entries(historicalDays)) assert.deepEqual(days[day], row, 'run-keep-atomic / ' + name + ' ' + day);
+  };
+  assertHistoricalDays('interrupted history keeps historical daily row');
+  const historyTemp = interruptedTemp(historyReceipt, historyFile, historyWrite.pid);
+  age(historyTemp);
+  totals(good(historyStore), complete, 'actual history recovery run completes');
+  assertHistoricalDays('next actual run keeps historical daily row');
+  assert.ok(!fs.existsSync(historyTemp), 'run-keep-atomic / history recovery cleans expired interrupted temp');
+  assert.deepEqual(query("SELECT day, prs, commits FROM day WHERE day IN ('2026-08-03', '2026-10-01') ORDER BY day", 'interrupt-history'),
+    Object.entries(historicalDays).map(([day, row]) => ({ day, prs: row.prs, commits: row.commits })),
+    'run-keep-atomic / history recovery preserves historical delivery rows in SQLite');
+
   const hostsStore = clone('interrupt-hosts'), hostsFile = path.join(hostsStore, 'hosts.json');
   fs.writeFileSync(hostsFile, '{"selected":["box-b"],"retired":[]}');
   const hostsBefore = bytes(hostsFile), hostsReceipt = path.join(tmp, 'hosts-interruption.json');
@@ -77,6 +102,7 @@ sourceCase(folder, ({ cli, expected, tmp, env, python, root, run, trace }) => {
   assert.ok(!fs.existsSync(hostsTemp), 'run-keep-atomic / hosts recovery cleans expired interrupted temp');
 
   run(process.execPath, [path.join(folder, 'interleave.mjs'), 'coordinate', clone('concurrent')]);
+  run(process.execPath, [path.join(folder, 'errors.mjs'), path.join(tmp, 'error-paths')]);
 
   const store = clone('stale'), keep = path.join(store, 'run-keep');
   fs.mkdirSync(path.join(keep, 'retired'), { recursive: true });
@@ -108,6 +134,16 @@ sourceCase(folder, ({ cli, expected, tmp, env, python, root, run, trace }) => {
   seedTemps(); for (const name of stale) age(path.join(keep, name)); age(path.join(store, 'hosts.json.tmp')); good(store, ['hosts']);
   for (const name of stale) assert.ok(!fs.existsSync(path.join(keep, name)), 'run-keep-atomic / hosts also cleans ' + name);
   assert.ok(!fs.existsSync(path.join(store, 'hosts.json.tmp')));
+
+  // Deliberately old saved scans must survive real cleanup regardless of the
+  // real date. A broad old-file deletion must fail this fixture by name.
+  for (const machine of ['box-b', 'local']) {
+    const saved = path.join(keep, machine + '.json'), before = bytes(saved);
+    age(saved);
+    good(store, ['hosts']);
+    assert.ok(fs.existsSync(saved), `run-keep-atomic / cleanup preserves aged ${machine} saved scan`);
+    unchanged(saved, before, `cleanup preserves aged ${machine} saved bytes`);
+  }
 
   // Directly exercise both core readers with temp files still present, independently
   // of Node cleanup. Neither reader may parse a malformed .json.tmp as a scan.
@@ -145,6 +181,7 @@ sourceCase(folder, ({ cli, expected, tmp, env, python, root, run, trace }) => {
   const retiredState = bytes(path.join(retiredStore, 'hosts.json'));
   fs.writeFileSync(frozen + '.tmp', '{broken');
   age(frozen + '.tmp');
+  age(frozen);
   totals(good(retiredStore, scanArgs, { WORTHIT_REUSE: '1', FIXTURE_OFFLINE: '1' }), complete, 'actual scan uses frozen saved scan');
   unchanged(frozen, before, 'actual scan never rewrites retired snapshot');
   assert.ok(!fs.existsSync(frozen + '.tmp'));

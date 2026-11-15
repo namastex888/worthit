@@ -6,7 +6,7 @@ import { spawn, spawnSync } from 'node:child_process'; import { createRequire } 
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');   // loaded here, after quiet.mjs, so its 'experimental' warning stays silent
 import { C } from './draw.mjs';
 import { readHosts, writeHosts, activeHosts, retirementBlocks, retirementStatement } from './hosts.mjs';
-import { copyFileAtomic, cleanSavedTemps } from './atomic.mjs';
+import { copyFileAtomic, writeFileAtomic, cleanSavedTemps } from './atomic.mjs';
 
 export const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 export const HOME = process.env.WORTHIT_HOME || path.join(os.homedir(), '.worthit');
@@ -447,7 +447,7 @@ export function buildData(report, g, cfg, scanInfo) {
   for (const [k, old] of Object.entries(hist.days)) if (!agg[k]) agg[k] = { out: old.out || 0, usd: old.usd || 0, prs: 0, commits: 0 };
   const was = (k, f, covered) => covered ? 0 : (hist.days[k] || {})[f] || 0;
   for (const [k, o] of Object.entries(agg)) hist.days[k] = { out: Math.max(Math.round(o.out), was(k, 'out', complete(k))), usd: Math.max(Math.round(o.usd), was(k, 'usd', complete(k))), prs: Math.max(o.prs, was(k, 'prs', gitCovered(k, 'prs'))), commits: Math.max(o.commits, was(k, 'commits', gitCovered(k, 'commits'))) };
-  fs.mkdirSync(HOME, { recursive: true }); fs.writeFileSync(hf, JSON.stringify(hist)); audit('write', tilde(hf) + `  (${Object.keys(hist.days).length} daily rows)`);
+  fs.mkdirSync(HOME, { recursive: true }); writeFileAtomic(hf, JSON.stringify(hist)); audit('write', tilde(hf) + `  (${Object.keys(hist.days).length} daily rows)`);
   // delivery: what the merged pull requests were (title prefix), ranked, and how features and their cost moved day by day, week by week, month by month
   if (g && g.kinds && g.kinds.length) {
     const K = g.kinds, count = rs => { const c = { prs: rs.length }; for (const [, k] of rs) c[k] = (c[k] || 0) + 1; return c; }, between = (a, b) => K.filter(([t]) => t >= a && t < b);

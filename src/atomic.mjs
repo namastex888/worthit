@@ -10,7 +10,10 @@ function replace(file, write) {
     const fd = fs.openSync(tmp, 'r+');
     try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
     fs.renameSync(tmp, file);
-  } finally { fs.rmSync(tmp, { force: true }); }
+  } finally {
+    // Cleanup is best effort: keep the original I/O error (or successful publish).
+    try { fs.rmSync(tmp, { force: true }); } catch { /* expired scratch is cleaned on a later run */ }
+  }
 }
 export const copyFileAtomic = (source, file) => replace(file, tmp => fs.copyFileSync(source, tmp));
 export const writeFileAtomic = (file, data) => replace(file, tmp => fs.writeFileSync(tmp, data));
@@ -25,7 +28,7 @@ export function cleanSavedTemps(home) {
   // Leave fresh temps alone: another CLI may still be writing one.
   let entries = [];
   try { entries = fs.readdirSync(home); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-  for (const name of entries) if (name.startsWith('hosts.json.') && name.endsWith('.tmp')) remove(path.join(home, name));
+  for (const name of entries) if (['hosts.json.', 'history.json.'].some(prefix => name.startsWith(prefix)) && name.endsWith('.tmp')) remove(path.join(home, name));
   const clean = dir => {
     let entries;
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); }

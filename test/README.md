@@ -99,13 +99,21 @@ created and partially written. Both active SSH and local saved JSON stay readabl
 and byte-for-byte unchanged. The next actual offline scan uses the saved SSH scan;
 the next actual reuse run reads the complete local scan. Interrupted temps are
 explicitly aged past one hour, then cleaned by those next runs. An interrupted
-hosts-state write also leaves the prior state unchanged. Fresh temps stay present
-to prove hosts inventory and reuse copying ignore them independently of cleanup;
+hosts-state write also leaves the prior state unchanged.
+An interrupted `history.json` write preserves the entire old file and two literal
+daily rows outside scan/Git coverage; the next actual run keeps those rows and
+their delivery counts in SQLite, and cleans the aged interrupted temp.
+Fresh temps stay present to prove hosts inventory and reuse copying ignore them
+independently of cleanup;
 both Python readers also ignore temps. Two real writers pause with partial unique
 temps while cleanup runs, then each publishes complete bytes in a fixed order.
 Normal scans and hosts commands clean expired active, nested, retired and hosts
-temps while preserving fresh ones. RFC 0002 context checks preserve frozen bytes through scans and
-retire/unretire renames, including rollback when hosts replacement fails.
+temps while preserving fresh ones. Explicitly aged active/local saved scans survive
+actual CLI cleanup byte-for-byte, and an aged frozen snapshot survives a scan.
+Dual write/rename and cleanup faults preserve the original error; a cleanup fault
+after successful publication does not report a false failure. RFC 0002 context
+checks preserve frozen bytes through scans and retire/unretire renames, including
+rollback when hosts replacement fails.
 The private plain-copy negative control must fail the named case
 `run-keep-atomic / interrupted active scan preserves saved bytes`.
 
