@@ -242,7 +242,7 @@ function writeFiles(spec) {
     spawnSync(chrome, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=2', `--window-size=${Math.round(W * 9.05 + 64)},${Math.round(all.length * 18.6 + 60)}`, '--screenshot=' + path.resolve(f2), 'file://' + hp], { stdio: 'ignore', timeout: 60000 });
     fs.rmSync(hp, { force: true }); if (fs.existsSync(f2)) { audit('write', './' + f2); out.push(f2); } }
   const f3 = `${STAMP}-worthit-audit.log`; audit('write', './' + f3);
-  fs.writeFileSync(f3, [`worthit ${VERSION} audit log · ${new Date().toISOString()}`, 'Every file read, command run, network request, model prompt and file written by this run. Kinds: read, run, net, agent, sent, write, note.', '', ...AUDIT, ''].join('\n')); out.push(f3);
+  fs.writeFileSync(f3, [`worthit ${VERSION} audit log · ${new Date().toISOString()}`, 'Recorded session-log reads and cache hits, collector commands, network activity, agent calls, sent data and output writes. Excludes executable lookup (which), hardware probes and some internal file operations. Kinds: read, cache, run, net, agent, sent, write, note.', '', ...AUDIT, ''].join('\n')); out.push(f3);
   return out;
 }
 

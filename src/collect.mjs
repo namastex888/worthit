@@ -1,6 +1,6 @@
 // worthit collectors: scan local logs (bundled Python core), price and read the weekly meters, git activity
 // (GitHub search + the usagemeter store), then shape everything into the one DATA object the dashboard draws.
-// Everything read, run, fetched or written is recorded in AUDIT.
+// AUDIT records collector activity; discovery probes and internal file operations are not exhaustive.
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'; import crypto from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process'; import { createRequire } from 'node:module';
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');   // loaded here, after quiet.mjs, so its 'experimental' warning stays silent
@@ -155,6 +155,7 @@ export async function git(cfg, on) {
     audit('run', `${tilde(meter.bin)} sync --no-publish --budget-secs 20`);
     const sync = await runOut(meter.bin, ['sync', '--no-publish', '--budget-secs', '20'], 90000);
     if (sync.code !== 0) audit('note', 'usagemeter sync did not complete; reading existing meter data, keeping stored PR and commit counts');
+    audit('run', `${tilde(meter.bin)} status`);
     const status = spawnSync(meter.bin, ['status'], { encoding: 'utf8', timeout: 20000 });
     if (status.status !== 0) throw new Error('status did not answer');
     const st = JSON.parse(status.stdout); meter.version = meter.version || st.version;
@@ -213,6 +214,7 @@ export async function git(cfg, on) {
     const iso = t => new Date(t).toISOString().slice(0, 19) + 'Z';
     // one search answers at most 1,000 rows, so the time is asked in slices of a week (and a full slice is asked again in halves)
     // every github.com account logged in to gh is you (the active one first): each is asked, and each keeps its own mark of how far back it got
+    audit('run', 'gh auth status --hostname github.com');
     const st = spawnSync('gh', ['auth', 'status', '--hostname', 'github.com'], { encoding: 'utf8', timeout: 10000 });
     const txt = (st.stdout || '') + '\n' + (st.stderr || '');
     const logins = [...txt.matchAll(/Logged in to github\.com account (\S+)[^\n]*\n\s*- Active account: (true|false)/g)];
@@ -246,7 +248,7 @@ export async function git(cfg, on) {
   // A few bounded calls per forge (your own merged pull requests), not one per repository; later runs only ask for what changed since the last one.
   const forge = async (name, cli, id, argsFor, pick, pageSize) => { const source = cli === 'tea' ? 'tea' : id.replace(/^gitlab:/, 'glab:'); on({ pct: .9, detail: `${name} · your merged pull requests (${cli})` });
     const last = mv('forge_fetched_ms:' + id), from = new Date(last ? Math.max(histFrom, last - DAY) : histFrom).toISOString(), t0 = Date.now(), rows = [];
-    for (let page = 1; page <= 60; page++) { const args = argsFor(page, from); audit('run', `${cli} ${args.join(' ')}`); const o = await runOut(cli, args, 30000); let list = null; try { list = JSON.parse(o.out); } catch { /* not JSON */ }
+    for (let page = 1; page <= 60; page++) { const args = argsFor(page, from); audit('net', `${cli} ${args.join(' ')}`); const o = await runOut(cli, args, 30000); let list = null; try { list = JSON.parse(o.out); } catch { /* not JSON */ }
       if (o.code !== 0 || !Array.isArray(list)) { audit('note', `${name}: no usable answer from logged-in ${cli}: using the pull requests already stored`); keep(rows); answer(source, false, ['prs']); return; }
       for (const x of list) { let r = null; try { r = pick(x); } catch { /* odd row */ } if (r && r[1] >= histFrom) rows.push(r); }
       if (list.length < pageSize) { keep(rows); sv('forge_fetched_ms:' + id, t0); answer(source, true, ['prs']); return; } }
