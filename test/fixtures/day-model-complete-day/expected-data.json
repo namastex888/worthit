@@ -1,0 +1,496 @@
+{
+  "before_models": [
+    {
+      "period": "2026-11-07",
+      "model": "claude-sonnet-5-5",
+      "api_usd": 6,
+      "output_tokens": 300000,
+      "days": 1
+    },
+    {
+      "period": "2026-11-10",
+      "model": "claude-sonnet-5-5",
+      "api_usd": 6,
+      "output_tokens": 300000,
+      "days": 1
+    },
+    {
+      "period": "2026-11-14",
+      "model": "claude-sonnet-5-5",
+      "api_usd": 6,
+      "output_tokens": 300000,
+      "days": 1
+    }
+  ],
+  "before_totals": [
+    {
+      "period": "2026-11-07",
+      "api_usd": 6,
+      "output_tokens": 300000,
+      "requests": 2,
+      "days": 1,
+      "merged_prs": 0,
+      "commits": 0
+    },
+    {
+      "period": "2026-11-10",
+      "api_usd": 6,
+      "output_tokens": 300000,
+      "requests": 2,
+      "days": 1,
+      "merged_prs": 0,
+      "commits": 0
+    },
+    {
+      "period": "2026-11-14",
+      "api_usd": 6,
+      "output_tokens": 300000,
+      "requests": 2,
+      "days": 1,
+      "merged_prs": 0,
+      "commits": 0
+    }
+  ],
+  "corrected_models": [
+    {
+      "period": "2026-11-07",
+      "model": "claude-sonnet-5-5",
+      "api_usd": 6,
+      "output_tokens": 300000,
+      "days": 1
+    },
+    {
+      "period": "2026-11-10",
+      "model": "claude-sonnet-5-5",
+      "api_usd": 3,
+      "output_tokens": 300000,
+      "days": 1
+    },
+    {
+      "period": "2026-11-14",
+      "model": "claude-sonnet-5-5",
+      "api_usd": 6,
+      "output_tokens": 300000,
+      "days": 1
+    }
+  ],
+  "corrected_totals": [
+    {
+      "period": "2026-11-07",
+      "api_usd": 6,
+      "output_tokens": 300000,
+      "requests": 2,
+      "days": 1,
+      "merged_prs": 0,
+      "commits": 0
+    },
+    {
+      "period": "2026-11-10",
+      "api_usd": 3,
+      "output_tokens": 300000,
+      "requests": 2,
+      "days": 1,
+      "merged_prs": 0,
+      "commits": 0
+    },
+    {
+      "period": "2026-11-14",
+      "api_usd": 6,
+      "output_tokens": 300000,
+      "requests": 2,
+      "days": 1,
+      "merged_prs": 0,
+      "commits": 0
+    }
+  ],
+  "complete": {
+    "middle": {
+      "models": [
+        {
+          "output_tokens": 50000,
+          "api_usd": 20
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 50000,
+          "api_usd": 20
+        }
+      ]
+    },
+    "after": {
+      "models": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 5
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 5
+        }
+      ]
+    }
+  },
+  "partial_oldest": {
+    "middle": {
+      "models": [
+        {
+          "output_tokens": 100000,
+          "api_usd": 20
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 100000,
+          "api_usd": 20
+        }
+      ]
+    },
+    "after": {
+      "models": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 20
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 20
+        }
+      ]
+    }
+  },
+  "current": {
+    "middle": {
+      "models": [
+        {
+          "output_tokens": 100000,
+          "api_usd": 20
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 100000,
+          "api_usd": 20
+        }
+      ]
+    },
+    "after": {
+      "models": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 20
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 20
+        }
+      ]
+    }
+  },
+  "utc_partial_local_complete": {
+    "middle": {
+      "models": [
+        {
+          "output_tokens": 100000,
+          "api_usd": 20
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 50000,
+          "api_usd": 20
+        }
+      ]
+    },
+    "after": {
+      "models": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 20
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 5
+        }
+      ]
+    }
+  },
+  "utc_complete_local_partial": {
+    "middle": {
+      "models": [
+        {
+          "output_tokens": 50000,
+          "api_usd": 20
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 100000,
+          "api_usd": 20
+        }
+      ]
+    },
+    "after": {
+      "models": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 5
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 20
+        }
+      ]
+    }
+  },
+  "crossed_midnight": {
+    "middle": {
+      "models": [
+        {
+          "output_tokens": 100000,
+          "api_usd": 20
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 100000,
+          "api_usd": 20
+        }
+      ]
+    },
+    "after": {
+      "models": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 20
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 20
+        }
+      ]
+    }
+  },
+  "midnight": {
+    "middle": {
+      "models": [
+        {
+          "output_tokens": 50000,
+          "api_usd": 20
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 50000,
+          "api_usd": 20
+        }
+      ]
+    },
+    "after": {
+      "models": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 5
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 5
+        }
+      ]
+    }
+  },
+  "missing": {
+    "middle": {
+      "models": [
+        {
+          "output_tokens": 100000,
+          "api_usd": 20
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 100000,
+          "api_usd": 20
+        }
+      ]
+    },
+    "after": {
+      "models": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 20
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 20
+        }
+      ]
+    }
+  },
+  "cached": {
+    "middle": {
+      "models": [
+        {
+          "output_tokens": 100000,
+          "api_usd": 20
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 100000,
+          "api_usd": 20
+        }
+      ]
+    },
+    "after": {
+      "models": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 20
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 20
+        }
+      ]
+    }
+  },
+  "left_out": {
+    "middle": {
+      "models": [
+        {
+          "output_tokens": 100000,
+          "api_usd": 20
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 100000,
+          "api_usd": 20
+        }
+      ]
+    },
+    "after": {
+      "models": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 20
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 20
+        }
+      ]
+    }
+  },
+  "retired_before": {
+    "middle": {
+      "models": [
+        {
+          "output_tokens": 100000,
+          "api_usd": 20
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 100000,
+          "api_usd": 20
+        }
+      ]
+    },
+    "after": {
+      "models": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 20
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 20
+        }
+      ]
+    }
+  },
+  "retired_boundary": {
+    "middle": {
+      "models": [
+        {
+          "output_tokens": 50000,
+          "api_usd": 20
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 50000,
+          "api_usd": 20
+        }
+      ]
+    },
+    "after": {
+      "models": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 5
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 5
+        }
+      ]
+    }
+  },
+  "retired_local_only": {
+    "middle": {
+      "models": [
+        {
+          "output_tokens": 100000,
+          "api_usd": 20
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 50000,
+          "api_usd": 20
+        }
+      ]
+    },
+    "after": {
+      "models": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 20
+        }
+      ],
+      "providers": [
+        {
+          "output_tokens": 200000,
+          "api_usd": 5
+        }
+      ]
+    }
+  }
+}

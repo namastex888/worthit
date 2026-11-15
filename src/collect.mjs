@@ -423,8 +423,9 @@ export function buildData(report, g, cfg, scanInfo) {
   // The scanner cuts at now - days (UTC), while history groups local calendar days.
   // Use a conservative cutoff and the scan start: even a run crossing midnight cannot lower its partial day.
   const scanFrom = now - cfg.days * DAY, scanTo = scanInfo.started_at ?? now;
-  const complete = k => {
-    const start = new Date(k + 'T00:00:00'), end = new Date(start); end.setDate(end.getDate() + 1);
+  const complete = (k, utc = false) => {
+    const start = new Date(k + 'T00:00:00' + (utc ? 'Z' : '')), end = new Date(start);
+    if (utc) end.setUTCDate(end.getUTCDate() + 1); else end.setDate(end.getDate() + 1);
     return !missing.length && !leftOut.length && retired.every(r => +start >= Date.parse(r.retired_at)) && +start >= scanFrom && +end <= scanTo;
   };
   // Git has its own 14-day window; usage coverage and machine selection do not govern delivery counts.
@@ -480,8 +481,9 @@ export function buildData(report, g, cfg, scanInfo) {
 
     // model mix: per day and model in the store, shown as rolling 7-day blocks ending today (UTC days)
     db.exec('CREATE TABLE IF NOT EXISTS day_model (day TEXT, model TEXT, provider TEXT, output_tokens INTEGER, api_usd REAL, PRIMARY KEY (day, model, provider))');
+    const replaceM = db.prepare('INSERT OR REPLACE INTO day_model VALUES (?, ?, ?, ?, ?)');
     const upM = db.prepare('INSERT INTO day_model VALUES (?, ?, ?, ?, ?) ON CONFLICT (day, model, provider) DO UPDATE SET output_tokens = MAX(output_tokens, excluded.output_tokens), api_usd = MAX(api_usd, excluded.api_usd)');
-    db.exec('BEGIN'); for (const r of report.model_days || []) upM.run(r.day, r.model, r.provider, r.output, r.usd); db.exec('COMMIT');
+    db.exec('BEGIN'); for (const r of report.model_days || []) (complete(r.day, true) ? replaceM : upM).run(r.day, r.model, r.provider, r.output, r.usd); db.exec('COMMIT');
     const NW = 8, tdy = Date.parse(new Date(now).toISOString().slice(0, 10) + 'T00:00:00Z'), blk = {}, seenDays = {};
     const prov = {};
     for (const r of db.prepare('SELECT day, model, provider, output_tokens AS o, api_usd AS u FROM day_model WHERE day >= ?').all(new Date(tdy - (NW * 7 - 1) * DAY).toISOString().slice(0, 10))) {
