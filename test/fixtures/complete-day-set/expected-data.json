@@ -1,0 +1,572 @@
+{
+  "complete": {
+    "dropped": {
+      "providers": [
+        [
+          "claude",
+          50000,
+          1,
+          1
+        ]
+      ],
+      "models": [
+        [
+          "fixture-keep",
+          50000,
+          1
+        ]
+      ],
+      "history": [
+        50000,
+        1,
+        2,
+        3
+      ],
+      "month": [
+        50000,
+        1,
+        1,
+        1
+      ],
+      "git": [
+        2,
+        3
+      ]
+    },
+    "empty": {
+      "providers": [],
+      "models": [],
+      "history": [
+        0,
+        0,
+        2,
+        3
+      ],
+      "month": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "git": [
+        2,
+        3
+      ]
+    }
+  },
+  "retained": {
+    "dropped": {
+      "providers": [
+        [
+          "claude",
+          300000,
+          3,
+          3
+        ],
+        [
+          "codex",
+          400000,
+          4,
+          4
+        ]
+      ],
+      "models": [
+        [
+          "fixture-keep",
+          100000,
+          1
+        ],
+        [
+          "fixture-removed-model",
+          200000,
+          2
+        ],
+        [
+          "fixture-removed-provider",
+          400000,
+          4
+        ]
+      ],
+      "history": [
+        700000,
+        7,
+        2,
+        3
+      ],
+      "month": [
+        700000,
+        7,
+        7,
+        2
+      ],
+      "git": [
+        2,
+        3
+      ]
+    },
+    "empty": {
+      "providers": [
+        [
+          "claude",
+          300000,
+          3,
+          3
+        ],
+        [
+          "codex",
+          400000,
+          4,
+          4
+        ]
+      ],
+      "models": [
+        [
+          "fixture-keep",
+          100000,
+          1
+        ],
+        [
+          "fixture-removed-model",
+          200000,
+          2
+        ],
+        [
+          "fixture-removed-provider",
+          400000,
+          4
+        ]
+      ],
+      "history": [
+        700000,
+        7,
+        2,
+        3
+      ],
+      "month": [
+        700000,
+        7,
+        7,
+        2
+      ],
+      "git": [
+        2,
+        3
+      ]
+    }
+  },
+  "midnight_first": {
+    "dropped": {
+      "providers": [
+        [
+          "claude",
+          50000,
+          1,
+          1
+        ],
+        [
+          "codex",
+          400000,
+          4,
+          4
+        ]
+      ],
+      "models": [
+        [
+          "fixture-keep",
+          50000,
+          1
+        ],
+        [
+          "fixture-removed-model",
+          200000,
+          2
+        ],
+        [
+          "fixture-removed-provider",
+          400000,
+          4
+        ]
+      ],
+      "history": [
+        50000,
+        1,
+        2,
+        3
+      ],
+      "month": [
+        450000,
+        5,
+        5,
+        2
+      ],
+      "git": [
+        2,
+        3
+      ]
+    },
+    "empty": {
+      "providers": [
+        [
+          "claude",
+          50000,
+          1,
+          1
+        ],
+        [
+          "codex",
+          400000,
+          4,
+          4
+        ]
+      ],
+      "models": [
+        [
+          "fixture-keep",
+          50000,
+          1
+        ],
+        [
+          "fixture-removed-model",
+          200000,
+          2
+        ],
+        [
+          "fixture-removed-provider",
+          400000,
+          4
+        ]
+      ],
+      "history": [
+        50000,
+        1,
+        2,
+        3
+      ],
+      "month": [
+        450000,
+        5,
+        5,
+        2
+      ],
+      "git": [
+        2,
+        3
+      ]
+    }
+  },
+  "local_complete": {
+    "dropped": {
+      "providers": [
+        [
+          "claude",
+          50000,
+          1,
+          1
+        ]
+      ],
+      "models": [
+        [
+          "fixture-keep",
+          100000,
+          1
+        ],
+        [
+          "fixture-removed-model",
+          200000,
+          2
+        ],
+        [
+          "fixture-removed-provider",
+          400000,
+          4
+        ]
+      ],
+      "history": [
+        50000,
+        1,
+        2,
+        3
+      ],
+      "month": [
+        50000,
+        1,
+        1,
+        1
+      ],
+      "git": [
+        2,
+        3
+      ]
+    },
+    "empty": {
+      "providers": [],
+      "models": [
+        [
+          "fixture-keep",
+          100000,
+          1
+        ],
+        [
+          "fixture-removed-model",
+          200000,
+          2
+        ],
+        [
+          "fixture-removed-provider",
+          400000,
+          4
+        ]
+      ],
+      "history": [
+        0,
+        0,
+        2,
+        3
+      ],
+      "month": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "git": [
+        2,
+        3
+      ]
+    }
+  },
+  "utc_complete": {
+    "dropped": {
+      "providers": [
+        [
+          "claude",
+          300000,
+          3,
+          3
+        ],
+        [
+          "codex",
+          400000,
+          4,
+          4
+        ]
+      ],
+      "models": [
+        [
+          "fixture-keep",
+          50000,
+          1
+        ]
+      ],
+      "history": [
+        700000,
+        7,
+        2,
+        3
+      ],
+      "month": [
+        700000,
+        7,
+        7,
+        2
+      ],
+      "git": [
+        2,
+        3
+      ]
+    },
+    "empty": {
+      "providers": [
+        [
+          "claude",
+          300000,
+          3,
+          3
+        ],
+        [
+          "codex",
+          400000,
+          4,
+          4
+        ]
+      ],
+      "models": [],
+      "history": [
+        700000,
+        7,
+        2,
+        3
+      ],
+      "month": [
+        700000,
+        7,
+        7,
+        2
+      ],
+      "git": [
+        2,
+        3
+      ]
+    }
+  },
+  "git_metric": {
+    "dropped": {
+      "providers": [
+        [
+          "claude",
+          50000,
+          1,
+          1
+        ]
+      ],
+      "models": [
+        [
+          "fixture-keep",
+          50000,
+          1
+        ]
+      ],
+      "history": [
+        50000,
+        1,
+        0,
+        3
+      ],
+      "month": [
+        50000,
+        1,
+        1,
+        1
+      ],
+      "git": [
+        0,
+        3
+      ]
+    },
+    "empty": {
+      "providers": [],
+      "models": [],
+      "history": [
+        0,
+        0,
+        0,
+        3
+      ],
+      "month": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "git": [
+        0,
+        3
+      ]
+    }
+  },
+  "rollback": {
+    "unchanged": true,
+    "unlocked": true,
+    "reported": true
+  },
+  "git_midnight_first": {
+    "dropped": {
+      "providers": [
+        [
+          "claude",
+          50000,
+          1,
+          1
+        ],
+        [
+          "codex",
+          400000,
+          4,
+          4
+        ]
+      ],
+      "models": [
+        [
+          "fixture-keep",
+          50000,
+          1
+        ],
+        [
+          "fixture-removed-model",
+          200000,
+          2
+        ],
+        [
+          "fixture-removed-provider",
+          400000,
+          4
+        ]
+      ],
+      "history": [
+        50000,
+        1,
+        0,
+        3
+      ],
+      "month": [
+        450000,
+        5,
+        5,
+        2
+      ],
+      "git": [
+        0,
+        3
+      ]
+    },
+    "empty": {
+      "providers": [
+        [
+          "claude",
+          50000,
+          1,
+          1
+        ],
+        [
+          "codex",
+          400000,
+          4,
+          4
+        ]
+      ],
+      "models": [
+        [
+          "fixture-keep",
+          50000,
+          1
+        ],
+        [
+          "fixture-removed-model",
+          200000,
+          2
+        ],
+        [
+          "fixture-removed-provider",
+          400000,
+          4
+        ]
+      ],
+      "history": [
+        50000,
+        1,
+        0,
+        3
+      ],
+      "month": [
+        450000,
+        5,
+        5,
+        2
+      ],
+      "git": [
+        0,
+        3
+      ]
+    }
+  }
+}

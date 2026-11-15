@@ -423,6 +423,7 @@ export function buildData(report, g, cfg, scanInfo) {
   // player history: one small row per day, kept forever; XP, level, streak and bests are computed from it
   const hf = path.join(HOME, 'history.json'); let hist = { days: {} }; try { hist = JSON.parse(fs.readFileSync(hf, 'utf8')); } catch { /* first run */ }
   const agg = {}; for (const a of act) { const k = dayKey(a.t), o = agg[k] = agg[k] || { out: 0, usd: 0, prs: 0, commits: 0 }; o.out += a.output || 0; o.usd += a.usd || 0; }
+  const usageDays = new Set(Object.keys(agg));
   if (g) { for (const t of g.prs) (agg[dayKey(t)] = agg[dayKey(t)] || { out: 0, usd: 0, prs: 0, commits: 0 }).prs++; for (const t of g.commits) (agg[dayKey(t)] = agg[dayKey(t)] || { out: 0, usd: 0, prs: 0, commits: 0 }).commits++; }
   // The scanner cuts at now - days (UTC), while history groups local calendar days.
   // Use a conservative cutoff and the scan start: even a run crossing midnight cannot lower its partial day.
@@ -432,10 +433,17 @@ export function buildData(report, g, cfg, scanInfo) {
     if (utc) end.setUTCDate(end.getUTCDate() + 1); else end.setDate(end.getDate() + 1);
     return !missing.length && !leftOut.length && retired.every(r => +start >= Date.parse(r.retired_at)) && +start >= scanFrom && +end <= scanTo;
   };
+  // PR74 permits field replacement at an exact-midnight cutoff. Set deletion is more
+  // conservative: omitted rows on the scan window's first day must always survive.
+  const completeSet = (k, utc = false) => complete(k, utc) && +new Date(k + 'T00:00:00' + (utc ? 'Z' : '')) > scanFrom;
   // Git has its own 14-day window; usage coverage and machine selection do not govern delivery counts.
   const gitCovered = (k, metric) => !!g?.coverage?.[metric] && +new Date(k + 'T00:00:00') >= now - 14 * DAY;
-  // A complete empty answer also replaces a saved delivery day with zero.
-  for (const [k, old] of Object.entries(hist.days)) if (!agg[k]) agg[k] = { out: old.out || 0, usd: old.usd || 0, prs: 0, commits: 0 };
+  // Include stored days absent from the report: complete empty usage becomes zero,
+  // while Git still has independent per-metric coverage.
+  for (const [k, old] of Object.entries(hist.days)) if (!usageDays.has(k)) {
+    const o = agg[k] ||= { out: 0, usd: 0, prs: 0, commits: 0 };
+    if (!completeSet(k)) { o.out = old.out || 0; o.usd = old.usd || 0; }
+  }
   const was = (k, f, covered) => covered ? 0 : (hist.days[k] || {})[f] || 0;
   for (const [k, o] of Object.entries(agg)) hist.days[k] = { out: Math.max(Math.round(o.out), was(k, 'out', complete(k))), usd: Math.max(Math.round(o.usd), was(k, 'usd', complete(k))), prs: Math.max(o.prs, was(k, 'prs', gitCovered(k, 'prs'))), commits: Math.max(o.commits, was(k, 'commits', gitCovered(k, 'commits'))) };
   fs.mkdirSync(HOME, { recursive: true }); fs.writeFileSync(hf, JSON.stringify(hist)); audit('write', tilde(hf) + `  (${Object.keys(hist.days).length} daily rows)`);
@@ -459,9 +467,9 @@ export function buildData(report, g, cfg, scanInfo) {
   }
 
   // the player's own store, ~/.worthit/worthit.db (SQLite): small daily rows per provider, each run's measured plan value, months on top
-  let months = [];
+  let months = [], db, writing = false;
   try {
-    const dbf = path.join(HOME, 'worthit.db'), db = new DatabaseSync(dbf);
+    const dbf = path.join(HOME, 'worthit.db'); db = new DatabaseSync(dbf);
     db.exec(`CREATE TABLE IF NOT EXISTS day_provider (day TEXT, provider TEXT, api_usd REAL, output_tokens INTEGER, requests INTEGER, PRIMARY KEY (day, provider));
       CREATE TABLE IF NOT EXISTS day (day TEXT PRIMARY KEY, prs INTEGER, commits INTEGER);
       CREATE TABLE IF NOT EXISTS plan_value (day TEXT, provider TEXT, plan TEXT, usd_per_full_week INTEGER, times_plan_price INTEGER, stretches INTEGER, proof TEXT, PRIMARY KEY (day, provider));
@@ -472,11 +480,19 @@ export function buildData(report, g, cfg, scanInfo) {
     const upP = db.prepare('INSERT INTO day_provider VALUES (?, ?, ?, ?, ?) ON CONFLICT (day, provider) DO UPDATE SET api_usd = MAX(api_usd, excluded.api_usd), output_tokens = MAX(output_tokens, excluded.output_tokens), requests = MAX(requests, excluded.requests)');
     const upD = db.prepare('INSERT INTO day VALUES (?, ?, ?) ON CONFLICT (day) DO UPDATE SET prs = CASE WHEN ? THEN excluded.prs ELSE MAX(prs, excluded.prs) END, commits = CASE WHEN ? THEN excluded.commits ELSE MAX(commits, excluded.commits) END');
     const upV = db.prepare('INSERT OR REPLACE INTO plan_value VALUES (?, ?, ?, ?, ?, ?, ?)');
-    db.exec('BEGIN');
+    db.exec('CREATE TABLE IF NOT EXISTS day_model (day TEXT, model TEXT, provider TEXT, output_tokens INTEGER, api_usd REAL, PRIMARY KEY (day, model, provider))');
+    const replaceM = db.prepare('INSERT OR REPLACE INTO day_model VALUES (?, ?, ?, ?, ?)');
+    const upM = db.prepare('INSERT INTO day_model VALUES (?, ?, ?, ?, ?) ON CONFLICT (day, model, provider) DO UPDATE SET output_tokens = MAX(output_tokens, excluded.output_tokens), api_usd = MAX(api_usd, excluded.api_usd)');
+    const deleteP = db.prepare('DELETE FROM day_provider WHERE day = ?'), deleteM = db.prepare('DELETE FROM day_model WHERE day = ?');
+    db.exec('BEGIN'); writing = true;
+    // Enumerate stored days, not report keys: an entirely empty complete day must clear too.
+    for (const { day } of db.prepare('SELECT DISTINCT day FROM day_provider').all()) if (completeSet(day)) deleteP.run(day);
+    for (const { day } of db.prepare('SELECT DISTINCT day FROM day_model').all()) if (completeSet(day, true)) deleteM.run(day);
     for (const [k, o] of Object.entries(dp)) { const [day, provider] = k.split('|'); (complete(day) ? replaceP : upP).run(day, provider, +o.usd.toFixed(2), Math.round(o.out), o.req); }
     for (const [k, o] of Object.entries(hist.days)) upD.run(k, o.prs || 0, o.commits || 0, +gitCovered(k, 'prs'), +gitCovered(k, 'commits'));
     for (const p of plans) upV.run(dayKey(now), p.key, p.plan, p.usd_per_full_week, p.times_plan_price, p.stretches || 1, p.proof);
-    db.exec('COMMIT');
+    for (const r of report.model_days || []) (complete(r.day, true) ? replaceM : upM).run(r.day, r.model, r.provider, r.output, r.usd);
+    db.exec('COMMIT'); writing = false;
     const lim = {}; for (const r of db.prepare('SELECT substr(day, 1, 7) AS month, provider, ROUND(AVG(usd_per_full_week)) AS v, COUNT(*) AS n FROM plan_value GROUP BY 1, 2').all()) lim[r.month + '|' + r.provider] = r;
     const prd = {}; for (const r of db.prepare('SELECT substr(day, 1, 7) AS month, SUM(prs) AS prs, SUM(commits) AS commits FROM day GROUP BY 1').all()) prd[r.month] = r;
     months = db.prepare('SELECT * FROM month ORDER BY month DESC, api_usd DESC').all().filter(r => PLAN[r.provider]).map(r => { const perMonth = report.prices.plan_usd_per_week[r.provider] * 52 / 12, l = lim[r.month + '|' + r.provider];
@@ -484,10 +500,6 @@ export function buildData(report, g, cfg, scanInfo) {
         weekly_limit_usd: l ? l.v : null, weekly_limit_readings: l ? l.n : 0, merged_prs: (prd[r.month] || {}).prs || 0, commits: (prd[r.month] || {}).commits || 0 }; });
 
     // model mix: per day and model in the store, shown as rolling 7-day blocks ending today (UTC days)
-    db.exec('CREATE TABLE IF NOT EXISTS day_model (day TEXT, model TEXT, provider TEXT, output_tokens INTEGER, api_usd REAL, PRIMARY KEY (day, model, provider))');
-    const replaceM = db.prepare('INSERT OR REPLACE INTO day_model VALUES (?, ?, ?, ?, ?)');
-    const upM = db.prepare('INSERT INTO day_model VALUES (?, ?, ?, ?, ?) ON CONFLICT (day, model, provider) DO UPDATE SET output_tokens = MAX(output_tokens, excluded.output_tokens), api_usd = MAX(api_usd, excluded.api_usd)');
-    db.exec('BEGIN'); for (const r of report.model_days || []) (complete(r.day, true) ? replaceM : upM).run(r.day, r.model, r.provider, r.output, r.usd); db.exec('COMMIT');
     const NW = 8, tdy = Date.parse(new Date(now).toISOString().slice(0, 10) + 'T00:00:00Z'), blk = {}, seenDays = {};
     const prov = {};
     for (const r of db.prepare('SELECT day, model, provider, output_tokens AS o, api_usd AS u FROM day_model WHERE day >= ?').all(new Date(tdy - (NW * 7 - 1) * DAY).toISOString().slice(0, 10))) {
@@ -507,8 +519,11 @@ export function buildData(report, g, cfg, scanInfo) {
       D.model_mix = { weeks: ws.map(k => new Date(tdy - (k * 7 + 6) * DAY).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })), metric: 'share of output tokens per 7 days', series,
         open: mk('open-weight models', isOpenModel, true), closed: mk('closed models', n => !isOpenModel(n), false), open_rule: 'open = DeepSeek, GLM, Kimi (k-series), Qwen, Llama, Mistral, Gemma, MiniMax; everything else counts as closed' };
     }
-    db.close(); audit('write', tilde(dbf) + `  (SQLite: ${Object.keys(dp).length} day rows updated, ${months.length} month rows)`);
-  } catch (e) { audit('note', 'worthit.db not updated: ' + e.message); }
+    audit('write', tilde(dbf) + `  (SQLite: ${Object.keys(dp).length} day rows updated, ${months.length} month rows)`);
+  } catch (e) {
+    if (writing) { try { db.exec('ROLLBACK'); } catch { /* close below also abandons an open transaction */ } }
+    audit('note', 'worthit.db not updated: ' + e.message);
+  } finally { if (db) { try { db.close(); } catch { /* preserve the original write error */ } } }
   D.months = months;
   const keys = Object.keys(hist.days).sort(), xp = keys.reduce((s, k) => s + Math.round(hist.days[k].out / 1e5) + 25 * hist.days[k].prs + 2 * hist.days[k].commits, 0), level = Math.floor(Math.sqrt(xp / 2500)) + 1;
   let streak = 0; for (let t = d0.getTime(); (hist.days[dayKey(t)] || {}).out > 0; t -= DAY) streak++;

@@ -19,6 +19,35 @@ distinction). Schema assertions check both usage day rules and Git's separate
 14-day coverage. The case is required by the runner. Price changes and deliberate
 regression experiments only touch private scratch copies.
 
+`complete-day-set` passes literal synthetic reports directly to the real `buildData()`
+shaping and storage code, then reads the result through the real CLI `days --by model`
+and `days --by total` under `TZ=UTC`. The complete-day dropped-row case starts with
+100,000/$1 and 200,000/$2 Claude models plus a 400,000/$4 Codex model, then emits only
+50,000/$1 of the first model: both the removed model and the entire Codex provider
+must disappear, and both CLI views must equal exactly 50,000 tokens / $1. This
+isolates storage from #24's deliberately retained higher saved input units; it is
+not a source-log deletion test and introduces no production hook.
+
+A subsequent report has no usage day keys at all. Complete stored days must clear
+from both tables, `history.json` usage becomes zero, and the existing `month` view
+must follow `day_provider` without a separate persisted month table. Partial days
+keep all omitted rows and per-field MAX. Literal controls cover outside-window,
+first day, today, missing/cached/left-out machines, scan-start/cross-midnight,
+retirement-before and exact retirement boundary, and independent Git 14-day and
+per-metric coverage (including preserved PR/commit counts). PR74's field replacement
+at an exact-midnight cutoff remains unchanged, but omitted rows on that first day
+are conservatively preserved, including entirely empty usage in `history.json`.
+
+Non-UTC controls check each table's own calendar completeness, including both DST
+day lengths and UTC/local retirement boundaries. Model days remain UTC, while
+provider/total and history days remain local; issue #80 is outside this fix, so
+these controls do not assert false per-day equality. SQLite trigger failures during
+provider insert, model insert and model delete prove all table writes roll back
+together and release the connection. The new folder is required by the runner;
+every literal expectation key is exercised. Negative-control experiments restore
+plain upserts only in a private archive of the candidate, never in the implementation
+checkout, and require a separately authorized `make check`.
+
 The first three folders share literal **source logs** in `test/sources/box-a/`,
 `box-b/` and the left-out control `box-c/`, rather than scan responses. `support/materialize.py` puts the Claude Code,
 Codex and Antigravity JSONL in their normal scanner paths and installs `meter.sql`

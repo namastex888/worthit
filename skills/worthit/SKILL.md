@@ -101,10 +101,13 @@ worthit days --group day --tool codex --since 2026-11-05
 - Each row has `api_usd`, `output_tokens`, `days` (days with data in the period), and `requests` unless grouped by model.
 
 `day_provider` uses local days; `day_model` (including `--by model` and `--model`)
-uses UTC days. Each replaces every field on a fully scanned day whose start is on
-or after every retirement, with every machine covered; any other day keeps per-field MAX,
+uses UTC days. Each replaces the day's row set, removing rows absent from the run,
+on a fully scanned day whose start is on or after every retirement, with every
+machine covered; any other day keeps per-field MAX,
 including partial oldest days and the current day. Missing or left-out machines
-prevent replacement. In `day`, PRs and commits replace independently inside git's
+prevent replacement. Omitted rows on the scan window's first day survive even at
+exact midnight; existing rows still replace their fields at that boundary.
+In `day`, PRs and commits replace independently inside git's
 14-day window when all that metric's sources answered; otherwise they keep MAX,
 including outside that window.
 
