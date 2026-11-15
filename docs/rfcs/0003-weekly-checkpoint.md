@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Accepted, 2026-11-14 |
+| Status | Delivered, 2026-11-15 (#56: `worthit weekly`, the `weekly` table, exit codes, fixture cases) |
 | Created | 2026-11-14 |
 | Issue | #27 |
 | Depends on | #24 (PR 33, for `machines_retained`); RFC 0002 for `machines_retired` |
@@ -126,7 +126,7 @@ Fixture cases from issue 25:
 
 | # | Delivery | State |
 |---|---|---|
-| 1 | `worthit weekly`, the `weekly` table, exit codes, fixture cases | open (#27) |
+| 1 | `worthit weekly`, the `weekly` table, exit codes, fixture cases | merged (#56, 2026-11-15) |
 
 ## Decisions (owner, 2026-11-14)
 
