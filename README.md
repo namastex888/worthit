@@ -66,6 +66,7 @@ Every command prints JSON when piped and reads only local files:
 
 ```sh
 worthit --json                   # scan now, print the week's data (no UI, no model)
+worthit weekly                   # fresh allowance checkpoint for a scheduler: JSON, PNG and safety exit code
 worthit get                      # sections of the last run, no scan
 worthit get plans                # one section; dots walk in: plans.0.usd_per_full_week
 worthit days --group month --by tool             # daily history, grouped: day|week|month by total|tool|model
@@ -77,6 +78,25 @@ worthit --skill                  # print the full guide
 worthit install-skill            # install the skill into your coding agents
 worthit --demo                   # the whole run on sample data
 ```
+
+`worthit weekly [--hosts all|none|a,b] [--allow-partial] [--no-files]` runs a fresh
+headless scan with all SSH hosts by default, git and AI off. It prints the fixed allowance
+post and facts as JSON, writes `<date>-worthit-share-allowance.png` (Chrome or Chromium
+required), and saves a checkpoint in SQLite's `weekly` table. `--no-files` skips the PNG
+and leaves `image: null`; the local store is still updated. It never asks questions,
+opens browser UI, touches the clipboard or posts.
+
+Exit **0** means safe to post; **3** means the JSON is available but a machine is missing,
+left out, or has retained units inside this week. Reasons name each machine, and retained
+units name their day and provider. `--allow-partial` changes exit 3 to 0, keeping
+`safe_to_post: false`. Exit **1** means no result (scan failure, no allowance data this
+week, or PNG/store failure). Floors alone and retained units only in earlier weeks are safe.
+
+`compared_with` is the latest earlier checkpoint ending at least six days before this
+week's end. Only the same plan measured at both endpoints gets a percentage in `plans`,
+`moved`, text or card; it never searches past a floor or uses the meter ledger's comparison.
+The first checkpoint has null changes. `moved` includes absolute changes strictly greater
+than 5%. `worthit schema` and the agent skill describe the complete JSON and table.
 
 Flags for a scan (`worthit` or `worthit --json`):
 

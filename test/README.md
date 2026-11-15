@@ -81,6 +81,21 @@ only when an intentional contract or fixture change explains the new number.
 Run `make check` before pushing. Deliberate regression experiments belong in a
 private throwaway copy; leave the checked-out implementation intact.
 
+`weekly-checkpoint` runs `worthit weekly` with closed stdin on those source logs.
+It checks complete, missing, explicitly allowed partial, left-out, floor-only,
+current retained and prior retained results; unsafe reasons name machines and
+retained day/provider units. A warm `WORTHIT_REUSE` store must still scan both SSH
+hosts. Repeated frozen-clock runs keep separate checkpoint rows. Two actual
+checkpoints a week apart check measured changes in JSON, fixed text and allowance
+card HTML; the earlier run temporarily withholds future source rows in scratch.
+Literal seeded checkpoints test a floor baseline, six-day eligibility, a future
+timestamp and unsafe-baseline selection. Mixed-plan proofs and exact/just-over
+positive and negative 5% boundaries exercise the same drawing and template helpers.
+The first checkpoint ignores an existing ledger. Empty sources and a missing
+Python executable exit 1. Every run uses isolated fixture homes; UI, git, AI and
+clipboard commands fail if called. `docs/weekly-checkpoint-demo.png` is a rendered,
+visually checked allowance card from bundled demo data with first-checkpoint changes.
+
 `git-source-coverage` seeds literal daily PR and commit counts in both stores and
 uses synthetic meter, local git, gh (two accounts), glab (two hosts), and tea
 commands. A meter sync failure through `--json` preserves both metrics; the next

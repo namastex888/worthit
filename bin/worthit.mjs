@@ -4,6 +4,7 @@
 //   npx worthit --json          no UI: prints the week's data as JSON (for agents and scripts)
 //   worthit get [section] · worthit days [--since D --until D --group day|week|month --by total|tool|model] · worthit sql "SELECT …" · worthit schema · worthit --skill
 //   worthit share [allowance|open|models|value|ranking|waste|"anything"]   an X-ready post and card image from your last run
+//   worthit weekly [--hosts all|none|a,b] [--allow-partial] [--no-files]   fresh headless allowance checkpoint (exit 0 safe, 3 unsafe, 1 no result)
 //   worthit --demo (the whole run on sample data) · worthit install-skill (adds the agent skill to your coding agents)
 //   --git yes|no   --ai claude|codex|omp|dsh|no   --days 21   --hosts all|none|a,b (saved ssh machines to include)   --ask "question"   --no-files
 // Writes ./<date>-worthit.md, ./<date>-worthit.png (when Chrome is installed) and ./<date>-worthit-audit.log.
@@ -23,7 +24,8 @@ import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'
 import { blocks, C, W, bar, fg, bold, d, m, w, pad, lpad, len, strip, grad, fmtTok, usd, machineNotes } from '../src/draw.mjs';
 import { scan, analyse, git, buildData, audit, AUDIT, has, tilde, ROOT, HOME, sshHosts, savedHosts, saveHosts } from '../src/collect.mjs';
 import { query, run as runQuery, QUERY_COMMANDS } from '../src/query.mjs';
-import { cardSpec, customSpec, cardHtml } from '../src/card.mjs';
+import { cardSpec, customSpec, renderCardImage } from '../src/card.mjs';
+import { allowanceText, openWeekly, weeklyBaseline, prepareWeekly, saveWeekly } from '../src/weekly.mjs';
 import { startPet, petLines, petSummary, PET_W } from '../src/pet.mjs';
 import { demoHosts, demoScan, demoGit, demoPricing, demoData, demoSpec, demoAnswer, demoPet } from '../src/demo.mjs';
 
@@ -31,13 +33,14 @@ const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf
 const h = React.createElement, argv = process.argv.slice(2);
 const flag = k => argv.includes(k), arg = (k, dflt) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : dflt; };
 if (flag('--version') || flag('-v')) { console.log(VERSION); process.exit(0); }
-if (argv[0] && !argv[0].startsWith('-') && !['get', 'days', 'sql', 'schema', 'install-skill', 'share'].includes(argv[0])) { console.error(`worthit: unknown command "${argv[0]}". Try: worthit --help`); process.exit(2); }
+if (argv[0] && !argv[0].startsWith('-') && !['get', 'days', 'sql', 'schema', 'install-skill', 'share', 'weekly'].includes(argv[0])) { console.error(`worthit: unknown command "${argv[0]}". Try: worthit --help`); process.exit(2); }
 if (await query(argv)) process.exit(0);        // get / days / sql / schema / --skill: answered from the local store, no scan
 // from here on a scan would start: never from inside another worthit run (lookups above stay allowed)
 if (process.env.WORTHIT_RUNNING) { console.error('worthit: started from inside another worthit run; stopping.'); process.exit(2); }
 process.env.WORTHIT_RUNNING = '1';        // inherited by every program this run starts
-if (flag('--help') || flag('-h')) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 9).map(l => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
-const JSON_MODE = flag('--json'), ASK = arg('--ask'), F_GIT = arg('--git'), F_AI = arg('--ai'), DAYS = +arg('--days', 21), F_HOSTS = arg('--hosts'), DEMO = flag('--demo'), NO_FILES = flag('--no-files') || DEMO, FRESH = flag('--fresh');
+if (flag('--help') || flag('-h')) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 10).map(l => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
+const WEEKLY = argv[0] === 'weekly';
+const JSON_MODE = WEEKLY || flag('--json'), ASK = arg('--ask'), F_GIT = arg('--git'), F_AI = arg('--ai'), DAYS = +arg('--days', 21), F_HOSTS = arg('--hosts', WEEKLY ? 'all' : undefined), DEMO = flag('--demo'), NO_FILES = flag('--no-files') || DEMO, FRESH = flag('--fresh');
 // the agent skill (skills/worthit/SKILL.md in this package and in the repo): installed into the person's coding agents with the skills CLI
 const SKILL_CMD = ['npx', '-y', 'skills', 'add', 'namastex888/worthit', '-s', 'worthit', '-g', '-y'], SETTINGS_FILE = path.join(HOME, 'settings.json');
 const settings = () => { try { return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')); } catch { return {}; } };
@@ -66,7 +69,7 @@ const forModel = () => { const { heat, ...rest } = DATA; return JSON.stringify({
 
 // ---------------------------------------------------------------- headless: --json
 const SHARE = argv[0] === 'share' || flag('--share');
-if (JSON_MODE && !SHARE) {
+if (JSON_MODE && !SHARE && !WEEKLY) {
   if (DEMO) { console.log(JSON.stringify({ worthit: VERSION, ...demoData() }, null, 1)); process.exit(0); }
   const cfg = { days: DAYS, hosts: HOSTS, git: F_GIT !== 'no' };
   const tick = (label, p) => { if (process.stderr.isTTY) process.stderr.write(`\r\x1b[K${label} ${p.pct == null ? '' : Math.round(p.pct * 100) + '%'} ${String(p.detail || '').slice(0, 90)}`); };
@@ -443,8 +446,7 @@ function App() {
 // so the image is copied to the clipboard for pasting. Numbers in built-in texts come straight from the data; an agent's text is checked against it.
 const SHARE_TOPICS = {
   allowance: { title: 'weekly allowance check', hint: 'what one full weekly limit was worth, and whether it moved', alias: ['weekly', 'limits', 'quota', 'quotas', 'limit'],
-    text: D => { const l = D.plans.map(p => `${p.plan.toLowerCase()} ${usd(p.usd_per_full_week)}${p.proof !== 'measured' ? ' (at least)' : p.change_vs_last_week_pct == null ? '' : ` (${p.change_vs_last_week_pct >= 0 ? '▲' : '▼'}${Math.abs(p.change_vs_last_week_pct)}% vs the week before)`}`);   // a floor is not comparable week to week
-      return `weekly ai allowance check, week to ${D.week.to}.. what one full weekly limit was worth at api prices:\n${l.join('\n')}\nmeasured from my local logs: npx worthit`; } },
+    text: allowanceText },
   delivery: { title: 'what a shipped feature costs', hint: 'features merged, their AI cost each, and how that moved week by week', alias: ['feature', 'features', 'cost per feature', 'productivity', 'shipped', 'delivered', 'entrega'],
     text: D => { const v = D.delivery; if (!v || v.usd_per_feature == null) return SHARE_TOPICS.allowance.text(D); const ch = v.usd_per_feature_change_pct;
       return `what does a shipped feature cost you in ai? mine this week: $${v.usd_per_feature} each${ch == null ? '' : ` (${ch >= 0 ? '▲' : '▼'}${Math.abs(ch)}% vs last week)`}.. ${v.features} features merged, ${v.fix_share_pct}% of my prs were fixes. priced at api rates from my local logs + git: npx worthit`; } },
@@ -491,12 +493,9 @@ async function makeShare(D, ask, { agent = null, clipOk = false, files = true, s
   }
   const card = cardLines(spec);
   const url = 'https://x.com/intent/post?text=' + encodeURIComponent(text); let image = null, clip = false;
-  const chrome = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(c => fs.existsSync(c));
-  if (chrome && files) { say('drawing the card image');
-    const hp = path.join(os.tmpdir(), `worthit-share-${process.pid}.html`), slug = key === 'custom' ? (ask.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 28) || 'custom') : key, f = path.resolve(`${STAMP}-worthit-share-${slug}.png`); fs.writeFileSync(hp, cardHtml(spec));
-    await new Promise(r => { const c = spawn(chrome, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=1', '--window-size=1600,900', '--screenshot=' + f, 'file://' + hp], { stdio: 'ignore' });
-      const t = setTimeout(() => c.kill(), 60000), end = () => { clearTimeout(t); r(); }; c.on('close', end); c.on('error', end); });   // not blocking: the screen keeps drawing
-    fs.rmSync(hp, { force: true }); if (fs.existsSync(f)) image = f; }
+  if (files) { say('drawing the card image');
+    const slug = key === 'custom' ? (ask.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 28) || 'custom') : key;
+    image = await renderCardImage(spec, `${STAMP}-worthit-share-${slug}.png`); }
   if (image && clipOk) {     // best effort: put the image on the clipboard so it can be pasted into the post
     if (process.platform === 'darwin') clip = spawnSync('osascript', ['-e', `set the clipboard to (read (POSIX file "${image}") as «class PNGf»)`], { stdio: 'ignore' }).status === 0;
     else if (has('wl-copy')) clip = spawnSync('sh', ['-c', `wl-copy --type image/png < "${image}"`], { stdio: 'ignore' }).status === 0;
@@ -523,9 +522,31 @@ async function share() {
   const go = flag('--open') ? 'y' : await rl(' Open X with this text now? [Y/n] ');
   if (!/^n/i.test(go)) { spawnSync(process.platform === 'darwin' ? 'open' : 'xdg-open', [r.url], { stdio: 'ignore' }); console.log(d(' opened. ' + (r.clip ? 'Paste the image (cmd+V), then post.' : 'Attach the image, then post.'))); }
 }
-if (SHARE) { await share(); process.exit(0); }
+if (WEEKLY) {
+  let db;
+  try {
+    const cfg = { days: DAYS, hosts: HOSTS, git: false, fresh: true };
+    const info = DEMO ? null : await scan(cfg, () => {});
+    const D = DEMO ? demoData() : buildData(await analyse(info.runDir), null, cfg, info);
+    if (!D.plans.length || !(D.totals.output_tokens || D.totals.api_value_usd)) throw new Error('no allowance data for this week');
+    db = openWeekly(HOME);
+    // Millisecond collisions must still record one row per successful invocation.
+    const exists = db.prepare('SELECT 1 FROM weekly WHERE generated_at = ?');
+    while (exists.get(D.generated_at)) D.generated_at = new Date(Date.parse(D.generated_at) + 1).toISOString();
+    const checkpoint = prepareWeekly(D, weeklyBaseline(db, D));
+    const result = await makeShare(D, 'allowance', { agent: null, clipOk: false, files: !NO_FILES });
+    if (!NO_FILES && !result.image) throw new Error('allowance PNG could not be rendered; install Chrome or Chromium, or use --no-files');
+    checkpoint.text = result.text; checkpoint.image = result.image;
+    saveWeekly(db, checkpoint);
+    console.log(JSON.stringify(checkpoint, null, 1));
+    process.exitCode = checkpoint.safe_to_post || flag('--allow-partial') ? 0 : 3;
+  } catch (e) { console.error('worthit weekly: ' + e.message); process.exitCode = 1; }
+  finally { db?.close(); }
+} else if (SHARE) { await share(); process.exit(0); }
+else {
 console.log('\n' + LOGO.join('\n') + '\n ' + m('what your AI coding subscription is really worth') + d(`  ·  v${VERSION}  ·  ` + (DEMO ? 'demo · sample data' : 'reads your local logs')));
 const fake = () => { const s = new PassThrough(); s.isTTY = true; s.setRawMode = () => s; s.ref = () => s; s.unref = () => s; return s; };   // no keyboard (pipes, tests): a stand-in input
 const stdin = process.stdin.isTTY ? null : fake();
 render(h(App), stdin ? { stdin } : {});
 if (stdin && TEST_INPUT) { let t = 0; for (const [ms, text] of JSON.parse(TEST_INPUT)) { t += ms; setTimeout(() => stdin.write(text), t); } }   // scripted keys and clicks, for tests
+}

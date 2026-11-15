@@ -1,6 +1,33 @@
 // The share card: one image made to be read in a feed. One headline number, one caption, up to four rows.
 // cardSpec() turns the week's data into that shape per topic; cardHtml() draws it at 1600x900.
 import { C, usd } from './draw.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawn } from 'node:child_process';
+
+// A private headless profile never touches the person's browser session. Render
+// to scratch first: a stale destination image must not count as a successful run.
+export async function renderCardImage(spec, destination) {
+  const chrome = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(c => fs.existsSync(c));
+  if (!chrome) return null;
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'worthit-card-'));
+  try {
+    const html = path.join(scratch, 'card.html'), png = path.join(scratch, 'card.png');
+    fs.writeFileSync(html, cardHtml(spec));
+    const ok = await new Promise(resolve => {
+      const child = spawn(chrome, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=1',
+        '--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-component-update',
+        '--disable-sync', '--disable-default-apps', '--metrics-recording-only', '--host-resolver-rules=MAP * ~NOTFOUND',
+        '--user-data-dir=' + path.join(scratch, 'profile'), '--window-size=1600,900', '--screenshot=' + png, 'file://' + html], { stdio: 'ignore' });
+      const timer = setTimeout(() => child.kill(), 60000);
+      child.on('error', () => { clearTimeout(timer); resolve(false); });
+      child.on('close', code => { clearTimeout(timer); resolve(code === 0); });
+    });
+    if (!ok || !fs.existsSync(png) || !fs.readFileSync(png).subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return null;
+    const image = path.resolve(destination); fs.copyFileSync(png, image); return image;
+  } finally { fs.rmSync(scratch, { recursive: true, force: true }); }
+}
 
 const MONTHS = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ');
 const day = iso => { const t = new Date(iso + 'T00:00:00Z'); return `${t.getUTCDate()} ${MONTHS[t.getUTCMonth()]} ${t.getUTCFullYear()}`; };
