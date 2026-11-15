@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Accepted, 2026-11-14 |
+| Status | Delivered, 2026-11-15 (#62: `worthit hosts`, `hosts retire` / `unretire`, the proof rule, `machines_retired`, the fixture case) |
 | Created | 2026-11-14 |
 | Issue | #26 |
 | Depends on | #24 (a fresh scan never erases days a saved scan had); #44 (a run never lowers a history day it did not fully scan) |
@@ -125,7 +125,7 @@ Two more cases:
 
 | # | Delivery | State |
 |---|---|---|
-| 1 | `worthit hosts` and `hosts retire` / `unretire`, the proof rule, `machines_retired`, the fixture case | open (#26) |
+| 1 | `worthit hosts` and `hosts retire` / `unretire`, the proof rule, `machines_retired`, the fixture case | merged (#62, 2026-11-15) |
 
 ## Decisions (owner, 2026-11-14)
 

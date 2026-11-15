@@ -33,5 +33,5 @@ cuts a release, so a version number says nothing about what a person gets.
 | # | Title | Status |
 |---|---|---|
 | [0001](0001-how-worthit-ships.md) | How worthit ships | In delivery, 2026-11-14 (#1: versions and releases; #43: tests on fixture data; deliveries 2-3 open) |
-| [0002](0002-retire-a-machine.md) | Retire a machine | Accepted, 2026-11-14 |
+| [0002](0002-retire-a-machine.md) | Retire a machine | Delivered, 2026-11-15 (#62: `worthit hosts`, `hosts retire` / `unretire`, the proof rule, `machines_retired`, the fixture case) |
 | [0003](0003-weekly-checkpoint.md) | The weekly allowance checkpoint | Delivered, 2026-11-15 (#56: `worthit weekly`, the `weekly` table, exit codes, fixture cases) |
