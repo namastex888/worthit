@@ -14,7 +14,7 @@ export const AUDIT = [];
 export const audit = (kind, text) => { AUDIT.push(new Date().toISOString() + '  ' + kind.padEnd(5) + ' ' + text); };
 export function writeAudit(file, version) {
   audit('write', tilde(file));
-  fs.writeFileSync(file, [`worthit ${version} audit log · ${new Date().toISOString()}`, "Recorded session-log reads and cache hits, collector commands, network activity, agent calls, sent data and output writes. It does not list executable lookup (which), hardware probes, the zstd decompressor used for .zst logs, the account ids read from Claude and Codex login files (.claude.json, auth.json; hashed), ~/.ssh/config, or worthit's own store files. Kinds: read, cache, run, net, agent, sent, write, note.", '', ...AUDIT, ''].join('\n'));
+  fs.writeFileSync(file, [`worthit ${version} audit log · ${new Date().toISOString()}`, "Recorded session-log reads and cache hits, collector commands, network activity, agent calls, sent data and output writes. It does not list executable lookup (which), hardware probes, the zstd decompressor used for .zst logs, the account ids read from Claude and Codex login files (.claude.json, auth.json; hashed), the model names read from Gemini/Antigravity settings (.gemini/antigravity-cli/settings.json, .gemini/antigravity/settings.json, .gemini/settings.json), claude-limits.jsonl in the meter state directories, ~/.ssh/config, or reads of worthit's own store files. Kinds: read, cache, run, net, agent, sent, write, note.", '', ...AUDIT, ''].join('\n'));
 }
 export const has = c => spawnSync('which', [c], { stdio: 'ignore' }).status === 0;
 const H = 3600e3, DAY = 24 * H;
@@ -103,7 +103,9 @@ export async function scan(cfg, on) {
   for (const x of [...hosts].sort((a, b) => !!a.saved_at - !!b.saved_at)) { if (!x.ok) continue; const f = path.join(runDir, x.alias + '.json'), hn = hostOf(f);   // fresh answers first: a saved copy never wins over one
     if (hn && seenHost.has(hn)) { x.same_as = seenHost.get(hn); x.ok = false; delete x.saved_at; fs.rmSync(f, { force: true }); audit('note', `${x.alias} is the same machine as ${x.same_as} (${hn}): its copy is dropped`); } else if (hn) seenHost.set(hn, x.alias); }
   // Merge only the deduplicated machines (including local), before pricing and persisting run-keep.
-  const merged = spawnSync(py, [path.join(ROOT, 'core', 'merge_scans.py'), runDir, keepDir, HOSTS_FILE, String(startedAt), String(cfg.days), JSON.stringify(['local.json', ...hosts.filter(x => x.ok && !x.saved_at).map(x => x.alias + '.json')])], { env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' }, encoding: 'utf8', maxBuffer: 64 << 20 });
+  const mergeArgs = [path.join(ROOT, 'core', 'merge_scans.py'), runDir, keepDir, HOSTS_FILE, String(startedAt), String(cfg.days), JSON.stringify(['local.json', ...hosts.filter(x => x.ok && !x.saved_at).map(x => x.alias + '.json')])];
+  audit('run', `${py} core/merge_scans.py ${mergeArgs.slice(1).map((a, i) => i < 3 ? tilde(a) : i === 5 ? "'" + a + "'" : a).join(' ')}   (merges saved scans into this run: kept days, retirements, conflicts)`);
+  const merged = spawnSync(py, mergeArgs, { env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' }, encoding: 'utf8', maxBuffer: 64 << 20 });
   if (merged.status) throw new Error('keeping saved scan days failed: ' + String(merged.stderr).trim().split('\n').pop());
   const { retained, retired, conflicts } = JSON.parse(merged.stdout);
   for (const x of conflicts) audit('note', `${x.machine} is retired but answers as ${x.same_as}`);

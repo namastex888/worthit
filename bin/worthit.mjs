@@ -570,6 +570,7 @@ if (WEEKLY) {
     console.log(JSON.stringify(checkpoint, null, 1));
     process.exitCode = checkpoint.safe_to_post || flag('--allow-partial') ? 0 : 3;
   } catch (e) {
+    audit('note', 'weekly checkpoint not saved; any weekly checkpoint write above was attempted. Audit log write entries record attempts, including retries.');
     console.error('worthit weekly: ' + e.message); process.exitCode = 1;
     if (!NO_FILES) {
       const file = path.resolve(`${STAMP}-worthit-audit.log`);
