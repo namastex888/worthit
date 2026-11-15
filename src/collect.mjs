@@ -1,6 +1,6 @@
 // worthit collectors: scan local logs (bundled Python core), price and read the weekly meters, git activity
 // (GitHub search + the usagemeter store), then shape everything into the one DATA object the dashboard draws.
-// AUDIT records collector activity; discovery probes and internal file operations are not exhaustive.
+// AUDIT records collector activity; exclusions are named in the README and audit header.
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'; import crypto from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process'; import { createRequire } from 'node:module';
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');   // loaded here, after quiet.mjs, so its 'experimental' warning stays silent
@@ -214,7 +214,7 @@ export async function git(cfg, on) {
     const iso = t => new Date(t).toISOString().slice(0, 19) + 'Z';
     // one search answers at most 1,000 rows, so the time is asked in slices of a week (and a full slice is asked again in halves)
     // every github.com account logged in to gh is you (the active one first): each is asked, and each keeps its own mark of how far back it got
-    audit('run', 'gh auth status --hostname github.com');
+    audit('run', 'gh auth status --hostname github.com   (reads the gh login; may contact github.com to check the token)');
     const st = spawnSync('gh', ['auth', 'status', '--hostname', 'github.com'], { encoding: 'utf8', timeout: 10000 });
     const txt = (st.stdout || '') + '\n' + (st.stderr || '');
     const logins = [...txt.matchAll(/Logged in to github\.com account (\S+)[^\n]*\n\s*- Active account: (true|false)/g)];
@@ -228,7 +228,7 @@ export async function git(cfg, on) {
     if (authors.length) audit('net', 'api.github.com/search/issues (through your gh login)');
     for (const [ai, au] of authors.entries()) { const kFrom = 'gh_kind_from_ms' + (ai ? ':' + au : ''), kAt = 'gh_kind_fetched_ms' + (ai ? ':' + au : '');
     let answered = true;
-    const range = async (a, b) => { audit('run', `gh api search/issues q="is:pr is:merged author:${au} merged:${iso(a)}..${iso(b)}" --paginate`);
+    const range = async (a, b) => { audit('net', `gh api search/issues q="is:pr is:merged author:${au} merged:${iso(a)}..${iso(b)}" --paginate`);
       const o = await runOut('gh', ['api', '-X', 'GET', 'search/issues', '-f', `q=is:pr is:merged author:${au} merged:${iso(a)}..${iso(b)}`, '-f', 'per_page=100', '--paginate', '-q', '.items[] | [.repository_url, .number, .pull_request.merged_at, .title] | @tsv'], 90000);
       const rows = []; for (const l of o.out.split('\n')) { const [url, n, at, ...ti] = l.split('\t'); if (!url || !at) continue; rows.push([('github.com/' + url.split('/repos/')[1] + '#' + n).toLowerCase(), Date.parse(at), kindOf(ti.join(' '))]); }
       if (o.code === 0 && rows.length >= 1000 && b - a > DAY) { const mid = a + Math.floor((b - a) / 2), x = await range(a, mid), y = await range(mid, b); return x && y; }
