@@ -26,7 +26,7 @@ import { blocks, C, W, bar, fg, bold, d, m, w, pad, lpad, len, strip, grad, fmtT
 import { scan, analyse, git, buildData, audit, writeAudit, has, tilde, ROOT, HOME, sshHosts, savedHosts, saveHosts } from '../src/collect.mjs';
 import { activeHosts, readHosts, hostsCommand } from '../src/hosts.mjs';
 import { query, run as runQuery, QUERY_COMMANDS } from '../src/query.mjs';
-import { cardSpec, customSpec, renderCardImage } from '../src/card.mjs';
+import { deliveryText, cardSpec, customSpec, renderCardImage } from '../src/card.mjs';
 import { allowanceText, openWeekly, weeklyBaseline, prepareWeekly, saveWeekly } from '../src/weekly.mjs';
 import { startPet, petLines, petSummary, PET_W } from '../src/pet.mjs';
 import { demoHosts, demoScan, demoGit, demoPricing, demoData, demoSpec, demoAnswer, demoPet } from '../src/demo.mjs';
@@ -76,7 +76,7 @@ const REPORT_FILE = path.join(HOME, 'report-cache.json');
 const reportKey = agent => { const D = DATA, t = D.totals || {}, g = D.git || {}, nums = { output_tokens: t.output_tokens, api_value_usd: t.api_value_usd, merged_prs: g.merged_prs, commits: g.commits, usd_per_merged_pr: g.usd_per_merged_pr };
   for (const p of D.plans) nums['plan_' + p.key] = p.usd_per_full_week;
   for (const x of D.waste) nums['unused_' + x.account] = x.unused_usd;
-  const exact = crypto.createHash('sha256').update(JSON.stringify([D.week.to, D.machines, D.machines_missing, D.machines_left_out, D.machines_retained, D.machines_retired, D.plans.map(p => p.key + p.proof), (D.events || []).map(e => e.date + e.title), D.game && [D.game.level, D.game.streak_days], agent.id, agent.model, SYSTEM])).digest('hex');
+  const exact = crypto.createHash('sha256').update(JSON.stringify([D.week.to, D.machines, D.machines_missing, D.machines_left_out, D.machines_retained, D.machines_retired, D.plans.map(p => p.key + p.proof), g.coverage?.prs, g.coverage?.commits, (D.events || []).map(e => e.date + e.title), D.game && [D.game.level, D.game.streak_days], agent.id, agent.model, SYSTEM])).digest('hex');
   return { exact, nums }; };
 const sameReport = (a, b) => !!a && !!a.nums && a.exact === b.exact && Object.keys({ ...a.nums, ...b.nums }).every(k => { const x = +a.nums[k] || 0, y = +b.nums[k] || 0; return Math.abs(x - y) <= Math.max(1, 0.02 * Math.abs(x)); });
 const readReport = () => { try { return JSON.parse(fs.readFileSync(REPORT_FILE, 'utf8')); } catch { return null; } };
@@ -121,16 +121,19 @@ const catalog = defineCatalog(schema, { actions: {}, components: {
   Facts: def(z.object({ items: z.array(z.object({ label: z.string(), value: z.string(), note: z.string().optional() })) }), 'A row of up to four small tiles: label, big value, short note.'),
   Note: def(text, 'One or two plain sentences of context or caveat.'),
 } });
+const GIT_RULE = 'Git counts use independent git.coverage.prs and git.coverage.commits: absent or false means at least, never a week-over-week comparison or personal best. PR-based cost ratios use partial denominators, not lower bounds; label them partial and do not compare.';
+const PLAN_RULE = 'A plan whose proof is "floor" gave AT LEAST its number: say "at least" for it, and never present a week-over-week change for a floor.';
 const COMMON = [
   'Output ONLY JSONL patches, one JSON object per line. No code fences, no prose, no blank lines.',
   'The first patch sets /root to a Stack. Then add elements in top-to-bottom order, a parent (with its full children list) before its children.',
   'Blocks with no props draw themselves from the data. Never restate their numbers in other blocks.',
   'Any number you write must be copied exactly from the data. To compare plans use usd_per_full_week and times_plan_price; never divide priced_usd yourself.',
+  GIT_RULE,
   'Do not use $state references. Keep ids short.'];
 const SYSTEM = catalog.prompt({ system: 'You compose the "Your week" terminal dashboard for worthit, a tool that tells a developer what their AI coding subscriptions were really worth this week and how productive they were. You place ready-made blocks and write two pieces of text.',
   customRules: [...COMMON,
     'Use exactly this order: Verdict, Tiles, Row(LevelCard, PlanRanking), Receipts, Delivery, Row(Heatmap, LimitTrend), WasteTable, Months, ModelMix, Events, Summary.',
-    'Verdict: which plan gave the most this week and by how much. If "plans" is empty, make it about the week\'s output instead. A plan whose proof is "floor" gave AT LEAST its number: say "at least" for it, and never present a week-over-week change for a floor.',
+    'Verdict: which plan gave the most this week and by how much. If "plans" is empty, make it about the week\'s output instead. ' + PLAN_RULE,
     'Summary: three short sentences, direct and a little playful. Say whether the last 7 days were more or less productive than the 7 before, what carried them, and the one thing to do next (use allowance that is about to reset, protect the streak, reach the next level). If the data has no "git" key, do not mention PRs or cost per PR.'] });
 const ASK_SYSTEM = catalog.prompt({ system: 'You answer questions about a developer\'s AI subscription usage for worthit. You always answer visually, by placing blocks.',
   customRules: [...COMMON,
@@ -242,7 +245,7 @@ function writeFiles(spec) {
   const md = [`# worthit · ${STAMP}`, '', ...(txt('Verdict') ? [`> ${txt('Verdict')}`, ''] : []), '## Which plan gave more', '', '| Plan | $ per full weekly limit | × plan price | Proof | How it was read |', '|---|---|---|---|---|',
     ...DATA.plans.map(p => `| ${p.plan} | ${usd(p.usd_per_full_week)} | ${p.times_plan_price}× | ${p.proof}${p.proof === 'measured' && p.retirement_note ? '; ' + p.retirement_note : ''} | ${p.meter}; ${usd(p.priced_usd)} priced ÷ ${p.fraction_of_week} weekly limits; ${p.models} |`), ...(DATA.plans.length ? [] : ['| (no finished weekly limit in the scanned days) | | | | |']), '',
     '## Last 7 days', '', `- Output tokens: ${fmtTok(DATA.totals.output_tokens)}${DATA.totals.output_tokens_change_pct == null ? '' : ` (${DATA.totals.output_tokens_change_pct >= 0 ? '+' : ''}${DATA.totals.output_tokens_change_pct}% vs the 7 days before)`}`, `- API value used: ${usd(DATA.totals.api_value_usd)}`,
-    ...(DATA.git ? [`- Merged PRs: ${DATA.git.merged_prs} · commits: ${DATA.git.commits} · repos: ${DATA.git.repos}`, `- Cost per merged PR: ${DATA.git.usd_per_merged_pr == null ? 'n/a' : '$' + DATA.git.usd_per_merged_pr.toFixed(2)}`] : []),
+    ...(DATA.git ? [`- Merged PRs: ${DATA.git.coverage?.prs ? '' : 'at least '}${DATA.git.merged_prs} · commits: ${DATA.git.coverage?.commits ? '' : 'at least '}${DATA.git.commits} · repos: ${DATA.git.repos}`, `- Cost per merged PR: ${DATA.git.usd_per_merged_pr == null ? 'n/a' : '$' + DATA.git.usd_per_merged_pr.toFixed(2)}${DATA.git.coverage?.prs ? '' : ' (partial PR count; not compared)'}`] : []),
     `- Level ${DATA.game.level} (${DATA.game.title}), ${DATA.game.xp.toLocaleString('en-US')} XP, ${DATA.game.streak_days}-day streak`, '',
     '## Month by month', '', '| Month | Plan | Days tracked | API value used | × monthly plan price | Measured weekly limit |', '|---|---|---|---|---|---|', ...(DATA.months || []).map(x => `| ${x.month} | ${x.plan} | ${x.days_tracked} | ${usd(x.api_usd_used)} | ${x.used_times_plan_price}× | ${x.weekly_limit_usd ? usd(x.weekly_limit_usd) : ''} |`), '',
     ...(DATA.model_mix ? ['## Model mix', '', `Share of output tokens per 7-day block (${DATA.model_mix.weeks.join(', ')}).`, '', '| Model | Weights | ' + DATA.model_mix.weeks.join(' | ') + ' | vs last week |', '|---|---|' + DATA.model_mix.weeks.map(() => '---|').join('') + '---|',
@@ -392,7 +395,7 @@ function Main({ cfg }) {
         '  ' + pad(bold(w('Last 7 days')), 15) + lpad('', 9) + lpad(bold(w(tot('requests').toLocaleString('en-US'))), 10) + lpad(bold(fg(GOLD, fmtTok(tot('output')))), 9) + lpad(bold(w(fmtTok(tot('cached')))), 11) + lpad(bold(w(fmtTok(tot('fresh')))), 10) + lpad(bold(w(usd(tot('usd')))), 11)]);
       S(0, { secs: scanSecs });
       fin(1, t1, DATA.plans.length ? DATA.plans.map(p => fg(C.cx, '✓') + ' ' + pad(fg(p.color, p.plan), 17) + m(pad(p.meter, 34)) + d('→ ') + bold(w(usd(p.usd_per_full_week))) + d(' per full week')) : [m('No weekly limit ran to its cap inside the scanned days: plans are ranked once one does.')]);
-      if (cfg.git) { fin(2, gT, [fg(C.cx, '✓') + ' ' + w(DATA.git.merged_prs) + m(' merged PRs · ') + w(DATA.git.commits.toLocaleString('en-US')) + m(' commits · ') + w(DATA.git.repos) + m(' repos') + d('  in the last 7 days'), d(`  sources, 14 days: GitHub ${g.src.github} PRs · usagemeter ${g.src.meter} PRs` + (g.src.gitea ? ` · Gitea ${g.src.gitea}` : '') + (g.src.gitlab ? ` · GitLab ${g.src.gitlab}` : '') + (g.meter ? ` (usagemeter ${g.meter.version}${g.meter.downloaded ? ', downloaded' : ''})` : ''))]); S(2, { secs: gSecs }); }
+      if (cfg.git) { fin(2, gT, [fg(C.cx, '✓') + ' ' + w((DATA.git.coverage?.prs ? '' : 'at least ') + DATA.git.merged_prs) + m(' merged PRs · ') + w((DATA.git.coverage?.commits ? '' : 'at least ') + DATA.git.commits.toLocaleString('en-US')) + m(' commits · ') + w(DATA.git.repos) + m(' repos') + d('  in the last 7 days'), d(`  sources, 14 days: GitHub ${g.src.github} PRs · usagemeter ${g.src.meter} PRs` + (g.src.gitea ? ` · Gitea ${g.src.gitea}` : '') + (g.src.gitlab ? ` · GitLab ${g.src.gitlab}` : '') + (g.meter ? ` (usagemeter ${g.meter.version}${g.meter.downloaded ? ', downloaded' : ''})` : ''))]); S(2, { secs: gSecs }); }
       setSteps(s => { setPast(p => [{ kind: 'steps', id: 'steps', steps: s }, ...p]); return s; });
       const finish = (x, done) => { endPet(); if (!DEMO) saveSettings({ last: { hosts: HOSTS, git: !!cfg.git, ai: !!cfg.ai, agent: cfg.agent ? cfg.agent.id : null } }); let files = []; try { files = writeFiles(x.spec); } catch (e) { audit('note', 'files not written: ' + e.message); } setSaved(files); setPast(p => [...p, { kind: 'panel', ...x, done, id: 'dash' }]); return { ...x, done, moved: true }; };
       // Tables first: the tables need no model, so they are shown at once; the agent's Verdict and Summary are added below when they arrive.
@@ -464,8 +467,7 @@ const SHARE_TOPICS = {
   allowance: { title: 'weekly allowance check', hint: 'what one full weekly limit was worth, and whether it moved', alias: ['weekly', 'limits', 'quota', 'quotas', 'limit'],
     text: allowanceText },
   delivery: { title: 'what a shipped feature costs', hint: 'features merged, their AI cost each, and how that moved week by week', alias: ['feature', 'features', 'cost per feature', 'productivity', 'shipped', 'delivered', 'entrega'],
-    text: D => { const v = D.delivery; if (!v || v.usd_per_feature == null) return SHARE_TOPICS.allowance.text(D); const ch = v.usd_per_feature_change_pct;
-      return `what does a shipped feature cost you in ai? mine this week: $${v.usd_per_feature} each${ch == null ? '' : ` (${ch >= 0 ? '▲' : '▼'}${Math.abs(ch)}% vs last week)`}.. ${v.features} features merged, ${v.fix_share_pct}% of my prs were fixes. priced at api rates from my local logs + git: npx worthit`; } },
+    text: D => { const v = D.delivery; if (!v || v.usd_per_feature == null) return SHARE_TOPICS.allowance.text(D); return deliveryText(D); } },
   open: { title: 'open vs closed models', hint: 'how much of your work runs on open models', alias: ['open-source', 'opensource', 'oss', 'open models'],
     text: D => { const o = D.model_mix.open, c = D.model_mix.closed, n = o.share_pct.length - 1, ch = o.change_pts;
       return `how much of your ai coding runs on open models? mine this week: ${Math.round(o.share_pct[n])}% of output tokens${ch == null || Math.abs(ch) < 0.5 ? '' : ` (${ch > 0 ? '▲' : '▼'}${Math.abs(Math.round(ch))} pts vs last week)`}.. $${o.usd_per_m_output} per M output vs $${c.usd_per_m_output} for closed. whats yours? npx worthit`; } },
@@ -492,6 +494,7 @@ async function makeShare(D, ask, { agent = null, clipOk = false, files = true, s
   const warnings = [], keys = Object.keys(SHARE_TOPICS);
   const ageH = Math.round((Date.now() - Date.parse(D.generated_at)) / 36e5); if (ageH >= 24) warnings.push(`the numbers are from a run ${ageH} hours ago: run worthit again for this week's figures`);
   const floors = D.plans.filter(p => p.proof !== 'measured').map(p => p.plan); if (floors.length) warnings.push(`${floors.join(' and ')}: a floor ("at least this much"), not a full measurement; the card says so`);
+  if (D.git && !D.git.coverage?.prs) warnings.push('merged PRs and features: at least (git source coverage is incomplete); costs use a partial count');
   const lc = ask.toLowerCase(); let key = keys.find(k => k === lc || SHARE_TOPICS[k].alias.includes(lc)), spec, text, by = 'built-in';
   if (key) { spec = cardSpec(key, D); text = SHARE_TOPICS[key].text(D); }
   else {      // anything else: the agent chooses the blocks and writes the post; its numbers are checked against the data
@@ -499,7 +502,8 @@ async function makeShare(D, ask, { agent = null, clipOk = false, files = true, s
     if (!agent) fallback(`"${ask}" needs an AI agent (none found, or --ai no)`);
     else { say(`asking ${agent.label} for a post about: ${ask}`);
       const system = 'You write ONE post for X about a developer\'s own AI coding statistics. Voice: lowercase, casual, first person, no hashtags, no emojis, at most 250 characters, and it ends with "npx worthit". '
-        + 'Use only numbers that appear in the data; never invent or round differently. The data covers the last 7 days only: describe this week and never generalise (no "every", "always", "usually"). Reply with one line of JSON and nothing else: {"text":"...","headline":"...","caption":"...","facts":[{"label":"...","value":"..."}]}. The card image shows ONE big number: headline is that number exactly as in the data with its unit (like $53.95, 448 or 32%), at most 8 characters; caption says what it is in at most 60 characters; facts are 2 to 4 supporting numbers (label at most 24 characters, value at most 14).';
+        + 'Use only numbers that appear in the data; never invent or round differently. The data covers the last 7 days only: describe this week and never generalise (no "every", "always", "usually"). Reply with one line of JSON and nothing else: {"text":"...","headline":"...","caption":"...","facts":[{"label":"...","value":"..."}]}. The card image shows ONE big number: headline is that number exactly as in the data with its unit (like $53.95, 448 or 32%), at most 8 characters; caption says what it is in at most 60 characters; facts are 2 to 4 supporting numbers (label at most 24 characters, value at most 14).'
+        + ' ' + GIT_RULE + ' ' + PLAN_RULE;
       const done = await new Promise(r => feed({ system, user: `What the person wants to share: ${ask}\n\nTheir data (JSON):\n${forModel()}`, agent }, () => {}, () => {}, r));
       let j = null; try { j = JSON.parse((/\{[\s\S]*\}/.exec(done.raw || '') || [])[0]); } catch { /* not JSON */ }
       const facts = j && Array.isArray(j.facts) ? j.facts.filter(f => f && f.label && f.value != null).slice(0, 4) : [];

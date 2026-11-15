@@ -156,3 +156,16 @@ snapshot bytes and earlier history unchanged; unretire restores bytes and select
 The seven-day source case preserves a 700,000-token/$7 partial oldest day and the
 100,000-token/$1 older day with a git row in history.json and SQLite. All identities
 are synthetic. Proof-rule mutations run only in a private throwaway checkout.
+
+Issue #52 extends `git-source-coverage` with `delivery-proof`: the same literal
+forge titles (10 current features / 5 previous, 2 fixes / 1 previous), two
+meter-only PRs, local commit logs and $200 usage in each week run through real
+`git()` subprocess discovery, `buildData()` and persistence. Failed meter sync
+makes both metrics floors; failed gh account only PRs; failed git log only commits.
+The complete-source control has 14 PRs (+133%), $200/14 per PR (-57%), 10 features
+(+100%) and $20 per feature (-50%). Incomplete PR coverage nulls every PR-derived
+change and suppresses PR personal bests. Drawn dashboard blocks, delivery card HTML
+and fixed share text assert at least on counts, partial denominators on costs and
+no comparisons; complete PR coverage preserves changes even if commits failed.
+`WORTHIT_FIXTURE_ARTIFACTS` optionally saves synthetic data/drawn text for image
+inspection. Source failures are never simulated by editing output proof flags.

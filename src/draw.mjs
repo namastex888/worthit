@@ -65,10 +65,10 @@ export const blocks = {
   Tiles(D) {
     const t = [{ title: 'TOKENS OUT', color: C.pink, v: fmtTok(D.totals.output_tokens), dl: delta(D.totals.output_tokens_change_pct) + d(' vs prev 7 d'), sp: spark(D.totals.tokens_per_day, C.pink) },
                { title: 'VALUE USED', color: C.gold, v: usd(D.totals.api_value_usd), dl: delta(D.totals.api_value_change_pct) + d(' vs prev 7 d'), sp: spark(D.totals.value_per_day, C.gold) }];
-    if (D.git) t.push({ title: 'SHIPPED', color: C.cx, v: D.git.merged_prs + ' PRs', dl: delta(D.git.merged_prs_change_pct) + d(' vs prev 7 d'), sp: spark(D.git.prs_per_day, C.cx), note: fmtTok(D.git.commits) + ' commits' },
-                      { title: 'COST PER PR', color: C.cl, v: D.git.usd_per_merged_pr == null ? 'n/a' : '$' + D.git.usd_per_merged_pr.toFixed(2), dl: delta(D.git.usd_per_pr_change_pct, false) + d(' vs prev 7 d'), sp: spark(D.git.usd_per_pr_per_day, C.cl) });
+    if (D.git) t.push({ title: 'SHIPPED', color: C.cx, v: (D.git.coverage?.prs ? '' : 'at least ') + D.git.merged_prs + ' PRs', dl: D.git.coverage?.prs ? delta(D.git.merged_prs_change_pct) + d(' vs prev 7 d') : d('floor · not compared'), sp: spark(D.git.prs_per_day, C.cx), note: (D.git.coverage?.commits ? '' : 'at least ') + fmtTok(D.git.commits) + ' commits' },
+                      { title: 'COST PER PR', color: C.cl, v: D.git.usd_per_merged_pr == null ? 'n/a' : '$' + D.git.usd_per_merged_pr.toFixed(2), dl: D.git.coverage?.prs ? delta(D.git.usd_per_pr_change_pct, false) + d(' vs prev 7 d') : d('partial PR count'), sp: spark(D.git.usd_per_pr_per_day, C.cl) });
     const wd = t.length === 4 ? 24 : 48;
-    return row(t.map((x, i) => ({ title: x.title, color: x.color, w: i === t.length - 1 ? W - (wd + 1) * (t.length - 1) : wd, lines: [bold(w(x.v)), x.dl, x.sp + d(' ' + (x.note || '7 days'))] })));
+    return row(t.map((x, i) => ({ title: x.title, color: x.color, w: i === t.length - 1 ? W - (wd + 1) * (t.length - 1) : wd, lines: [bold(w(x.v)), x.dl, x.sp, d(x.note || '7 days')] })));
   },
 
   LevelCard(D) {
@@ -139,11 +139,14 @@ export const blocks = {
 
   Delivery(D) {                     // what the merged PRs were (title prefix), ranked; then features and their cost week by week, day by day, month by month
     const v = D.delivery; if (!v) return [];
+    const covered = !!D.git?.coverage?.prs;
     const KC = { feat: C.cx, fix: C.red, docs: C.cl, test: C.gold, other: C.ink3 }, kc = k => KC[k] || C.ink2, l = [], N = 12, SL = 6, kk = n => n == null ? '' : n >= 10000 ? '$' + Math.round(n / 1000) + 'k' : '$' + Math.round(n);
+    if (!covered) l.push(d('PR / feature counts: at least · ratios use partial counts · no comparison'), '');
     const mxk = Math.max(1, ...v.kinds.map(x => x.prs));
-    for (const x of v.kinds.slice(0, 6)) l.push(pad(fg(kc(x.kind), x.label), 14) + bar(x.prs, mxk, 26, kc(x.kind), kc(x.kind)) + lpad(bold(w(String(x.prs))), 6) + lpad(m(x.share_pct + '%'), 6) + '   ' + delta(x.change_pct, x.kind !== 'fix') + d(' vs prev 7 d'));
-    const rest = v.kinds.slice(6).filter(x => x.prs); if (rest.length) l.push(d('+ ' + rest.map(x => `${x.label} ${x.prs}`).join(' · ')));
-    l.push('', pad(m('cost per feature'), 18) + bold(w(v.usd_per_feature == null ? 'n/a' : '$' + v.usd_per_feature)) + '  ' + delta(v.usd_per_feature_change_pct, false) + d(' vs prev 7 d') + '      ' + m('fixes ') + w((v.fix_share_pct ?? 0) + '%') + m(' of PRs') + (v.fix_share_last_week_pct == null ? '' : d(` (${v.fix_share_last_week_pct}% the week before)`)), '');
+    for (const x of v.kinds.slice(0, 6)) l.push(pad(fg(kc(x.kind), x.label), 14) + bar(x.prs, mxk, 26, kc(x.kind), kc(x.kind)) + lpad(bold(w((covered ? '' : 'at least ') + x.prs)), covered ? 6 : 15) + lpad(m(x.share_pct + '%'), 6) + '   ' + (covered ? delta(x.change_pct, x.kind !== 'fix') + d(' vs prev 7 d') : d('not compared')));
+    const rest = v.kinds.slice(6).filter(x => x.prs); if (rest.length) l.push(d('+ ' + rest.map(x => `${x.label} ${covered ? '' : 'at least '}${x.prs}`).join(' · ')));
+    l.push('', pad(m('cost per feature'), 18) + bold(w(v.usd_per_feature == null ? 'n/a' : '$' + v.usd_per_feature)) + '  ' + (covered ? delta(v.usd_per_feature_change_pct, false) + d(' vs prev 7 d') : d('partial feature count · not compared')) + '      ' + m('fixes ') + w((v.fix_share_pct ?? 0) + '%') + m(' of PRs') + (!covered || v.fix_share_last_week_pct == null ? '' : d(` (${v.fix_share_last_week_pct}% the week before)`)), '');
+    if (!covered) return box('DELIVERY', l, W, C.cx, 'title prefixes · shares of observed PRs');
     const at = {}; for (const x of v.weeks) at[x.weeks_ago] = x; const mf = Math.max(1, ...v.weeks.map(x => x.features)), mc = Math.max(1, ...v.weeks.map(x => x.usd_per_feature || 0));
     const cols = (name, get, mx, color) => { for (let r = 1; r >= 0; r--) { let row = pad(r === 1 ? m(name) : '', 18); for (let a = N - 1; a >= 0; a--) { const val = at[a] ? get(at[a]) : null; row += val == null ? (r === 0 ? d(' ·    ') : '      ') : fg(a === 0 ? color : mix(C.track, color, .6), ' ▁▂▃▄▅▆▇█'[Math.max(r === 0 ? 1 : 0, Math.round(Math.max(0, Math.min(1, val / mx * 2 - r)) * 8))].repeat(4)) + '  '; } l.push(row); } };
     const vals = (get, fmt) => { let row = pad('', 18); for (let a = N - 1; a >= 0; a--) { const val = at[a] ? get(at[a]) : null; row += val == null ? ' '.repeat(SL) : (a === 0 ? bold(w(pad(fmt(val), SL))) : m(pad(fmt(val), SL))); } l.push(row); };

@@ -606,5 +606,55 @@
       "commits": 2,
       "repos": 1
     }
+  },
+  "delivery-proof": {
+    "meter-sync": {
+      "coverage": [
+        false,
+        false
+      ],
+      "changes": [
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    "gh-account": {
+      "coverage": [
+        false,
+        true
+      ],
+      "changes": [
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    "git-log": {
+      "coverage": [
+        true,
+        false
+      ],
+      "changes": [
+        133,
+        -57,
+        100,
+        -50
+      ]
+    },
+    "good": {
+      "coverage": [
+        true,
+        true
+      ],
+      "changes": [
+        133,
+        -57,
+        100,
+        -50
+      ]
+    }
   }
 }

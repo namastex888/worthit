@@ -29,6 +29,8 @@ export async function demoPricing() { await wait(1100); }
 
 export function demoData() {
   const D = JSON.parse(fs.readFileSync(path.join(ROOT, 'src', 'demo-data.json'), 'utf8')), now = new Date();
+  // Bundled git totals are a complete synthetic control using the existing coverage contract.
+  if (D.git) D.git.coverage = { prs: true, commits: true, sources: [{ source: 'usagemeter', answered: true, metrics: ['prs', 'commits'] }, { source: 'git log', answered: true, metrics: ['commits'] }, { source: 'gh:demo-coder', answered: true, metrics: ['prs'] }] };
   D.generated_at = now.toISOString(); D.week = { from: new Date(now - 7 * 864e5).toISOString().slice(0, 10), to: now.toISOString().slice(0, 10) };
   return D;
 }

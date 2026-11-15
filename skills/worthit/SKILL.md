@@ -54,6 +54,19 @@ can contact gitlab.com even without a token; source selection does not imply no 
 Malformed inventories and command errors remain failures, named `gh discovery`,
 `glab discovery` or `tea discovery`. Both multi-account and older `gh` login
 output are supported. A logged-in source that gives a partial answer is uncovered.
+When `git.coverage.prs` is false, this week's `git.merged_prs`, `delivery.features`
+and `delivery.kinds[].prs` are floors: say **at least**. `git.merged_prs_change_pct`,
+`git.usd_per_pr_change_pct`, `delivery.features_change_pct`,
+`delivery.usd_per_feature_change_pct` and `delivery.kinds[].change_pct` are numbers
+or null; all are null without PR coverage. Do not compare floors with earlier
+weeks or award PR-derived personal bests. `git.usd_per_merged_pr` and
+`delivery.usd_per_feature` retain their observed ratios: label them **partial PR
+count** / **partial feature count**, never lower bounds, and do not compare them.
+Shares describe observed PRs. Dashboard, report and share text/cards use these
+same rules. False `git.coverage.commits` independently means **at least** for
+`git.commits`; a commit-only failure does not suppress measured PR comparisons.
+No additional proof or commits change field is needed.
+
 PR coverage needs the meter and every selected forge answer. Commit coverage needs
 meter repository discovery and every local git log; forge failures do not affect it.
 A nonzero sync or pending meter work leaves meter-fed metrics uncovered, while

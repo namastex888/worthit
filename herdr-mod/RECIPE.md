@@ -34,7 +34,7 @@ With no data yet the dialog shows one paragraph explaining what worthit does and
 - One mod, `mods/worthit/`: `main.js` and `mod.json` (`{ "place": "none", "title": "worthit", "overlay": { "kind": "dialog", "width": 380, "height": 640 } }`), plus a `keys.json` snippet: `"ctrl-alt-w": "mod.open:worthit"` under `global`. No shared state, no art.
 - `herdr` functions: `readTextFile`, `home`, `exec`, `theme`, `run`, `props`, `closeOverlay`. Commands: `tab.new {name, argv}`, and `mod.open {name}` from the key.
 - Programs it runs: `npx` (which downloads and runs the `worthit` package from npm, so it reaches the network), only when a button is pressed.
-- Files it reads outside its folder: `~/.worthit/last.json`. Fields used: `week.to`, `generated_at`, `plans[]` (`plan`, `color`, `usd_per_full_week`, `times_plan_price`, `proof`, `change_vs_last_week_pct`), `totals.output_tokens`, `totals.api_value_usd`, `git.merged_prs`, `git.usd_per_merged_pr`, `waste[]` (`unused_usd`, `at_risk_usd`), `model_mix.open.share_pct` (last value).
+- Files it reads outside its folder: `~/.worthit/last.json`. Fields used: `week.to`, `generated_at`, `plans[]` (`plan`, `color`, `usd_per_full_week`, `times_plan_price`, `proof`, `change_vs_last_week_pct`), `totals.output_tokens`, `totals.api_value_usd`, `git.merged_prs`, `git.usd_per_merged_pr`, `git.coverage.prs`, `waste[]` (`unused_usd`, `at_risk_usd`), `model_mix.open.share_pct` (last value).
 - Elements: `v_flex`/`h_flex` rows, `div` bars with a percent width (`.w("44%")`), `.when(...)` for optional parts, `.frames(...)` for the spinner, `cx.timer.every(60000, ...)` for the reload, `cx.spawn` for file reads and `exec`.
 
 ## Watch out
