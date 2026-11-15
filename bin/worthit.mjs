@@ -26,7 +26,7 @@ import { blocks, C, W, bar, fg, bold, d, m, w, pad, lpad, len, strip, grad, fmtT
 import { scan, analyse, git, buildData, audit, writeAudit, has, tilde, ROOT, HOME, sshHosts, savedHosts, saveHosts } from '../src/collect.mjs';
 import { activeHosts, readHosts, hostsCommand } from '../src/hosts.mjs';
 import { query, run as runQuery, QUERY_COMMANDS } from '../src/query.mjs';
-import { deliveryText, cardSpec, customSpec, renderCardImage } from '../src/card.mjs';
+import { deliveryText, cardSpec, customSpec, renderCardImage, barCells } from '../src/card.mjs';
 import { allowanceText, openWeekly, weeklyBaseline, prepareWeekly, saveWeekly } from '../src/weekly.mjs';
 import { startPet, petLines, petSummary, PET_W } from '../src/pet.mjs';
 import { demoHosts, demoScan, demoGit, demoPricing, demoData, demoSpec, demoAnswer, demoPet } from '../src/demo.mjs';
@@ -486,8 +486,7 @@ const SHARE_TOPICS = {
 // the card as a few terminal lines: the same headline, caption and rows the image shows
 const cardLines = c => [' ' + d(c.eyebrow.toUpperCase()), '', ' ' + bold(fg(c.color, c.hero)) + '  ' + w(c.cap) + (c.sub ? d('  ·  ') + fg(c.subColor, c.sub) : ''), '',
   ...c.rows.flatMap(r => {
-    // Relative value ratios can exceed 1; bound only the drawing, including NaN/Infinity.
-    const n = Math.max(1, Math.round(Math.max(0, Math.min(1, r.pct || 0)) * 20));
+    const n = barCells(r.pct);
     return [ ' ' + pad(fg(r.color, r.label), 26) + (r.pct == null ? '' : fg(r.color, '█'.repeat(n)) + fg(C.track, '█'.repeat(20 - n)) + ' ') + lpad(bold(w(r.value)), 10) + '  ' + d(r.note), ...(r.retirement_note ? [' ' + d(r.retirement_note)] : [])];
   })];
 const numbersIn = s => (strip(String(s)).match(/\d[\d,]*(?:\.\d+)?/g) || []).map(x => String(+x.replace(/,/g, '')));

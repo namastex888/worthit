@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { isolatedEnvironment } from '../../support/environment.mjs';
-import { cardSpec } from '../../../src/card.mjs';
+import { barCells, cardSpec } from '../../../src/card.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const isolated = isolatedEnvironment(), { tmp, env } = isolated;
@@ -27,6 +27,11 @@ try {
     assert.equal(spec.rows[0].value, currency);
     assert.equal(spec.rows[1].value, '$' + price);
     assert.equal(spec.rows[1].pct, price / allowance, 'source ratio keeps its relative-value meaning');
+    for (const row of spec.rows) {
+      const cells = barCells(row.pct);
+      assert.ok(Number.isInteger(cells) && cells >= 1 && cells <= 20,
+        `bar width (${allowance}/${price}, ${row.label}): expected integer 1..20, got ${cells}`);
+    }
     fs.writeFileSync(path.join(env.WORTHIT_HOME, 'last.json'), JSON.stringify(data));
     const r = spawnSync(process.execPath, [path.join(root, 'bin/worthit.mjs'), 'share', 'value', '--ai', 'no', '--no-files'], {
       cwd: fs.realpathSync(tmp), env, input: '', encoding: 'utf8', timeout: 30000,
@@ -38,5 +43,8 @@ try {
     assert.ok(result.text.startsWith(`i pay $${Math.round(price * 52 / 12 / 10) * 10}/mo for example plan.`), 'printed subscription price unchanged');
     assert.equal(result.image, null);
   }
-  console.log('share-bar-bounds: low, zero, nonfinite, negative and ordinary ratios exit 0; receipt numbers unchanged');
+  for (const [pct, cells] of [[1, 20], [0.01, 1], [NaN, 1], [-Infinity, 1], [null, 1]]) {
+    assert.equal(barCells(pct), cells, `direct bar cells (${pct})`);
+  }
+  console.log('share-bar-bounds: every scenario row within integer 1..20; direct edge cases match; CLI exits 0 with receipt numbers unchanged');
 } finally { isolated.cleanup(); }

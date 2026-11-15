@@ -6,6 +6,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
+// Relative value ratios can exceed 1; bound only the terminal drawing, including NaN/Infinity.
+export const barCells = (pct, w = 20) => Math.max(1, Math.round(Math.max(0, Math.min(1, pct || 0)) * w));
+
 // A private headless profile never touches the person's browser session. Render
 // to scratch first: a stale destination image must not count as a successful run.
 export async function renderCardImage(spec, destination) {

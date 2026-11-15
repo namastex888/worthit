@@ -13,6 +13,13 @@ also covers zero allowance (infinity), zero/zero (NaN), negative allowance and
 an ordinary ratio. No source logs, accounts, network, clipboard or desktop
 session are used.
 
+Every row in every scenario asserts that the same `barCells` helper used by
+the terminal returns an integer from 1 to 20. Direct cases pin 1, 0.01, NaN,
+-Infinity and null. Removing only the helper's upper bound must fail the
+first $6/$46 case's width assertion at 153 cells, before any CLI crash or
+later infinity case. The helper extraction preserves the drawing exactly;
+the inspected image below remains applicable without a new render.
+
 `terminal.png` is an inspected rendering of the actual corrected `share value
 --ai no --no-files` terminal output for the $6/$46 case, captured in a scratch
 pseudo-terminal and rasterized from its ANSI text. Both rows contain 20 cells;
