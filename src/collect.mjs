@@ -56,7 +56,7 @@ export async function scan(cfg, on) {
   fs.mkdirSync(runDir, { recursive: true });
   const script = path.join(ROOT, 'core', 'extract_usage.py'), counts = { claude: 0, codex: 0, antigravity: 0 };
   const cache = path.join(HOME, 'run-counts.json'), keepDir = path.join(HOME, 'run-keep');
-  if (process.env.WORTHIT_REUSE && fs.existsSync(path.join(keepDir, 'local.json'))) { fs.cpSync(keepDir, runDir, { recursive: true }); audit('note', 'WORTHIT_REUSE: using the previous scan'); return { runDir, counts: JSON.parse(fs.readFileSync(cache, 'utf8')), hosts: [], started_at: 0 }; }
+  if (!cfg.fresh && process.env.WORTHIT_REUSE && fs.existsSync(path.join(keepDir, 'local.json'))) { fs.cpSync(keepDir, runDir, { recursive: true }); audit('note', 'WORTHIT_REUSE: using the previous scan'); return { runDir, counts: JSON.parse(fs.readFileSync(cache, 'utf8')), hosts: [], started_at: 0 }; }
   let cached = 0; const names = cfg.hosts || [], pcts = { local: 0 }; names.forEach(a => { pcts[a] = 0; });
   const emit = detail => { const v = Object.values(pcts); on({ pct: v.reduce((a, b) => a + b, 0) / v.length, detail, counts }); };
   audit('run', `${py} core/extract_usage.py ${cfg.days}   (reads local session logs, read-only)`);
@@ -324,6 +324,14 @@ const TITLES = ['Apprentice', 'Builder', 'Shipper', 'Operator', 'Conductor', 'Ma
 const models = mix => Object.entries(mix || {}).slice(0, 2).map(([k, v]) => `${k.replace('claude-', '').replace('gpt-', 'GPT-')} ${Math.round(v * 100)}%`).join(', ');
 const ft = n => n >= 1e9 ? (n / 1e9).toFixed(1) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : Math.round(n / 1e3) + 'K';
 
+// Retained units cover a whole local day, including a day straddling the
+// rolling week's start. Proof and checkpoint safety must use the same rule.
+export function retainedUnitOverlapsWeek(unit, now) {
+  const lo = new Date(unit.day + 'T00:00:00'), hi = new Date(lo); hi.setDate(hi.getDate() + 1);
+  const start = now - 7 * DAY;
+  return +lo <= now && +hi > start;
+}
+
 export function buildData(report, g, cfg, scanInfo) {
   const now = Date.now(), w1 = now - 7 * DAY, w0 = now - 14 * DAY;
   const act = (report.activity || []).map(a => ({ ...a, t: Date.parse(a.hour + ':00:00Z') }));
@@ -337,10 +345,7 @@ export function buildData(report, g, cfg, scanInfo) {
   // plans: this week's measured value of one full weekly limit
   // measured needs every machine's answer from this run: one that gave no answer (even with a saved scan standing in) or a saved machine with usage left out means use elsewhere may be missing
   const hs = scanInfo.hosts || [], missing = hs.filter(x => x.saved_at || !(x.ok || x.same_as)).map(x => ({ machine: x.alias, saved_scan_at: x.saved_at || null })), leftOut = scanInfo.left_out || [];
-  const retainedThisWeek = (scanInfo.retained || []).some(x => x.units.some(u => {
-    const start = new Date(u.day + 'T00:00:00'), end = new Date(start); end.setDate(end.getDate() + 1);
-    return +start <= now && +end > w1;
-  }));
+  const retainedThisWeek = (scanInfo.retained || []).some(x => x.units.some(u => retainedUnitOverlapsWeek(u, now)));
   // A saved unit cannot account for lost hours after that scan, even when its machine answered.
   const allMachines = !missing.length && !leftOut.length && !retainedThisWeek && (hs.length > 0 || !sshHosts().length);
   let ledger = []; try { ledger = fs.readFileSync(path.join(HOME, 'weeks', 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch { /* first run */ }

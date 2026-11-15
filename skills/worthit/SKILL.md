@@ -107,6 +107,50 @@ Scans, prices and prints the whole data object (the same sections as `get`). Use
 
 The human dashboard (`worthit` with no flags) also writes `<date>-worthit.md`, `.png` and `-audit.log` to the current folder. Do not run it for an agent task: use `--json`.
 
+## Scheduled allowance checkpoint: `worthit weekly`
+
+```
+worthit weekly [--hosts all|none|a,b] [--allow-partial] [--no-files]
+```
+
+Fresh headless scan, all SSH hosts by default, git and AI off. It ignores scan-reuse
+shortcuts and always uses the fixed `SHARE_TOPICS.allowance` template. No TTY, questions,
+browser UI, clipboard or posting. Chrome or Chromium is required to render
+`<date>-worthit-share-allowance.png` in the current folder; `--no-files` skips it.
+The local store is updated in either case.
+`--demo` uses bundled synthetic data and leaves all stores and files untouched;
+its baseline is always null.
+
+JSON fields (also documented by `worthit schema`):
+
+- `week: {from, to}` (YYYY-MM-DD), `generated_at` (ISO time), `text` (fixed post),
+  `image` (absolute PNG path, or null with `--no-files`).
+- `plans: [{plan, usd_per_full_week, times_plan_price, proof, change_vs_last_week_pct}]`.
+  Proof is `measured` or `floor`; change is a number or null.
+- `machines_read` (number included), `machines_missing: [{machine, saved_scan_at}]`,
+  `machines_left_out` (aliases), `machines_retired` (always `[]` until RFC 0002 ships),
+  `machines_retained: [{machine, days_kept, units: [{day, provider}]}]`.
+- `compared_with`: null, or `{generated_at, week_to, plans: [{plan, usd_per_full_week, proof}]}`.
+  This is the latest earlier checkpoint ending at least six days before this one's end.
+  Only the same plan measured at both ends gets a change, in JSON, text and card.
+  Never search past a floor. The first checkpoint has null changes even if the meter
+  ledger has history; weekly never uses ledger comparisons.
+  An unsafe rerun in the same week becomes the newest row, so next week's change is null.
+- `moved: [{plan, from, to, pct}]` includes only eligible absolute changes strictly >5%.
+- `safe_to_post` is true iff missing and left-out lists are empty and no retained local-day
+  unit overlaps this week. A floor alone or retained units only in earlier weeks are safe.
+- `reasons` is an array of explanations naming unsafe machines; retained reasons also
+  name each day and provider.
+
+Exit **0**: safe, or `--allow-partial` supplied. Exit **3**: unsafe, JSON still printed.
+The override keeps `safe_to_post: false` and its reasons. Exit **1**: no result due to
+scan failure, no allowance data this week, or PNG/store failure.
+
+SQLite `weekly (generated_at TEXT PRIMARY KEY, week_to TEXT, safe INTEGER, json TEXT)`
+records one row per successful checkpoint, including unsafe runs and `--no-files`.
+`safe` is 1 or 0 regardless of the exit override; `json` holds the complete printed object.
+Query it with `worthit sql "SELECT generated_at, week_to, safe FROM weekly ORDER BY generated_at"`.
+
 ## How to read the numbers
 
 - **API value** is what the same usage would cost at API list prices. It is not what the user paid.
@@ -153,6 +197,6 @@ Piped (as you run it), it prints JSON: `{topic, written_by, text, characters, im
 
 1. **A question about usage:** answer from `get`, `days` or `sql`; run `worthit --json` first only when `generated_at` is too old for the question.
 2. **"Share this", "make me a post", "what should I post":** if they did not say what, offer the six topics in one line each. Run `worthit share <topic>`, then show them the `text`, the `image` path and the `url`, and repeat any `warnings`. Offer to adjust the wording yourself; keep every number exactly as in `text`.
-3. **A weekly habit** (for example a Monday allowance post): `worthit --json` to refresh, then `worthit share allowance`.
+3. **A weekly habit** (for example a Monday allowance post): `worthit weekly`; check `safe_to_post`, reasons and exit code before using its text and image.
 4. **Never** post for them, open a browser for them unless asked, or read their logs yourself: worthit is the only reader.
 5. If `worthit share` says there is no finished run, run `worthit --json` once and try again.

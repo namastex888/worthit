@@ -48,7 +48,8 @@ export function sourceCase(folder, scenario) {
     for (const command of ['ssh', 'gh', 'usagemeter']) fs.writeFileSync(path.join(bin, command), `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(path.join(support, 'commands.mjs'))} ${command} "$@"\n`, { mode: 0o755 });
     const expected = expectedData(path.join(folder, 'expected-data.json'));
     const check = (name, data, store = 'store') => assert.deepEqual(snapshot(data, store), expected.get(name), `${path.basename(folder)} / ${name}: week's data differs from expected-data.json`);
-    scenario({ cli, check, query, trace: () => fs.existsSync(trace) ? fs.readFileSync(trace, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : [] });
+    scenario({ cli, check, query, expected, tmp, home, bin, env, python, root, run,
+      trace: () => fs.existsSync(trace) ? fs.readFileSync(trace, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : [] });
     expected.done();
     const commands = fs.existsSync(trace) ? fs.readFileSync(trace, 'utf8') : '';
     assert.ok(!commands.includes('"unexpected"'), `unstubbed external command: ${commands}`);

@@ -2,7 +2,7 @@
 import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
-const RealDate = Date, now = RealDate.parse('2026-11-14T12:00:00Z');
+const RealDate = Date, now = RealDate.parse(process.env.FIXTURE_NOW || '2026-11-14T12:00:00Z');
 globalThis.Date = class extends RealDate {
   constructor(...args) { super(...(args.length ? args : [now])); }
   static now() { return now; }
