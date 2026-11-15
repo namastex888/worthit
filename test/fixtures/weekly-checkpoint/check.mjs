@@ -20,7 +20,7 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
     assert.ok(merge, 'synthetic scan actually invokes merge_scans');
     const display = file => file.startsWith(env.HOME) ? '~' + file.slice(env.HOME.length) : file;
     const command = 'python3 core/merge_scans.py ' + merge.args.slice(1).map((a, i) => i < 3 ? display(a) : i === 5 ? "'" + a + "'" : a).join(' ');
-    const exclusions = ['.gemini/antigravity-cli/settings.json', '.gemini/antigravity/settings.json', '.gemini/settings.json', 'claude-limits.jsonl', "reads of worthit's own store files", "and its working files in the store"];
+    const exclusions = ['.gemini/antigravity-cli/settings.json', '.gemini/antigravity/settings.json', '.gemini/settings.json', 'claude-limits.jsonl', "reads and writes inside worthit's own store folder", "Some store writes are listed, not all.", 'temporary files and working directories worthit creates under the system temporary folder, including rendering scratch and AI-agent working directories'];
     const header = audit.split('\n')[1], readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
     return {
       headerExclusions: exclusions.every(text => header.includes(text)),
