@@ -297,13 +297,9 @@ export async function git(cfg, on) {
           continue;
         }
         cur = null; footer = false;
-        // Validate an authority, without prescribing DNS labels or normalizing the config key.
-        try {
-          if (/[\s/\\?#@]/.test(line)) throw new Error();
-          const url = new URL('http://' + line);
-          if (!url.hostname || url.username || url.password || url.pathname !== '/') throw new Error();
-          cur = { host: line, body: '' }; blocks.push(cur);
-        } catch { unreadable(line); }
+        // Host keys are opaque glab configuration keys, not DNS names to normalize.
+        if (/\s/.test(line)) unreadable(line);
+        else { cur = { host: line, body: '' }; blocks.push(cur); }
       }
     }
     // A token-less default host can make glab exit 1 while other hosts answer.
