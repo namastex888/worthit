@@ -112,9 +112,18 @@ fixture stores byte-for-byte unchanged; an absent demo store is never created.
 Issue #60 extends this same fixture with real synthetic scans on both exit 0 and
 unsafe exit 3: the audit beside the PNG names local reads, scanner commands, selected
 SSH attempts and output writes, and its absolute path matches JSON and SQLite.
-Only headless Chrome is replaced by a deterministic one-pixel PNG writer; no browser
+Only headless Chrome is replaced by a deterministic 1600x900 PNG executable; no browser
 is launched. `--no-files` keeps each output folder empty, reports null paths and
 still stores its checkpoint; demo also reports a null audit path without store writes.
+
+`card-render` exercises share and weekly through the real CLI/render boundary.
+The test-only `WORTHIT_TEST_CHROME` executable override selects a synthetic PNG
+writer in the isolated PATH; normal card discovery keeps its fixed Chrome paths.
+Valid 1600x900 images survive exit 2 or a teardown signal with a named diagnostic.
+Missing, stale, invalid, truncated and wrong-size outputs fail, even beside an
+existing destination. The fixture checks absolute image identity, private profile
+and network flags, scratch cleanup, and weekly checkpoint/unsafe exit semantics.
+No production spawn monkeypatch, browser, real store or network is used.
 
 `git-source-coverage` seeds literal daily PR and commit counts in both stores and
 uses synthetic meter, local git, gh (two accounts), glab (two hosts), and tea

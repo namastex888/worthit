@@ -5,12 +5,15 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { sourceCase } from '../../support/source-case.mjs';
+import { fixturePng, installChromeStub } from '../../support/chrome-stub.mjs';
 import { allowanceText, openWeekly, prepareWeekly, saveWeekly } from '../../../src/weekly.mjs';
 import { cardSpec, cardHtml } from '../../../src/card.mjs';
 
 const folder = path.dirname(fileURLToPath(import.meta.url));
 sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, trace }) => {
   env.HOME = fs.realpathSync(home);
+  env.WORTHIT_TEST_CHROME = installChromeStub(bin);
+  env.FIXTURE_CHROME_TRACE = env.FIXTURE_TRACE;
   // If any UI, agent, clipboard or git command is attempted, fail and record it.
   for (const name of ['open', 'xdg-open', 'osascript', 'wl-copy', 'xclip', 'claude', 'codex', 'omp', 'dsh', 'git']) {
     fs.writeFileSync(path.join(bin, name), `#!${process.execPath}\nimport fs from 'node:fs';fs.appendFileSync(process.env.FIXTURE_TRACE,JSON.stringify({unexpected:${JSON.stringify(name)}})+'\\n');process.exit(86);\n`, { mode: 0o755 });
@@ -21,7 +24,7 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
     if (blockAudit) fs.mkdirSync(path.join(output, '2026-11-14-worthit-audit.log'));
     const rendersBefore = trace().filter(c => c.command === 'headless-chrome').length;
     const r = spawnSync(process.execPath, [path.join(root, 'bin/worthit.mjs'), 'weekly', ...(files ? [] : ['--no-files']), ...args], {
-      cwd: output, env: { ...env, NODE_OPTIONS: env.NODE_OPTIONS + ` --import=${path.join(folder, 'render.mjs')}`, WORTHIT_HOME: path.join(tmp, store),
+      cwd: output, env: { ...env, WORTHIT_HOME: path.join(tmp, store),
         ...overrides },
       input: '', encoding: 'utf8', maxBuffer: 16 << 20, timeout: 30000,
     });
@@ -55,7 +58,7 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
       assert.equal(fs.realpathSync(data.audit_log), fs.realpathSync(path.join(output, '2026-11-14-worthit-audit.log')));
       assert.ok(path.isAbsolute(data.image));
       assert.equal(fs.realpathSync(data.image), fs.realpathSync(path.join(output, '2026-11-14-worthit-share-allowance.png')));
-      assert.ok(fs.readFileSync(data.image).subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')));
+      assert.deepEqual(fs.readFileSync(data.image), fixturePng(), 'complete expected-size synthetic PNG');
       const audit = fs.readFileSync(data.audit_log, 'utf8');
       assert.match(audit, /^worthit .+ audit log · [^\n]+\n/);
       assert.match(audit, /Kinds: [^\n]*\bread\b[^\n]*\brun\b[^\n]*\bwrite\b/);
@@ -72,9 +75,11 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
         assert.match(audit, new RegExp(`ssh ${machine} finished:`));
         if (status === 0) assert.match(audit, new RegExp(`  read\\s+${machine}:.*usage\\.jsonl`));
       }
-      const display = file => '~' + file.slice(env.HOME.length);
-      assert.ok(audit.includes('  write ' + display(data.image)), 'audit includes card write with tilde path');
-      assert.ok(audit.includes('  write ' + display(data.audit_log)), 'audit includes its own write with tilde path');
+      const writes = audit.split('\n').map(line => /^\S+  write\s+(.+)$/.exec(line)?.[1])
+        .filter(Boolean).map(file => file.replace(/^~(?=\/)/, env.HOME))
+        .filter(file => fs.existsSync(file)).map(file => fs.realpathSync(file));
+      assert.ok(writes.includes(fs.realpathSync(data.image)), 'audit includes card write by file identity');
+      assert.ok(writes.includes(fs.realpathSync(data.audit_log)), 'audit includes its own write by file identity');
       assert.deepEqual(fs.readdirSync(output).sort(), [path.basename(data.audit_log), path.basename(data.image)].sort());
     } else {
       assert.equal(data.image, null);
@@ -96,7 +101,7 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
     return d;
   };
   // Issue #60: actual synthetic scans must persist their audit on exit 0 and 3.
-  weekly('audit-no-chrome', { files: true, status: 1, overrides: { FIXTURE_NO_CHROME: '1' } });
+  weekly('audit-no-chrome', { files: true, status: 1, overrides: { WORTHIT_TEST_CHROME: path.join(bin, 'missing-chrome') } });
   weekly('audit-blocked', { files: true, status: 1, blockAudit: true });
   weekly('audit-complete', { files: true });
   weekly('audit-missing', { files: true, status: 3, overrides: { FIXTURE_OFFLINE: '1' } });
