@@ -96,9 +96,18 @@ worthit days --group day --tool codex --since 2026-11-05
 ```
 
 - `--group day|week|month` (default day; week is ISO, `2026-W45`)
-- `--by total|tool|model` (default total; `total` also returns `merged_prs` and `commits`)
+- `--by total|tool|model` (default total; `total` also returns `merged_prs` and `commits` when neither `--tool` nor `--model` is set)
 - `--tool claude|codex|google|omp|dsh`, `--model <part of the id>`
-- Each row has `api_usd`, `output_tokens`, `days` (days with data in the period), and `requests` unless grouped by model.
+- Each row has `api_usd`, `output_tokens`, `days` (days with data in the period), and `requests` only when reading `day_provider`.
+
+Stdout remains a bare JSON row array. Read the one-line stderr note too:
+`worthit days: local days (day_provider)` for total/tool without `--model`, or
+`worthit days: UTC days (day_model)` for `--by model` **or any `--model` filter**,
+including `--by total` and `--by tool`. The note is printed in terminals and pipes;
+internal question-bar lookups include it alongside the JSON for the model.
+Never compare UTC and local views per day. `--since`/`--until` and week/month
+grouping use the selected stored basis, so grouped boundaries can differ too.
+No stored dates or values are converted.
 
 `day_provider` uses local days; `day_model` (including `--by model` and `--model`)
 uses UTC days. Each replaces every field on a fully scanned day whose start is on

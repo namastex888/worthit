@@ -82,6 +82,14 @@ worthit install-skill            # install the skill into your coding agents
 worthit --demo                   # the whole run on sample data
 ```
 
+`worthit days` keeps its bare JSON row array on stdout and prints the day basis
+on stderr, in terminals and pipes. Total/tool views use **local days** from
+`day_provider`, except that **any `--model` filter uses UTC days** from `day_model`,
+even with `--by total` or `--by tool`. `--by model` always uses UTC days.
+Never compare these UTC and local views per day. Date filters and week/month
+groups use the selected stored basis too, so their boundaries can differ.
+This label does not convert stored dates or values.
+
 `worthit weekly [--hosts all|none|a,b] [--allow-partial] [--no-files]` runs a fresh
 headless scan with all SSH hosts by default, git and AI off. It prints the fixed allowance
 post and facts as JSON, writes `<date>-worthit-share-allowance.png` (Chrome or Chromium
