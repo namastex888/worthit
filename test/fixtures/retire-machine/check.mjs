@@ -15,6 +15,7 @@ sourceCase(folder, ({ expected, tmp, home, env, python, root, run, query, trace 
   const invoke = (args, overrides = {}, status = 0) => {
     const r = spawnSync(process.execPath, [entry, ...args], { cwd: tmp, env: { ...env, WORTHIT_HOME: store, FIXTURE_ACCOUNTS: '[]', ...overrides }, input: '', encoding: 'utf8', timeout: 30000, maxBuffer: 16 << 20 });
     assert.equal(r.status, status, `retire-machine / ${args.join(' ')}\n${r.stderr}\n${r.stdout}`);
+    if (status === 2) { assert.equal(r.stdout, '', 'failed command prints no JSON'); assert.doesNotMatch(r.stderr, /\n\s+at |Node\.js v/, 'failed command has no stack trace'); }
     return status === 2 ? r.stderr : JSON.parse(r.stdout);
   };
   const scan = (overrides = {}, days = 21, hosts = 'all', git = false) => invoke(['--json', '--no-files', '--days', String(days), '--hosts', hosts, '--git', git ? 'yes' : 'no', '--ai', 'no'], overrides);
@@ -72,9 +73,27 @@ sourceCase(folder, ({ expected, tmp, home, env, python, root, run, query, trace 
   const p = d.plans.find(p => p.key === 'claude');
   assert.deepEqual({ machines: d.machines, missing: d.machines_missing, left_out: d.machines_left_out, out: d.totals.output_tokens, usd: d.totals.api_value_usd, proof: p.proof, plan_usd: p.usd_per_full_week, change: p.change_vs_last_week_pct }, expected.get('measured'), 'retire-machine / measured-after-retirement proof rule');
   assert.deepEqual(d.machines_retired, [expected.get('retirement')]);
-  if (env.WORTHIT_FIXTURE_ARTIFACTS) { fs.mkdirSync(env.WORTHIT_FIXTURE_ARTIFACTS, { recursive: true }); fs.writeFileSync(path.join(env.WORTHIT_FIXTURE_ARTIFACTS, 'retirement-data.json'), JSON.stringify(d, null, 2)); }
+  if (env.WORTHIT_FIXTURE_ARTIFACTS) {
+    fs.mkdirSync(env.WORTHIT_FIXTURE_ARTIFACTS, { recursive: true });
+    fs.writeFileSync(path.join(env.WORTHIT_FIXTURE_ARTIFACTS, 'retirement-data.json'), JSON.stringify(d, null, 2));
+    // Preserve the exact synthetic homes/stubs for a separate approved product TUI render.
+    const fixture = path.join(env.WORTHIT_FIXTURE_ARTIFACTS, 'fixture');
+    fs.rmSync(fixture, { recursive: true, force: true }); fs.cpSync(tmp, fixture, { recursive: true });
+    const renderEnv = Object.fromEntries(Object.entries(env).map(([key, value]) => [key, value.startsWith(tmp) ? fixture + value.slice(tmp.length) : value]));
+    renderEnv.FIXTURE_ACCOUNTS = '[]'; renderEnv.CFFIXED_USER_HOME = renderEnv.HOME;
+    fs.writeFileSync(path.join(env.WORTHIT_FIXTURE_ARTIFACTS, 'fixture-env.json'), JSON.stringify(renderEnv, null, 2));
+  }
   assert.equal(p.weeks.find(w => w.weeks_ago === 1)?.proof, 'floor', 'pre-retirement week stays floor: ' + JSON.stringify({ weeks: p.weeks, ledger: fs.readFileSync(path.join(store, 'weeks/ledger.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse).map(({ provider, start, end, usd_measured, usd_per_full_week }) => ({ provider, start, end, usd_measured, usd_per_full_week })) }));
   assert.match(p.retirement_note, /retired since 2026-11-07, as stated by you/);
+  // Literal share control isolates disclosures from the existing low-value terminal bar bug.
+  const shareStore = path.join(tmp, 'share-control'); fs.mkdirSync(shareStore);
+  const shareData = { ...d, plans: [{ ...p, usd_per_full_week: 600, times_plan_price: 13 }] };
+  fs.writeFileSync(path.join(shareStore, 'last.json'), JSON.stringify(shareData));
+  for (const topic of ['allowance', 'value', 'ranking']) {
+    assert.match(cardHtml(cardSpec(topic, d)), /retired since 2026-11-07, as stated by you/, 'retire-machine / ' + topic + ' card disclosure');
+    const shared = invoke(['share', topic, '--ai', 'no', '--no-files'], { WORTHIT_HOME: shareStore });
+    assert.match(shared.text, /retired since 2026-11-07, as stated by you/, 'retire-machine / ' + topic + ' share disclosure');
+  }
   assert.ok(machineNotes(d).some(s => s.includes('box-b: retired')));
   assertPast(); noRetiredSSH(start);
   assert.deepEqual(fs.readFileSync(freeze), oldBytes);
@@ -94,9 +113,9 @@ sourceCase(folder, ({ expected, tmp, home, env, python, root, run, query, trace 
   assert.equal(now.compared_with.plans[0].proof, 'floor'); assert.equal(now.plans[0].change_vs_last_week_pct, null);
   assert.match(now.text, /retired since 2026-11-07, as stated by you/);
   assert.match(cardHtml(cardSpec('allowance', d)), /retired since 2026-11-07, as stated by you/);
-  const early = weekly({ FIXTURE_NOW: '2026-11-13T12:00:00Z' }, 3), earlyExpected = expected.get('early');
-  assert.deepEqual({ proof: early.plans[0].proof, change: early.plans[0].change_vs_last_week_pct, status: 3, first_measured: earlyExpected.first_measured }, earlyExpected);
-  assert.ok(early.reasons.some(r => r.includes('box-b') && r.includes(earlyExpected.first_measured)));
+  const early = weekly({ FIXTURE_NOW: '2026-11-13T12:00:00Z' }), earlyExpected = expected.get('early');
+  assert.deepEqual({ proof: early.plans[0].proof, change: early.plans[0].change_vs_last_week_pct, status: 0, safe_to_post: early.safe_to_post, first_measured: earlyExpected.first_measured }, earlyExpected, 'retire-machine / early floor alone is safe');
+  assert.deepEqual(early.reasons, []);
   assert.ok(machineNotes({ ...d, generated_at: early.generated_at }).some(r => r.includes('box-b') && r.includes('2026-11-14')));
   const laterStore = path.join(tmp, 'later-store'); fs.cpSync(store, laterStore, { recursive: true });
   const futureBackups = [];
@@ -119,6 +138,76 @@ sourceCase(folder, ({ expected, tmp, home, env, python, root, run, query, trace 
   assert.deepEqual({ proof: later.plans[0].proof, change: later.plans[0].change_vs_last_week_pct, status: 0 }, expected.get('eligible_change'), 'retire-machine / measured checkpoint comparison restored');
   assert.deepEqual(fs.readFileSync(freeze), oldBytes);
   assertPast();
+
+  // Retirement must never hide a different active machine's missing answer.
+  const missingStore = path.join(tmp, 'missing-store'); fs.cpSync(store, missingStore, { recursive: true });
+  const activeMissing = scan({ WORTHIT_HOME: missingStore, FIXTURE_OFFLINE_ALIASES: 'box-c' });
+  const missingExpected = expected.get('active_missing');
+  assert.deepEqual({ proof: activeMissing.plans[0].proof, change: activeMissing.plans[0].change_vs_last_week_pct,
+    missing: activeMissing.machines_missing.map(r => r.machine) }, missingExpected, 'retire-machine / retired-plus-active-missing scan proof');
+  const missingWeek = weekly({ WORTHIT_HOME: missingStore, FIXTURE_OFFLINE_ALIASES: 'box-c' }, 3);
+  assert.deepEqual({ proof: missingWeek.plans[0].proof, change: missingWeek.plans[0].change_vs_last_week_pct,
+    missing: missingWeek.machines_missing.map(r => r.machine) }, missingExpected, 'retire-machine / retired-plus-active-missing weekly proof');
+  assert.equal(missingWeek.safe_to_post, false);
+  assert.ok(missingWeek.reasons.some(r => r.includes('box-c') && r.includes('no fresh answer')));
+
+  // Widening past a seven-day snapshot cannot reclassify older retired history as covered.
+  const expandedStore = path.join(tmp, 'expanded-store'), expandedEnv = { WORTHIT_HOME: expandedStore };
+  scan(expandedEnv, 21); scan(expandedEnv, 7);
+  const narrow = JSON.parse(fs.readFileSync(path.join(expandedStore, 'run-keep/box-b.json')));
+  assert.equal(narrow.since, '2026-11-07T12:00:00');
+  assert.equal(narrow.buckets.length, 0, 'narrow snapshot has no older retired usage to replay');
+  invoke(['hosts', 'retire', 'box-b'], expandedEnv);
+  const narrowFrozen = fs.readFileSync(path.join(expandedStore, 'run-keep/retired/box-b.json'));
+  scan(expandedEnv, 21);
+  const expandedHistory = JSON.parse(fs.readFileSync(path.join(expandedStore, 'history.json'))).days;
+  for (const [day, row] of Object.entries(expected.get('expanded_history'))) {
+    assert.deepEqual(expandedHistory[day], row, 'retire-machine / retired-narrow-snapshot-expanded-history ' + day);
+  }
+  assert.deepEqual(query("SELECT day, ROUND(SUM(api_usd),2) AS usd, SUM(output_tokens) AS out FROM day_provider WHERE day IN ('2026-11-02','2026-11-04','2026-11-06') GROUP BY day ORDER BY day", 'expanded-store'), expected.get('expanded_sql'), 'retire-machine / retired-narrow-snapshot-expanded-sql');
+  assert.deepEqual(fs.readFileSync(path.join(expandedStore, 'run-keep/retired/box-b.json')), narrowFrozen);
+
+  // A ledger week without a known blocker carries no inferred machine proof.
+  const ledgerStore = path.join(tmp, 'ledger-store'); fs.cpSync(store, ledgerStore, { recursive: true });
+  fs.writeFileSync(path.join(ledgerStore, 'hosts.json'), JSON.stringify({ selected: ['box-c'], retired: [] }));
+  // Let this active-only source run create its ledger; an identical seeded row
+  // would exercise the separate pre-existing ledger containment behavior.
+  fs.writeFileSync(path.join(ledgerStore, 'weeks/ledger.jsonl'), '');
+  const ledgerData = scan({ WORTHIT_HOME: ledgerStore }, 21, 'box-c');
+  assert.equal(ledgerData.plans[0].weeks.find(w => w.weeks_ago === 0).proof, 'measured');
+  const ledgerWeek = ledgerData.plans[0].weeks.find(w => w.weeks_ago === 1);
+  assert.ok(ledgerWeek && !Object.hasOwn(ledgerWeek, 'proof'), 'retire-machine / ledger weeks carry no machine check');
+  const wideData = { ...d, plans: [{ ...p, weeks: [
+    { weeks_ago: 0, to: '2026-11-14', usd: 6, proof: 'measured' },
+    { weeks_ago: 1, to: '2026-11-07', usd: 1200, proof: 'floor' },
+    { weeks_ago: 2, to: '2026-10-31', usd: 1200, proof: 'floor' },
+  ] }] };
+  const wideLines = blocks.AllowanceHistory(wideData).map(strip);
+  assert.ok(wideLines.some(l => l.includes(expected.get('wide_labels'))), 'retire-machine / wide floor labels have a separating space');
+  assert.ok(wideLines.some(l => l.includes('11-14')), 'retire-machine / all twelve date columns fit');
+  if (env.WORTHIT_FIXTURE_ARTIFACTS) fs.writeFileSync(path.join(env.WORTHIT_FIXTURE_ARTIFACTS, 'retirement-wide-data.json'), JSON.stringify(wideData, null, 2));
+
+  // Fail closed, with one actionable line, for corrupt state and invalid retirement times.
+  const badStore = path.join(tmp, 'bad-store'); fs.mkdirSync(badStore);
+  const badFile = path.join(badStore, 'hosts.json'); fs.writeFileSync(badFile, '{broken');
+  for (const args of [['hosts'], ['weekly', '--no-files'], ['share', 'value', '--no-files'], ['--json'], ['get'], ['days'], ['sql', 'SELECT 1'], ['schema'], ['--skill'], ['--help'], ['--version']]) {
+    const error = invoke(args, { WORTHIT_HOME: badStore }, 2);
+    assert.ok(error.startsWith('worthit: cannot read ' + badFile + ': '));
+    assert.ok(error.trimEnd().endsWith('. Fix or remove it.'));
+    assert.equal(error.trimEnd().split('\n').length, 1);
+  }
+  // Demo never reads even a broken store; no source or account discovery is needed.
+  assert.ok(invoke(['weekly', '--demo'], { WORTHIT_HOME: badStore }).plans.length);
+  fs.writeFileSync(badFile, JSON.stringify({ selected: [], retired: [{ machine: 'box-b', retired_at: 'not-a-time' }] }));
+  assert.match(invoke(['hosts'], { WORTHIT_HOME: badStore }, 2), /valid alias and ISO retired_at/);
+
+  const lostStore = path.join(tmp, 'lost-store'); fs.mkdirSync(lostStore);
+  fs.copyFileSync(path.join(store, 'hosts.json'), path.join(lostStore, 'hosts.json'));
+  const lost = spawnSync(process.execPath, [entry, '--json', '--hosts', 'all', '--git', 'no', '--ai', 'no'], { cwd: tmp, env: { ...env, WORTHIT_HOME: lostStore }, encoding: 'utf8' });
+  assert.equal(lost.status, 1); assert.match(lost.stderr, /frozen snapshot missing.*worthit hosts unretire box-b/);
+  invoke(['hosts', 'unretire', 'box-b'], { WORTHIT_HOME: lostStore });
+  const recovered = JSON.parse(fs.readFileSync(path.join(lostStore, 'hosts.json')));
+  assert.deepEqual(recovered.retired, []); assert.ok(recovered.selected.includes('box-b'));
 
   // Another alias reports the retired host: choose whole units, never add both copies.
   // Three overlaps have lower fresh USD ($1 vs $2); one wins with higher fresh USD.

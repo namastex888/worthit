@@ -3,12 +3,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 export function readHosts(home) {
+  const file = path.join(home, 'hosts.json');
   try {
-    const state = JSON.parse(fs.readFileSync(path.join(home, 'hosts.json'), 'utf8'));
+    const state = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!state || typeof state !== 'object' || Array.isArray(state) ||
+        (state.selected != null && (!Array.isArray(state.selected) || state.selected.some(a => typeof a !== 'string'))) ||
+        (state.retired != null && !Array.isArray(state.retired))) throw new Error('expected selected and retired arrays');
+    for (const r of state.retired || []) {
+      if (!r || !validAlias(r.machine) || typeof r.retired_at !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(r.retired_at) || !Number.isFinite(Date.parse(r.retired_at)))
+        throw new Error('each retired machine needs a valid alias and ISO retired_at');
+    }
     return { ...state, selected: state.selected || [], retired: state.retired || [] };
   } catch (e) {
     if (e.code === 'ENOENT') return { selected: [], retired: [] };
-    throw new Error('cannot read hosts.json: ' + e.message);
+    throw new Error(`cannot read ${file}: ${e.message.replace(/[\r\n]+/g, ' ').replace(/[.\s]+$/, '')}. Fix or remove it.`);
   }
 }
 export function writeHosts(home, state) {
@@ -40,11 +48,12 @@ export function hostsCommand(home, known, argv) {
   const entry = state.retired.find(r => r.machine === machine);
   if (action === 'unretire') {
     if (!entry) throw new Error(`${machine} is not retired. See worthit hosts.`);
-    // Rename first: if the snapshot is missing, leave the retirement record intact.
-    fs.renameSync(snapshot, file);
+    // A lost snapshot must not trap the store in retirement forever.
+    let moved = false;
+    try { fs.renameSync(snapshot, file); moved = true; } catch (e) { if (e.code !== 'ENOENT') throw e; }
     state.retired = state.retired.filter(r => r.machine !== machine);
     state.selected = [...new Set([...state.selected, machine])];
-    try { writeHosts(home, state); } catch (e) { fs.renameSync(file, snapshot); throw e; }
+    try { writeHosts(home, state); } catch (e) { if (moved) fs.renameSync(file, snapshot); throw e; }
     return { machine, status: 'selected' };
   }
   if (entry) throw new Error(`${machine} is already retired. Use worthit hosts unretire ${machine} first.`);

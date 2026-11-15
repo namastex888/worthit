@@ -91,10 +91,10 @@ opens browser UI, touches the clipboard or posts.
 `worthit weekly --demo` previews synthetic JSON without reading or writing a store or files.
 
 Exit **0** means safe to post; **3** means the JSON is available but a machine is missing,
-left out, has retained units inside this week, or the week starts before a retirement. Reasons name each machine, and retained
+left out, or has retained units inside this week. Reasons name each machine, and retained
 units name their day and provider. `--allow-partial` changes exit 3 to 0, keeping
 `safe_to_post: false`. Exit **1** means no result (scan failure, no allowance data this
-week, or PNG/store failure). Floors alone and retained units only in earlier weeks are safe.
+week, or PNG/store failure). Floors alone, including pre-retirement weeks, and retained units only in earlier weeks are safe.
 
 `compared_with` is the latest earlier checkpoint ending at least six days before this
 week's end. Only the same plan measured at both endpoints gets a percentage in `plans`,
@@ -112,6 +112,8 @@ After 14 days without an answer, machine notes suggest the command.
 
 A week can be measured when every active machine answers, none is left out, no saved
 retained unit overlaps the week, and its start is on or after every retirement time.
+Ledger weeks carry no machine check: `weeks[].proof` is present on week 0, or
+`floor` on a ledger week blocked by retirement or retained data; otherwise it is absent.
 A pre-retirement week stays a floor; notes name the machine and the first possible
 measured week end. Week-over-week changes require two measured weeks.
 `--since YYYY-MM-DD` states nothing ran after that date (UTC midnight). It cannot precede
@@ -123,6 +125,10 @@ to the saved selection. The next answer merges by whole local day/provider: high
 USD, then more tokens, fresh wins a tie. The same rule handles a retired host answering
 under another alias or locally, without counting it twice. Earlier history and checkpoints
 stay saved; short windows keep partial-day usage and outside-window git history.
+If the frozen snapshot is missing, restore it or use `hosts unretire` to remove the
+retirement record and reselect the machine. A corrupt `hosts.json` or invalid
+`retired_at` fails with exit 2 and a one-line instruction to fix or remove the file;
+`--demo` continues to ignore the store.
 
 Flags for a scan (`worthit` or `worthit --json`):
 

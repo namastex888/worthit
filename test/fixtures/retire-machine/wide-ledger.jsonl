@@ -1,0 +1,2 @@
+{"key":"claude|wide-control-1","provider":"claude","quality":"clean","start":"2026-10-26T12:00:00Z","end":"2026-10-30T12:00:00Z","reset":"2026-10-31T12:00:00Z","meter":[0,100],"usd_measured":1200,"usd_per_full_week":1200}
+{"key":"claude|wide-control-2","provider":"claude","quality":"clean","start":"2026-10-19T12:00:00Z","end":"2026-10-23T12:00:00Z","reset":"2026-10-24T12:00:00Z","meter":[0,100],"usd_measured":1200,"usd_per_full_week":1200}

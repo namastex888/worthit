@@ -34,6 +34,11 @@ import { demoHosts, demoScan, demoGit, demoPricing, demoData, demoSpec, demoAnsw
 const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
 const h = React.createElement, argv = process.argv.slice(2);
 const flag = k => argv.includes(k), arg = (k, dflt) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : dflt; };
+// Fail closed before any command touches the store; demo remains completely isolated.
+let hostState = { selected: [], retired: [] };
+if (!flag('--demo')) {
+  try { hostState = readHosts(HOME); } catch (e) { console.error('worthit: ' + e.message); process.exit(2); }
+}
 if (flag('--version') || flag('-v')) { console.log(VERSION); process.exit(0); }
 if (argv[0] && !argv[0].startsWith('-') && !['get', 'days', 'sql', 'schema', 'install-skill', 'share', 'weekly', 'hosts'].includes(argv[0])) { console.error(`worthit: unknown command "${argv[0]}". Try: worthit --help`); process.exit(2); }
 if (argv[0] === 'hosts') {
@@ -60,7 +65,7 @@ const AGENTS = [{ id: 'claude', cli: 'claude', label: 'Claude Sonnet 5.5', model
   { id: 'omp', cli: 'omp', label: 'omp', model: 'omp · your default model', via: 'omp -p, your default model' }, { id: 'dsh', cli: 'dsh', label: 'dsh', model: 'dsh headless', via: 'dsh headless, your DeepSeek profile' }].filter(a => has(a.cli));
 const STAMP = (() => { const t = new Date(); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); })();
 let DATA = null;
-const RETIRED = DEMO ? [] : readHosts(HOME).retired;
+const RETIRED = hostState.retired;
 const DETECTED = DEMO ? demoHosts : sshHosts().filter(h => !RETIRED.some(r => r.machine === h.alias)), SAVED = DEMO ? ['build-box'] : savedHosts();      // other machines: --hosts all | none | a,b; without the flag, the remembered choice (or the question)
 let HOSTS = F_HOSTS == null ? (SAVED || []) : F_HOSTS === 'all' ? DETECTED.map(x => x.alias) : F_HOSTS === 'none' ? [] : F_HOSTS.split(',').filter(Boolean);
 if (!DEMO) HOSTS = activeHosts(HOME, HOSTS);
@@ -470,16 +475,16 @@ const SHARE_TOPICS = {
       return `my model mix this week, most used first: ${top.join(', ')}. whats yours? npx worthit`; } },
   value: { title: 'the receipt', hint: 'what your best plan gave for its price', alias: ['receipt', 'worth', 'plan'],
     text: D => { const p = D.plans.slice().sort((a, b) => b.times_plan_price - a.times_plan_price)[0], mo = Math.round(p.plan_usd_per_week * 52 / 12 / 10) * 10;
-      return `i pay $${mo}/mo for ${p.plan.toLowerCase()}. last week one weekly limit gave me ${usd(p.usd_per_full_week)} of api-priced usage.. ${p.times_plan_price}× the price. measured from my own local logs, not vibes. npx worthit`; } },
+      return `i pay $${mo}/mo for ${p.plan.toLowerCase()}. last week one weekly limit gave me ${usd(p.usd_per_full_week)} of api-priced usage.. ${p.times_plan_price}× the price.${p.proof === 'measured' && p.retirement_note ? ' ' + p.retirement_note + '.' : ''} measured from my own local logs, not vibes. npx worthit`; } },
   ranking: { title: 'plan ranking', hint: 'which plan gave more', alias: ['plans', 'compare', 'comparison'],
-    text: D => `which ai plan actually gives more? measured on my real work this week: ${D.plans.slice().sort((a, b) => b.times_plan_price - a.times_plan_price).map(p => `${p.plan.toLowerCase()} ${p.times_plan_price}×`).join(', ')} the price. one command: npx worthit` },
+    text: D => `which ai plan actually gives more? measured on my real work this week: ${D.plans.slice().sort((a, b) => b.times_plan_price - a.times_plan_price).map(p => `${p.plan.toLowerCase()} ${p.times_plan_price}×${p.proof === 'measured' && p.retirement_note ? ' (' + p.retirement_note + ')' : ''}`).join(', ')} the price. one command: npx worthit` },
   waste: { title: 'unused allowance', hint: 'what you paid for and did not use', alias: ['unused', 'wasted'],
     text: D => { const un = D.waste.reduce((a, x) => a + (x.unused_usd || 0), 0), risk = D.waste.reduce((a, x) => a + (x.at_risk_usd || 0), 0);
       return `ai allowance i paid for and left unused last week: ${usd(un)}${risk ? `.. another ${usd(risk)} still open before the reset` : ''}. check yours: npx worthit`; } },
 };
 // the card as a few terminal lines: the same headline, caption and rows the image shows
 const cardLines = c => [' ' + d(c.eyebrow.toUpperCase()), '', ' ' + bold(fg(c.color, c.hero)) + '  ' + w(c.cap) + (c.sub ? d('  ·  ') + fg(c.subColor, c.sub) : ''), '',
-  ...c.rows.map(r => ' ' + pad(fg(r.color, r.label), 26) + (r.pct == null ? '' : fg(r.color, '█'.repeat(Math.max(1, Math.round(r.pct * 20)))) + fg(C.track, '█'.repeat(20 - Math.max(1, Math.round(r.pct * 20)))) + ' ') + lpad(bold(w(r.value)), 10) + '  ' + d(r.note))];
+  ...c.rows.flatMap(r => [ ' ' + pad(fg(r.color, r.label), 26) + (r.pct == null ? '' : fg(r.color, '█'.repeat(Math.max(1, Math.round(r.pct * 20)))) + fg(C.track, '█'.repeat(20 - Math.max(1, Math.round(r.pct * 20)))) + ' ') + lpad(bold(w(r.value)), 10) + '  ' + d(r.note), ...(r.retirement_note ? [' ' + d(r.retirement_note)] : [])])];
 const numbersIn = s => (strip(String(s)).match(/\d[\d,]*(?:\.\d+)?/g) || []).map(x => String(+x.replace(/,/g, '')));
 // every number the data holds (walked value by value, so neighbours in a list are never glued together), plus each one rounded to 0, 1 and 2 decimals
 const knownNumbers = D => { const out = new Set(); (function walk(v) { if (typeof v === 'number') { for (const k of [String(v), v.toFixed(0), v.toFixed(1), v.toFixed(2)]) out.add(String(+k)); } else if (typeof v === 'string') numbersIn(v).forEach(x => out.add(x)); else if (v && typeof v === 'object') Object.values(v).forEach(walk); })(D); return out; };

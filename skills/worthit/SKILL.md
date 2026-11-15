@@ -116,14 +116,20 @@ snapshot days selected inside this run window. Mention each retired machine.
 `retirement_conflicts: [{machine, same_as}]` means a retired host answers live as that
 SSH alias or `this machine`; the snapshot merges into that answer with #24's whole
 local-day/provider winner (USD, tokens, fresh tie), never summed. Missing frozen data
-fails the run. The partial oldest day and older history retain per-field MAX; git rows
+fails the run with advice to restore the snapshot or unretire. Unretire without a
+snapshot removes the record and reselects the machine. Invalid `retired_at` or corrupt
+`hosts.json` fails cleanly on every non-demo command: exit 2,
+`worthit: cannot read <path>: <reason>. Fix or remove it.` No stack trace.
+The partial oldest day and older history retain per-field MAX; git rows
 have their separate coverage window. Frozen snapshots stay byte-stable as windows move.
 
 Measured needs all active answers, none left out, no retained unit in the week, and the
 week start >= every `retired_at`. A pre-retirement week stays floor. Machine notes name
 the machine and the first possible measured week end (retired_at + seven days).
-`plans[].weeks[].proof` marks historical weeks separately; ordinary changes require
-both this and the immediately previous week measured. Weekly baseline proof is likewise
+`plans[].weeks[].proof`: week 0 gets its actual proof; a ledger week gets `floor`
+when retirement or a retained unit blocks it; otherwise the key is absent.
+Ledger weeks carry no machine check. Ordinary comparisons retain their existing
+retirement/retained eligibility checks; this field does not certify ledger coverage. Weekly baseline proof is likewise
 checked against current retirements without rewriting saved checkpoints or searching
 past a floor. `worthit hosts unretire <machine>` restores the full frozen scan, removes
 retirement and reselects the alias. Its next answer merges normally. There is no
@@ -158,7 +164,7 @@ JSON fields (also documented by `worthit schema`):
 
 - `week: {from, to}` (YYYY-MM-DD), `generated_at` (ISO time), `text` (fixed post),
   `image` (absolute PNG path, or null with `--no-files`).
-- `plans: [{plan, usd_per_full_week, times_plan_price, proof, change_vs_last_week_pct}]`.
+- `plans: [{plan, usd_per_full_week, times_plan_price, proof, change_vs_last_week_pct, retirement_note?}]`.
   Proof is `measured` or `floor`; change is a number or null.
 - `machines_read` (number included), `machines_missing: [{machine, saved_scan_at}]`,
   `machines_left_out` (aliases), `machines_retired: [{machine, retired_at, last_scan_at, days_kept}]`,
@@ -171,7 +177,8 @@ JSON fields (also documented by `worthit schema`):
   An unsafe rerun in the same week becomes the newest row, so next week's change is null.
 - `moved: [{plan, from, to, pct}]` includes only eligible absolute changes strictly >5%.
 - `safe_to_post` is true iff missing and left-out lists are empty and no retained local-day
-  unit overlaps this week, and the week starts on or after every `retired_at`. A pre-retirement week is unsafe and a floor; reasons name the machine and first possible measured week end. Other floors alone or retained units only in earlier weeks are safe.
+  unit overlaps this week. A floor alone, including a pre-retirement week, or retained
+  units only in earlier weeks are safe.
 - `reasons` is an array of explanations naming unsafe machines; retained reasons also
   name each day and provider.
 

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { usd } from './draw.mjs';
-import { retirementBlocks, firstMeasuredAt } from './hosts.mjs';
+import { retirementBlocks } from './hosts.mjs';
 import { retainedUnitOverlapsWeek } from './collect.mjs';
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');
 
@@ -51,7 +51,6 @@ export function prepareWeekly(data, comparedWith) {
   for (const row of data.machines_retained) for (const unit of row.units) {
     if (retainedUnitOverlapsWeek(unit, end)) reasons.push(`${row.machine}: retained ${unit.day} ${unit.provider} (lost logs inside this week)`);
   }
-  for (const row of retirementBlocks(data.machines_retired || [], end)) reasons.push(`${row.machine}: week starts before retirement; first measured week ends ${firstMeasuredAt(row)}`);
   return { week: data.week, generated_at: data.generated_at, text: '', image: null,
     plans: data.plans.map(({ plan, usd_per_full_week, times_plan_price, proof, change_vs_last_week_pct, retirement_note }) =>
       ({ plan, usd_per_full_week, times_plan_price, proof, change_vs_last_week_pct, ...(retirement_note ? { retirement_note } : {}) })),

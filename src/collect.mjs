@@ -51,6 +51,10 @@ const SPAN = { claude: [0, .68], codex: [.68, .97], antigravity: [.97, 1] }, TOO
 export async function scan(cfg, on) {
   const startedAt = Date.now(), retirement = readHosts(HOME).retired;
   cfg = { ...cfg, hosts: activeHosts(HOME, cfg.hosts || []) };
+  for (const r of retirement) {
+    const snapshot = path.join(HOME, 'run-keep', 'retired', r.machine + '.json');
+    if (!fs.existsSync(snapshot)) throw new Error(`${r.machine}: frozen snapshot missing at ${snapshot}. Restore it, or run worthit hosts unretire ${r.machine} to remove retirement and ask the machine again.`);
+  }
   const py = ['python3', 'python'].find(has);
   if (!py) throw new Error('Python 3 is needed for the log scanner. macOS: xcode-select --install · Linux: install python3 with your package manager.');
   const runs = path.join(HOME, 'run'), runDir = path.join(runs, String(process.pid)); fs.mkdirSync(runs, { recursive: true });
@@ -355,6 +359,10 @@ export function buildData(report, g, cfg, scanInfo) {
   const measuredAt = end => answered && !retirementBlocks(retired, end).length &&
     !retained.some(x => x.units.some(u => retainedUnitOverlapsWeek(u, end)));
   const allMachines = measuredAt(now);
+  // Ledger weeks carry no machine check. Only known retirement/lost-log blockers
+  // justify historical proof; today's answers never certify a ledger week.
+  const ledgerProofAt = end => retirementBlocks(retired, end).length ||
+    retained.some(x => x.units.some(u => retainedUnitOverlapsWeek(u, end))) ? { proof: 'floor' } : {};
   let ledger = []; try { ledger = fs.readFileSync(path.join(HOME, 'weeks', 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch { /* first run */ }
   const day0 = new Date(w1).toISOString().slice(0, 10), events = loadEvents().filter(e => e.date_utc >= day0).map(e => ({ date: e.date_utc, provider: e.provider, type: e.type, title: e.title, confidence: e.confidence, source: e.source_url }));
   const plans = [];
@@ -373,7 +381,7 @@ export function buildData(report, g, cfg, scanInfo) {
       meter: pl ? `${pl.stretches} stretches · ${pl.meter_points} points` : key === 'google' ? `no meter · cap after ${w.hours} h` : `meter ${from}% → ${to}% in ${w.hours} h`, priced_usd: pl ? pl.api_usd : w.measured.api_usd, fraction_of_week: pl ? +(pl.meter_points / 100).toFixed(2) : +((to - from) / 100).toFixed(2),
       other_machines_usd: pl && pl.other_machines_usd >= 1 ? Math.round(pl.other_machines_usd) : 0, usd_per_full_week_all_machines: pl && pl.other_machines_usd >= 1 ? pl.usd_per_full_week_all_machines : null,
       stretches: pl ? pl.stretches : 1, range_usd: report.this_week[key + '_range'] || null, resets_this_week: resets,
-      tokens: pl ? `${ft(pl.output_tokens)} out ${ft(pl.cached_input_tokens)} cached` : `${ft(w.measured.output_tokens)} out ${ft(w.measured.cached_input_tokens)} cached`, models: models(w.measured.model_mix_by_usd), history: [...past, v], weeks: [...Object.keys(byWeek).sort().slice(-11).map(k => ({ weeks_ago: 99 - +k, to: new Date(now - (99 - +k) * 7 * DAY).toISOString().slice(0, 10), usd: byWeek[k], proof: proofAt(now - (99 - +k) * 7 * DAY) })), { weeks_ago: 0, to: new Date(now).toISOString().slice(0, 10), usd: v, proof: proofAt(now) }], change_vs_last_week_pct: byWeek['98'] != null && proofAt(now) === 'measured' && proofAt(w1) === 'measured' ? pctChange(v, byWeek['98']) : null });
+      tokens: pl ? `${ft(pl.output_tokens)} out ${ft(pl.cached_input_tokens)} cached` : `${ft(w.measured.output_tokens)} out ${ft(w.measured.cached_input_tokens)} cached`, models: models(w.measured.model_mix_by_usd), history: [...past, v], weeks: [...Object.keys(byWeek).sort().slice(-11).map(k => ({ weeks_ago: 99 - +k, to: new Date(now - (99 - +k) * 7 * DAY).toISOString().slice(0, 10), usd: byWeek[k], ...ledgerProofAt(now - (99 - +k) * 7 * DAY) })), { weeks_ago: 0, to: new Date(now).toISOString().slice(0, 10), usd: v, proof: proofAt(now) }], change_vs_last_week_pct: byWeek['98'] != null && proofAt(now) === 'measured' && proofAt(w1) === 'measured' ? pctChange(v, byWeek['98']) : null });
   }
 
   // waste: account-weeks that closed in the last 7 days (and ones still open, shown as at risk, never as waste)
