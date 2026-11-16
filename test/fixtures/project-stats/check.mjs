@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { isolatedEnvironment } from '../../support/environment.mjs';
 import { buildProjects, projectsText, projectFromKey } from '../../../src/projects.mjs';
-import { dataForAgent } from '../../../src/project-privacy.mjs';
+import { dataForAgent, redactProjects } from '../../../src/project-privacy.mjs';
 import { cardSpec } from '../../../src/card.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -50,7 +50,7 @@ try {
   let s = scan(); assert.deepEqual(s.errors, []);
   assert.equal(sum(s.buckets, 'requests'), 13);
   assert.equal(s.buckets.filter(r => r.project === 'github.com/acme/app-api').length, 2, 'per-request projects split one Claude hour; identical live forms aggregate');
-  assert.equal(sum(s.buckets.filter(r => r.project === 'github.com/acme/app-api'), 'requests'), 5);
+  assert.equal(sum(s.buckets.filter(r => r.project === 'github.com/acme/app-api'), 'requests'), 5, 'linked worktree (gitfile -> commondir) resolves to the main repository');
   for (const why of reasons.slice(0, 5)) assert.ok(s.buckets.some(b => b.project_why === why), why);
   for (const p of ['forge.example:2222/acme/app-api', 'forge.example:2223/acme/app-api', 'github.com/acme/web-client']) assert.ok(s.buckets.some(b => b.project === p));
   assert.ok(!JSON.stringify(s).includes('fixture-secret'), 'sanitized before transport');
@@ -155,6 +155,12 @@ c=sqlite3.connect(sys.argv[1]);c.execute('update folder_project set ver=0 where 
     assert.ok(Object.hasOwn(runForAgent(['sql','SELECT SUM(api_usd) AS api_value_usd FROM day_provider'],collision)[0],'api_value_usd')); console.log('agent lookups: project get/SQL denied, usage SQL allowed');`);
   process.stdout.write(aiChecks.stdout);
   assert.ok(!dataForAgent(D).includes('github.com/acme/app-api'));
+  const sharedBasename = { projects: { rows: [
+    { project: 'github.com/acme/app-api', name: 'acme/app-api' },
+    { project: 'github.com/fork-owner/app-api', name: 'fork-owner/app-api' },
+  ] } };
+  assert.equal(redactProjects('brag about app-api and acme/app-api and fork-owner/app-api', sharedBasename),
+    'brag about [repository] and [repository] and [repository]', 'shared repository basename and owner/name aliases are removed from AI prose');
   const collision = { ...D, projects: { rows: [{ project: 'github.com/acme/api', name: 'api' }] } };
   assert.equal(JSON.parse(dataForAgent(collision)).totals.api_value_usd, D.totals.api_value_usd, 'short repository names must never rename public metric keys');
   assert.ok(!JSON.stringify(cardSpec('models', D)).includes('github.com/acme/app-api'));
