@@ -38,6 +38,10 @@ export const hstack = (boxes, gap = 1) => boxes[0].map((_, i) => boxes.map(b => 
 const row = (defs, gap = 1) => { const h = Math.max(...defs.map(x => x.lines.length)); return hstack(defs.map(x => box(x.title, x.lines, x.w, x.color, x.right, h)), gap); };
 export const usd = n => '$' + Math.round(n).toLocaleString('en-US');
 const delta = (pct, goodWhenUp = true) => { if (pct == null) return d('no earlier week'); const up = pct >= 0, good = up === goodWhenUp; return fg(good ? C.cx : C.red, (up ? '▲ ' : '▼ ') + Math.abs(pct) + '%'); };
+// buildData sets cost = allMachines && merged_prs ? usage / merged_prs : null.
+// With observed PRs, null therefore means usage was withheld as a floor, not no PR data.
+export const usageCostWithheld = D => D.git?.merged_prs > 0 && D.git.usd_per_merged_pr === null;
+const usageDelta = (pct, goodWhenUp = true) => pct == null ? d('not compared') : delta(pct, goodWhenUp) + d(' vs prev 7 d');
 function wrap(text, n) { const out = []; let l = ''; for (const word of String(text).split(/\s+/)) { if ((l + ' ' + word).trim().length > n) { out.push(l); l = word; } else l = (l + ' ' + word).trim(); } if (l) out.push(l); return out; }
 
 // ---------------------------------------------------------------- blocks
@@ -63,10 +67,11 @@ export const blocks = {
   Verdict: (D, p) => [fg(C.gold, '→') + ' ' + bold(w(clip(String(p.text || ''), W - 3)))],
 
   Tiles(D) {
-    const t = [{ title: 'TOKENS OUT', color: C.pink, v: fmtTok(D.totals.output_tokens), dl: delta(D.totals.output_tokens_change_pct) + d(' vs prev 7 d'), sp: spark(D.totals.tokens_per_day, C.pink) },
-               { title: 'VALUE USED', color: C.gold, v: usd(D.totals.api_value_usd), dl: delta(D.totals.api_value_change_pct) + d(' vs prev 7 d'), sp: spark(D.totals.value_per_day, C.gold) }];
+    const withheld = usageCostWithheld(D);
+    const t = [{ title: 'TOKENS OUT', color: C.pink, v: fmtTok(D.totals.output_tokens), dl: usageDelta(D.totals.output_tokens_change_pct), sp: spark(D.totals.tokens_per_day, C.pink) },
+               { title: 'VALUE USED', color: C.gold, v: usd(D.totals.api_value_usd), dl: usageDelta(D.totals.api_value_change_pct), sp: spark(D.totals.value_per_day, C.gold) }];
     if (D.git) t.push({ title: 'SHIPPED', color: C.cx, v: (D.git.coverage?.prs ? '' : 'at least ') + D.git.merged_prs + ' PRs', dl: D.git.coverage?.prs ? delta(D.git.merged_prs_change_pct) + d(' vs prev 7 d') : d('floor · not compared'), sp: spark(D.git.prs_per_day, C.cx), note: (D.git.coverage?.commits ? '' : 'at least ') + fmtTok(D.git.commits) + ' commits' },
-                      { title: 'COST PER PR', color: C.cl, v: D.git.usd_per_merged_pr == null ? 'n/a' : '$' + D.git.usd_per_merged_pr.toFixed(2), dl: D.git.coverage?.prs ? delta(D.git.usd_per_pr_change_pct, false) + d(' vs prev 7 d') : d('partial PR count'), sp: spark(D.git.usd_per_pr_per_day, C.cl) });
+                      { title: 'COST PER PR', color: C.cl, v: D.git.usd_per_merged_pr == null ? 'n/a' : '$' + D.git.usd_per_merged_pr.toFixed(2), dl: withheld ? d('not compared') : D.git.coverage?.prs ? usageDelta(D.git.usd_per_pr_change_pct, false) : d('partial PR count'), sp: spark(D.git.usd_per_pr_per_day, C.cl), note: withheld ? 'partial usage' : '' });
     const wd = t.length === 4 ? 24 : 48;
     return row(t.map((x, i) => ({ title: x.title, color: x.color, w: i === t.length - 1 ? W - (wd + 1) * (t.length - 1) : wd, lines: [bold(w(x.v)), x.dl, x.sp, d(x.note || '7 days')] })));
   },
@@ -139,13 +144,13 @@ export const blocks = {
 
   Delivery(D) {                     // what the merged PRs were (title prefix), ranked; then features and their cost week by week, day by day, month by month
     const v = D.delivery; if (!v) return [];
-    const covered = !!D.git?.coverage?.prs;
+    const covered = !!D.git?.coverage?.prs, withheld = usageCostWithheld(D);
     const KC = { feat: C.cx, fix: C.red, docs: C.cl, test: C.gold, other: C.ink3 }, kc = k => KC[k] || C.ink2, l = [], N = 12, SL = 6, kk = n => n == null ? '' : n >= 10000 ? '$' + Math.round(n / 1000) + 'k' : '$' + Math.round(n);
     if (!covered) l.push(d('PR / feature counts: at least · ratios use partial counts · no comparison'), '');
     const mxk = Math.max(1, ...v.kinds.map(x => x.prs));
     for (const x of v.kinds.slice(0, 6)) l.push(pad(fg(kc(x.kind), x.label), 14) + bar(x.prs, mxk, 26, kc(x.kind), kc(x.kind)) + lpad(bold(w((covered ? '' : 'at least ') + x.prs)), covered ? 6 : 15) + lpad(m(x.share_pct + '%'), 6) + '   ' + (covered ? delta(x.change_pct, x.kind !== 'fix') + d(' vs prev 7 d') : d('not compared')));
     const rest = v.kinds.slice(6).filter(x => x.prs); if (rest.length) l.push(d('+ ' + rest.map(x => `${x.label} ${covered ? '' : 'at least '}${x.prs}`).join(' · ')));
-    l.push('', pad(m('cost per feature'), 18) + bold(w(v.usd_per_feature == null ? 'n/a' : '$' + v.usd_per_feature)) + '  ' + (covered ? delta(v.usd_per_feature_change_pct, false) + d(' vs prev 7 d') : d('partial feature count · not compared')) + '      ' + m('fixes ') + w((v.fix_share_pct ?? 0) + '%') + m(' of PRs') + (!covered || v.fix_share_last_week_pct == null ? '' : d(` (${v.fix_share_last_week_pct}% the week before)`)), '');
+    l.push('', pad(m('cost per feature'), 18) + bold(w(v.usd_per_feature == null ? 'n/a' : '$' + v.usd_per_feature)) + '  ' + (withheld ? d('partial usage · not compared') : covered ? usageDelta(v.usd_per_feature_change_pct, false) : d('partial feature count · not compared')) + '      ' + m('fixes ') + w((v.fix_share_pct ?? 0) + '%') + m(' of PRs') + (!covered || v.fix_share_last_week_pct == null ? '' : d(` (${v.fix_share_last_week_pct}% the week before)`)), '');
     if (!covered) return box('DELIVERY', l, W, C.cx, 'title prefixes · shares of observed PRs');
     const at = {}; for (const x of v.weeks) at[x.weeks_ago] = x; const mf = Math.max(1, ...v.weeks.map(x => x.features)), mc = Math.max(1, ...v.weeks.map(x => x.usd_per_feature || 0));
     const cols = (name, get, mx, color) => { for (let r = 1; r >= 0; r--) { let row = pad(r === 1 ? m(name) : '', 18); for (let a = N - 1; a >= 0; a--) { const val = at[a] ? get(at[a]) : null; row += val == null ? (r === 0 ? d(' ·    ') : '      ') : fg(a === 0 ? color : mix(C.track, color, .6), ' ▁▂▃▄▅▆▇█'[Math.max(r === 0 ? 1 : 0, Math.round(Math.max(0, Math.min(1, val / mx * 2 - r)) * 8))].repeat(4)) + '  '; } l.push(row); } };

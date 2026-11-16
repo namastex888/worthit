@@ -402,6 +402,7 @@ export function buildData(report, g, cfg, scanInfo) {
   const measuredAt = end => answered && !retirementBlocks(retired, end).length &&
     !retained.some(x => x.units.some(u => retainedUnitOverlapsWeek(u, end)));
   const allMachines = measuredAt(now);
+  const usageCompared = allMachines && measuredAt(w1);
   // Ledger weeks carry no machine check. Only known retirement/lost-log blockers
   // justify historical proof; today's answers never certify a ledger week.
   const ledgerProofAt = end => retirementBlocks(retired, end).length ||
@@ -463,14 +464,14 @@ export function buildData(report, g, cfg, scanInfo) {
   const tools = ['claude', 'codex', 'antigravity', 'omp', 'dsh'].filter(p => p !== 'omp' && p !== 'dsh' || (report.other_tools || {})[p]).map(p => { const r = cur.filter(a => a.provider === p), ot = (report.other_tools || {})[p];
     return { tool: TOOL[p], key: p, found: ot ? true : (scanInfo.counts[p] || 0) > 0, files: scanInfo.counts[p] || 0, source: ot ? 'usagemeter store' : 'session logs', priced: ot ? (ot.usd_fitted ? 'cost reported by omp; dsh priced at the rates those costs imply' : 'cost reported by the tool') : 'API list price', unpriced_output_tokens: ot ? ot.unpriced_output_tokens : 0, sessions: (report.sessions_by_provider || {})[p] || 0, requests: sum(r, 'requests'), output: sum(r, 'output'), cached: sum(r, 'cache_read'), fresh: sum(r, 'input_uncached'), usd: Math.round(sum(r, 'usd')) }; });
   const D = { generated_at: new Date(now).toISOString(), week: { from: new Date(w1).toISOString().slice(0, 10), to: new Date(now).toISOString().slice(0, 10) }, machines: 1 + (scanInfo.hosts || []).filter(x => x.ok).length, machines_missing: missing, machines_left_out: leftOut, machines_retained: scanInfo.retained || [], machines_retired: scanInfo.retired || [], retirement_conflicts: scanInfo.retirement_conflicts || [], days_scanned: cfg.days,
-    plans, events, months: [], tools, waste, waste_hidden: hidden, totals: { output_tokens: sum(cur, 'output'), output_tokens_change_pct: pctChange(sum(cur, 'output'), sum(prev, 'output')), api_value_usd: Math.round(sum(cur, 'usd')), api_value_change_pct: pctChange(sum(cur, 'usd'), sum(prev, 'usd')),
+    plans, events, months: [], tools, waste, waste_hidden: hidden, totals: { output_tokens: sum(cur, 'output'), output_tokens_change_pct: usageCompared ? pctChange(sum(cur, 'output'), sum(prev, 'output')) : null, api_value_usd: Math.round(sum(cur, 'usd')), api_value_change_pct: usageCompared ? pctChange(sum(cur, 'usd'), sum(prev, 'usd')) : null,
       tokens_per_day: perDay(act, 'output'), value_per_day: perDay(act, 'usd').map(Math.round) },
     heat: { days: names, rows: heat, note: pk[2] ? `peak ${names[pk[0]]} ${String(pk[1]).padStart(2, '0')}:00 · quiet ${names[quiet]}` : 'no activity' } };
   if (g) {
     const inw = (t, a, b) => t >= a && t < b, mc = g.prs.filter(t => inw(t, w1, now)).length, mp = g.prs.filter(t => inw(t, w0, w1)).length, per = Array(7).fill(0); for (const t of g.prs) { const i = di(t); if (i >= 0 && i < 7) per[i]++; }
-    const cost = mc ? D.totals.api_value_usd / mc : null, costPrev = mp ? sum(prev, 'usd') / mp : null;
+    const cost = allMachines && mc ? D.totals.api_value_usd / mc : null, costPrev = measuredAt(w1) && mp ? sum(prev, 'usd') / mp : null;
     D.git = { merged_prs: mc, merged_prs_change_pct: g.coverage?.prs ? pctChange(mc, mp) : null, commits: g.commits.filter(t => t >= w1).length, repos: g.repos, usd_per_merged_pr: cost, usd_per_pr_change_pct: g.coverage?.prs && cost != null && costPrev ? pctChange(cost, costPrev) : null,
-      prs_per_day: per, usd_per_pr_per_day: per.map((k, i) => k ? D.totals.value_per_day[i] / k : 0), sources: g.src, meter: g.meter, coverage: g.coverage };
+      prs_per_day: per, usd_per_pr_per_day: per.map((k, i) => !allMachines ? null : k ? D.totals.value_per_day[i] / k : 0), sources: g.src, meter: g.meter, coverage: g.coverage };
   }
 
   // player history: one small row per day, kept forever; XP, level, streak and bests are computed from it
@@ -493,11 +494,13 @@ export function buildData(report, g, cfg, scanInfo) {
     const shape = (c, usd, min) => ({ prs: c.prs, features: c.feat || 0, fixes: c.fix || 0, fix_share_pct: share(c), usd: usd == null ? null : Math.round(usd), usd_per_feature: each(usd, c, min) });
     const weeks = []; for (let a = 11; a >= 0; a--) { const end = now - a * 7 * DAY, c = count(between(end - 7 * DAY, end + (a ? 0 : 1))); if (!c.prs) continue;
       let usd = a === 0 ? D.totals.api_value_usd : a === 1 ? sum(prev, 'usd') : 0, n = a < 2 ? 7 : 0; if (a >= 2) for (let i = 0; i < 7; i++) { const v = dayUsd(dayKey(end - i * DAY)); if (v != null) { usd += v; n++; } }
-      weeks.push({ weeks_ago: a, to: new Date(end).toISOString().slice(0, 10), ...shape(c, n >= 5 ? usd : null) }); }       // a week with fewer than 5 priced days has no trustworthy cost
-    const days = []; for (let i = 13; i >= 0; i--) { const dk = dayKey(now - i * DAY); days.push({ day: dk, ...shape(count(byDay[dk] || []), dayUsd(dk), 3) }); }
+      weeks.push({ weeks_ago: a, to: new Date(end).toISOString().slice(0, 10), ...shape(c, measuredAt(end) && n >= 5 ? usd : null) }); }       // a floor or a week with fewer than 5 priced days has no trustworthy cost
+    // Saved daily/monthly usage has no period proof. Withhold these cost series
+    // when either source week is incomplete; keep independent delivery counts.
+    const days = []; for (let i = 13; i >= 0; i--) { const dk = dayKey(now - i * DAY); days.push({ day: dk, ...shape(count(byDay[dk] || []), usageCompared ? dayUsd(dk) : null, 3) }); }
     const months = Object.keys(byMonth).sort().map(mo => { let usd = 0, n = 0; for (const [dk, r] of Object.entries(hist.days)) if (dk.startsWith(mo) && r.usd) { usd += r.usd; n++; }
-      return { month: mo, days_with_cost: n, ...shape(count(byMonth[mo]), n ? usd : null) }; });
-    const f0 = each(D.totals.api_value_usd, cur7), f1 = each(sum(prev, 'usd'), prev7);
+      return { month: mo, days_with_cost: n, ...shape(count(byMonth[mo]), usageCompared && n ? usd : null) }; });
+    const f0 = each(allMachines ? D.totals.api_value_usd : null, cur7), f1 = each(measuredAt(w1) ? sum(prev, 'usd') : null, prev7);
     D.delivery = { source: 'title prefix of each merged pull request (feat:, fix:, docs: ...); a cost per feature needs 5 features in the week (3 in a day)', typed_pct: cur7.prs ? Math.round(100 * (cur7.prs - (cur7.other || 0)) / cur7.prs) : null,
       kinds: Object.keys(KINDS).filter(k => cur7[k] || prev7[k]).map(k => ({ kind: k, label: KINDS[k], prs: cur7[k] || 0, share_pct: cur7.prs ? Math.round(100 * (cur7[k] || 0) / cur7.prs) : 0, last_week: prev7[k] || 0, change_pct: g.coverage?.prs ? pctChange(cur7[k] || 0, prev7[k] || 0) : null })).sort((x, y) => y.prs - x.prs),
       features: cur7.feat || 0, features_change_pct: g.coverage?.prs ? pctChange(cur7.feat || 0, prev7.feat || 0) : null, usd_per_feature: f0, usd_per_feature_change_pct: g.coverage?.prs && f0 != null && f1 ? pctChange(f0, f1) : null,
