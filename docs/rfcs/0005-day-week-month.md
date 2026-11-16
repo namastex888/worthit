@@ -335,7 +335,7 @@ the brief of this RFC), **floor** (AGENTS.md: a floor is never compared week to 
 | bests "PRs merged in a week" and "lowest cost per PR", from stored maxima with no basis (`:562-563`) | removed | the day bests; the week bests return in delivery 4. Rule: floor |
 | `totals.output_tokens_change_pct`, `totals.api_value_change_pct`: no machine check (`:467`) | `null` unless both rolling weeks pass conditions 2, 3 and 5 of section 1; the dollar one follows the dollar rule of section 5 | the `Today` comparison. Rule: floor |
 | `git.usd_per_pr_change_pct`, `delivery.usd_per_feature_change_pct`: PR coverage only (`:473`, `:504`) | the same, with PR coverage | Rule: floor |
-| `model_mix` `change_pts`: token shares from stored maxima (`:549`) | `null` unless both rolling weeks pass the same conditions | Rule: floor |
+| `model_mix` `change_pts`: token shares from stored maxima (`:549`) | `null` unless both rolling weeks pass the same conditions, and then computed from this run's rows, not from the stored maxima | Rule: floor |
 | `git.merged_prs_change_pct`, `delivery.features_change_pct`, `delivery.kinds[].change_pct`, `delivery.fix_share_last_week_pct` (`:473`, `:503-505`) | unchanged: already `null` without PR coverage, and both weeks come from one run, so one set of PR sources and one `rules.delivery` | |
 | `plans[].change_vs_last_week_pct`, and `moved` in `worthit weekly` (`:437`, `src/weekly.mjs:42-46`); LimitTrend draws the same field (`src/draw.mjs:119`) | `null` unless the two bases match | Rule: basis. Bases are recorded from delivery 1, so the change is blank only if delivery 3 follows it by less than seven days |
 | Tiles, LevelCard, Delivery, ModelMix, LimitTrend (`src/draw.mjs:65-79`, `:119`, `:146-148`, `:198`) | a `null` change is drawn as "not compared" | |
@@ -423,19 +423,21 @@ with:
 | `outside_table` | usage the price table did not price: omp rows with the cost omp reports, dsh rows priced at rates fitted from those costs or left unpriced at $0 (`core/weekly.py:359-365`), and tokens of any model the table has no price for. `rows` counts them whatever their dollar value, and `output_tokens_pct` is their share of the period's output tokens |
 | `machines.id` | which machines were counted, not how many: a hash of the sorted host names of every machine that answered and every retired snapshot, salted with a random value kept in the store. It cannot be read back into names and means nothing outside this store |
 | `machines` (the rest) | machines read, and the missing, left-out, retired and retained lists for that period, as the run JSON has them |
-| `pr_sources.id` | which PR sources answered: the same kind of hash over the names in `git.coverage.sources` (`usagemeter`, each `gh` account, each `glab` host, `tea`). Account names never leave the hash |
+| `pr_sources.id` | whose PRs were counted: the same kind of salted hash over one canonical tuple per contributing source: forge kind, endpoint host and resolved account. The account is the one the forge resolves for the login in use: each logged-in `gh` account, the user of a `glab` host's token, the user and host of the selected `tea` login. The names in `git.coverage.sources` are not enough: they are only `tea` or `glab:<host>` (`src/collect.mjs:283`). The usagemeter store is one tuple. Raw account names never leave the hash |
 
 A day has one value in each list. A week or a month has every distinct value of its days.
 
 **What may be compared.** A value is compared between two periods only when every key in its row is
 known, single and equal at both ends. Anything else is not compared, with the reason in
 `change.not_compared`: `basis_unknown`, `machines_changed`, `pr_sources_changed`, `rules_changed`,
+`attribution_unpriced`,
 `repriced`. The game adds `outside_share_moved` (below).
 
 | Compared | Keys |
 |---|---|
 | merged PRs, qualifying PRs | `pr_sources.id`, `rules.delivery` |
-| the first-pass proxy, PRs led | those, and `rules.first_pass`, `machines.id`, `rules.usage` |
+| the first-pass proxy on all work or per project | those, and `rules.first_pass`, `machines.id`, `rules.usage` |
+| PRs led, and every proxy count or rate grouped by lead model | those, and `prices` |
 | tokens and requests | `machines.id`, `rules.usage` |
 | any dollar value: API value, cost per merged PR, cost per qualifying PR, cost per feature | `machines.id`, `rules.usage`, `prices`, on priced usage only (below). A cost per PR also needs the PR keys |
 | a plan's value per full week | `machines.id`, `rules.usage`, `prices` |
@@ -462,7 +464,21 @@ known, single and equal at both ends. Anything else is not compared, with the re
   old one is kept with its basis.
 - **The version alone does not block.** Every merge into `dev` cuts a release. When the two ends differ,
   both versions are printed beside the comparison.
-- **A machine or a PR source that is added or replaced** changes an id. Comparisons across that change
+- **An unknown PR population is never a comparable hash.** A period's count can include PRs kept from
+  an earlier run: `git()` joins stored `pr_kind` rows to today's answers (`src/collect.mjs:344-350`). So
+  the id covers every source that contributed to the count, not only the ones that answered today.
+  Delivery 1 stores each PR's source tuple, hashed, in a new `pr_kind.source` column. `pr_sources.id`
+  is `null`, and every value that needs it reads `basis_unknown`, when a contributing source's endpoint
+  or account cannot be resolved, or when a counted PR row has no stored source.
+- **The lead model depends on prices.** RFC 0004 names a PR's lead model by the largest share of API
+  value on its branch. A price change can therefore move a PR from one model to another with no change
+  in the work. So `prs_led`, and every proxy count or rate grouped by lead model, is compared only on
+  one known, single and equal `prices` at both ends (`repriced` otherwise). Where the usage linked to a
+  period's PRs includes omp or dsh rows, whose price has no reproducible basis, the per-model
+  comparisons of that period are `null`, with the reason `attribution_unpriced`. The counts are still
+  shown. The proxy on all work and per project does not depend on prices and is not blocked by this.
+- **A machine or a PR source that is added or replaced** changes an id. Another account on the same
+  GitLab host, and another Gitea login or host, each change `pr_sources.id`. Comparisons across that change
   stop, and resume once both ends are on the new id.
 - A view prints one line when a comparison is left out: "prices changed on 3 Dec: cost per PR not
   compared", or "a machine was added on 9 Dec: usage not compared".
@@ -548,7 +564,8 @@ whole day 2026-11-18:
   out `usd_per_merged_pr`, `share_pct` and `first_pass_pct` on the sums. The minimum of five applies to
   the summed counts, so a rate that is `null` on every day can exist for the week.
 - **Comparing two periods** follows the table of section 5, row by row, with five PRs at both ends for
-  any ratio or rate (five PRs led, for a model row), and with RFC 0004's own checks:
+  any ratio or rate (five PRs led, for a model row), and with RFC 0004's own checks. A model row also
+  needs one price basis, because the lead model is chosen by API value (section 5):
   - PR counts and proxy counts need `prs_sources` and `prs_attributed` true and every day judged.
   - Value, value per PR and `prs_led` also need `floor: false`: no unresolved usage row on any day.
     Anyone who uses Antigravity, omp or dsh has unresolved usage every day (RFC 0004), so these numbers
@@ -705,7 +722,7 @@ use `worthit --demo` with synthetic projects (`app-api`, `web-client`).
 
 - **Delivery 1.** New, and nothing existing changes value: the `period_result` and `day_project`
   tables, `basis` (in period rows, in a new `plan_value.basis` column, and as new keys in the
-  `worthit weekly` JSON), a new `pr_kind.revert` column, the scanner's three `rules` numbers, and failed
+  `worthit weekly` JSON), new `pr_kind.revert` and `pr_kind.source` columns, the scanner's three `rules` numbers, and failed
   reads in the scan's `errors`. The question bar's `sql` refuses `day_project` from this delivery on.
 - **Delivery 2.** `periods.day` with its `projects` cut, and `worthit projects --daily`.
 - **Delivery 3.** New: the rest of `periods.day`, `game.day`, the `Today` block, the `--daily` flag.
@@ -738,7 +755,7 @@ Fixture cases for delivery 1:
 - a judged day is not rewritten by a later run with a machine missing or with higher usage;
 - `basis`: a changed price file gives another `prices`, and a change to `_sources` alone does not; a
   machine added, and a machine replaced by another with the count unchanged, each give another
-  `machines.id`; a newly logged-in forge account gives another `pr_sources.id`; a dsh row priced at $0
+  `machines.id`; a newly logged-in forge account, a second account on the same GitLab host, and a Gitea login on another host each give another `pr_sources.id`; a day that counts a stored PR row with no source has a `null` `pr_sources.id` and reads `basis_unknown`; a dsh row priced at $0
   sets `outside_table.rows`;
 - an older store gets the table and the column on its first run; every existing field of `--json` and
   of `worthit weekly` is unchanged, and the dashboard image is unchanged.
@@ -749,6 +766,11 @@ Fixture cases for delivery 2:
   five has a rate on its sums;
 - an unresolved usage row makes value "at least" and not compared, while PR counts still are;
 - a PR that is not linked counts for its project and for no model;
+- **a flipped lead:** two periods with the same work by two models, where only the model prices change
+  and the lead model of the PRs flips: `prs_led` and the per-model proxy are not compared (`repriced`),
+  while the proxy on all work and per project still is;
+- usage linked to a period's PRs that includes omp rows leaves that period's per-model comparisons
+  `null` (`attribution_unpriced`);
 - every output says "first-pass proxy"; none says "passed first time";
 - no repository name reaches the summary prompt or a question-bar lookup, by `get periods`, a deeper
   path or `sql`.
