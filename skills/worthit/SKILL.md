@@ -338,7 +338,7 @@ With no allowance plans in the saved run, `allowance`, `value`, `ranking` and fa
 5. If `worthit share` says there is no finished run, run `worthit --json` once and try again.
 
 
-## Project usage: RFC 0004 delivery 1
+## Project usage: RFC 0004 deliveries 1 and 2
 
 `worthit projects` reads the last saved run only: no scan, model or network. Terminal table;
 piped JSON is the `projects` block plus `week`, `generated_at`, `machines_missing`,
@@ -373,10 +373,11 @@ Markdown or share cards. AI lookups expose only usage data, not project/PR ident
   no_folder_read, saved_before_projects. The last four are unresolved, even at $0.
 - `prs_without_project`: `{merged_prs, why: {no_host_in_key}}`. PR keys with no host
   never match by repository name. Project counts plus this count equal git.merged_prs.
-  When either PR coverage check is false, counts are “at least” and costs use a
-  “partial PR count”, NEVER a lower bound. With full PR proof and usage floor=true,
-  costs are “at least”. Git off sets this block, both checks and every row's
-  merged_prs/usd_per_merged_pr to null; suggest `worthit --json`.
+  When either PR coverage check is false, counts are “at least” and numeric costs use
+  “partial PR count”, NEVER a lower bound. Per-PR costs follow the single rule below:
+  machine floors override to null; with machines complete and full PR proof, usage-only
+  floors retain numeric “at least” costs. Git off sets this block, both checks and every
+  row's merged_prs/usd_per_merged_pr to null; suggest `worthit --json`.
 
 Scan buckets gain `project` (canonical origin id or null) and `project_why` (null with
 project, else one of six reasons). Claude resolves per request; Codex per session.
@@ -395,12 +396,101 @@ inserts/replaces; mismatched ver ignored. WORTHIT_NO_CACHE/unwritable cache work
 Folder reuse keeps the latest live repository. The hostless usagemeter cwd_repo map is not used.
 Scan every machine daily with git on to remember folders before worktrees disappear.
 
-The core report adds `project_activity`: `{hour, provider, model, project, project_why, output,
+The core report adds `project_activity`: `{hour, provider, model, project, project_why, branch, cost_complete, output,
 requests, usd}` from the exact selected/deduplicated/priced rows used for activity, including
 meter rows. buildData uses the same rolling totals window; USD retains pricing precision until
-display rounds. Project history, model PR credit and delivery 2 remain out of scope.
+display rounds. Persistent project history and days --by project remain delivery 3.
 
 Delivery 1 adds no network request. Audit read lines name each additional .git/commondir/config
 file; existing SSH scans return sanitized repository IDs with usage. URL credentials are
 removed on the originating machine before any cache/transport. Fork origins and upstream PRs,
 or nondefault clone ports and forge keys, stay separate without guessing.
+
+
+### Delivery 2: saved branch-cost association and opened date proxy
+
+One per-PR cost floor rule (RFC 0004 section 3): a machine floor withholds null every
+per-PR ratio in git.usd_per_merged_pr, projects.rows[].usd_per_merged_pr and every
+projects.delivery models/project_models/daily usd_per_pr_led. A usage-only floor retains
+linked implementation lead/prs_led and numeric costs as at least, with projects.floor and
+D2 cost_floor:true plus reasons; omp/dsh/Antigravity rows remain unlinked. A floor at either
+comparison endpoint withholds cost comparisons (including git.usd_per_pr_change_pct),
+while independent physical PR/commit count comparisons remain available. Under a machine floor, raw linked USD
+is still visible as a floor while per-PR ratios are withheld. Terminal USD has two decimal places and percentages whole
+numbers; JSON precision is unchanged.
+
+`projects.delivery` is null with git off. `worthit get projects.delivery.daily` reads saved
+UTC completion-day project/model rows without network; token-spend day is separate. The block
+contains `source: opened`, `label: opened date proxy`, ISO `window {from,to}`, `coverage`,
+`deliveries`, `models`, `project_models`, `daily`. Never forward repository/branch/PR identities
+from it to agents, question lookups, custom share topics, Markdown, dashboard or cards.
+
+Each delivery: `root,members,project,completed_day,lead_model,lead_api_value_usd,lead_share_pct,
+implementation_api_value_usd,review_api_value_usd,api_value_usd,cost_floor,cost_reasons,
+link_reasons,first_pass,provenance`. Provenance records member `key,branch,head_sha,merged_at,
+completeness,reasons`. No-lead deliveries remain visible under `model:null`. The lead is the
+unique positive largest linked implementation USD by model (tools combined), never review USD;
+ties, absent or incomplete implementation/machine/link/window evidence produce no lead.
+This association is not authorship or a model-quality ranking. Exact project/head branch and
+merge-hour cutoff link usage; reused branch names are ambiguous. Scan buckets carry logged
+`branch` (Claude per request, Codex per session start), null for old/unknown sources.
+`cost_complete` is false for missing/fallback pricing. omp/dsh-tui never infer branches.
+Reviews `review/pr-<number>-<sha8>` need a unique SHA-prefix match in complete same-repository
+PR/MR commit history. Invalid, ambiguous and review-only cases never manufacture a lead.
+
+All aggregate rows have `prs_led,api_value_usd,usd_per_pr_led,cost_floor,cost_reasons,first_pass,
+not_first_pass,unknown,not_measured,eligible,first_pass_pct,first_pass_reason,coverage`;
+project_models adds project and daily adds UTC completion day/project. Cost uses all retained
+linked implementation + review USD for led deliveries / prs_led, null at zero. It retains
+pricing precision; `cost_floor` boolean and named `cost_reasons` identify incomplete evidence.
+`eligible=first_pass+not_first_pass`; exclude unknown/not-measured; below five eligible keep
+counts but percentage null with insufficient_sample. No comparisons of partial periods.
+
+First-pass record `{state,source:opened,reason,complete}` has four states: first_try,
+not_first_try, unknown, not_measured. Opening and committer dates are UTC, never push times.
+A strictly later material change on implementation first parents means not_first_try.
+Pre-merge target ancestry and parent roles must prove a base integration; ignore sole
+base-parent history, never use today’s target membership or commit subjects. Files compare
+against the relevant parent, considering both old/new paths. Nonmaterial allowlist: docs/
+paths, root README/README.md/LICENSE/LICENSE.md/CHANGELOG.md, .md/.mdx/.rst/.txt and
+.png/.jpg/.jpeg/.gif/.webp/.svg/.ico. Complete empty changes harmless; mixed/code material.
+Incomplete/rewritten/unproven evidence is unknown, never false. GitHub PR commit cap 250,
+commit file cap 3000; GitLab uses complete recursive parent/commit tree inventories including
+mode instead of trusting its silently capped commit /diff. Missing inventory/parents/times,
+old host capability and bounded budgets have named unknown reasons.
+
+LOCAL `WORTHIT_HOME/settings.json` key `projects.first_pass_exclude` is a canonical-id array,
+e.g. `["github.com/acme/app-api"]`; it displays not measured and excludes denominators,
+preceding every classifier/chain. Actual identifiers/config stay local and untracked.
+
+Entire title Supersedes #n (GitHub) or Supersedes !n (GitLab) forms same-repository predecessor
+chains. Combine costs once, root at original, complete on first merged member UTC day, even
+when root closed unmerged; resolved chain not_first_try, later merge updates instead of adds.
+Cycle/self/forks/wrong-type/cross-repository/unavailable targets remain unresolved/unknown
+with no lead. Physical git.merged_prs and project merged_prs/ratios are never deduplicated.
+
+Coverage globally and per model/project-model/day: raw merged_prs, canonical_deliveries,
+linked_prs,linked_deliveries,ambiguous_prs,signal_known_prs,eligible,unknown,not_measured,
+superseded_prs,unresolved_chains; implementation/review {rows,output_tokens,api_value_usd};
+unlinked same counters plus by_reason (omp_no_branch,dsh_tui_no_branch,missing_branch,
+no_repository,ambiguous_branch,no_matching_branch,review_unverified,incomplete_link_evidence,
+after_merge); forges per host answered,reasons,metadata/commits/parents/diffs {complete,reasons}.
+Unlinked rows use observed model/project/UTC spend day; deliveries use completion day.
+Machine/usage floors stay separate from forge-source/completeness and first-pass eligibility.
+Only authored merged items observed in 14 days plus predecessors are known, never unseen
+successors. No new project-history SQL table. GitHub gh and self-managed GitLab glab included;
+Gitea unknown/unlinked, host-qualified keys preserved.
+
+Every metadata/commit/parent/compare/tree/chain request and pagination page is audited net and
+named in README. Immutable metadata reused within run. Hard limits: 1200 requests, 30 pages,
+300 items, 40 chain depth, 250 lineage/base nodes; exhaustion unknown. --git no makes none.
+
+
+Delivery 2 upgrade/privacy rules: a legacy `gitea/path#n` row overlapping a host-qualified
+Gitea path/number/exact merge time remains in pr_kind but is omitted from current physical
+counts. Source `gitea legacy identities` is incomplete; audit says ambiguous legacy. Never
+infer its host, even with one candidate. Unmatched legacy history/counts remain intact.
+Privacy redacts implementation/review branches, commit ids and known short #N/!N references
+as well as canonical repository/PR keys from all agent prose, lookups and custom shares.
+GitHub commit JSON may return patch text; it is ignored and never persisted. No separate
+raw-source request is added.

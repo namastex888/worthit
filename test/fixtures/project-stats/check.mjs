@@ -24,7 +24,7 @@ const write = (f, text) => { fs.mkdirSync(path.dirname(f), { recursive: true });
 const jsonl = (f, rows) => write(f, rows.map(r => JSON.stringify(r)).join('\n') + '\n');
 const repo = (name, url) => { const dir = path.join(tmp, name); write(path.join(dir, '.git/config'), url === null ? '[core]\n bare = false\n' : `[remote "origin"]\n url = ${url}\n`); return dir; };
 const logs = path.join(home, '.claude/projects/example/usage.jsonl'), ts = '2026-11-13T15:00:00Z';
-const claudeRow = (id, cwd) => ({ timestamp: ts, sessionId: 'one-session', requestId: id, ...(cwd === undefined ? {} : { cwd }), message: { id, model: 'claude-sonnet-5-5', usage: { output_tokens: 100000 } } });
+const claudeRow = (id, cwd) => ({ timestamp: ts, sessionId: 'one-session', requestId: id, gitBranch: 'feat/example', ...(cwd === undefined ? {} : { cwd }), message: { id, model: 'claude-sonnet-5-5', usage: { output_tokens: 100000 } } });
 const scan = extra => JSON.parse(execute(python, [path.join(root, 'core/extract_usage.py'), '21'], extra).stdout);
 const reasons = ['outside_a_repository', 'no_origin', 'origin_not_supported', 'folder_gone', 'no_folder_read', 'saved_before_projects'];
 const sum = (rows, k) => rows.reduce((n, r) => n + (r[k] || 0), 0);
@@ -43,11 +43,13 @@ try {
   jsonl(logs, records);
   const codex = path.join(home, '.codex/sessions/usage.jsonl');
   jsonl(codex, [
-    { timestamp: ts, type: 'session_meta', payload: { id: 'codex-session', cwd: gone, git: { repository_url: 'https://fixture-secret@github.com/acme/app-api.git' } } },
+    { timestamp: ts, type: 'session_meta', payload: { id: 'codex-session', cwd: gone, git: { branch: 'feat/codex-example', repository_url: 'https://fixture-secret@github.com/acme/app-api.git' } } },
     { timestamp: ts, type: 'turn_context', payload: { model: 'gpt-6.1-sol' } },
     { timestamp: ts, type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 0, output_tokens: 100000 }, last_token_usage: { input_tokens: 0, output_tokens: 100000 } } } },
   ]);
   let s = scan(); assert.deepEqual(s.errors, []);
+  assert.equal(s.buckets.find(r => r.provider === 'codex').branch, 'feat/codex-example');
+  assert.ok(s.buckets.filter(r => r.provider === 'claude').every(r => r.branch === 'feat/example'));
   assert.equal(sum(s.buckets, 'requests'), 13);
   assert.equal(s.buckets.filter(r => r.project === 'github.com/acme/app-api').length, 2, 'per-request projects split one Claude hour; identical live forms aggregate');
   assert.equal(sum(s.buckets.filter(r => r.project === 'github.com/acme/app-api'), 'requests'), 5, 'linked worktree (gitfile -> commondir) resolves to the main repository');
@@ -90,12 +92,18 @@ c=sqlite3.connect(sys.argv[1]);c.execute('update folder_project set ver=0 where 
   assert.equal(sum(report.project_activity, 'requests'), sum(report.activity, 'requests'));
   assert.ok(Math.abs(sum(report.project_activity, 'usd') - sum(report.activity, 'usd')) < 0.02);
   assert.ok(report.project_activity.some(r => r.project_why === 'saved_before_projects'));
+  assert.ok(report.project_activity.some(r => r.branch === 'feat/example' && r.cost_complete));
   assert.ok(report.project_activity.some(r => r.provider === 'dsh' && r.project_why === 'no_folder_read' && r.usd === 0));
   const build = extra => JSON.parse(node(`import fs from 'node:fs'; import { buildData } from ${JSON.stringify(moduleUrl('src/collect.mjs'))};
     const report=JSON.parse(fs.readFileSync(${JSON.stringify(reportFile)}));
     const g={coverage:{prs:true,commits:true,sources:[]},project_prs:[{key:'github.com/acme/app-api#1',merged_ms:Date.parse('${ts}')},{key:'gitlab.example/acme/pr-only!2',merged_ms:Date.parse('${ts}')},{key:'acme/app-api#3',merged_ms:Date.parse('${ts}')}],prs:[1,2,3].map(()=>Date.parse('${ts}')),kinds:[],commits:[],repos:2,src:{}};
     console.log(JSON.stringify(buildData(report,${extra?.gitOff ? 'null' : 'g'}, {days:21}, ${JSON.stringify({ counts: {}, hosts: [], ...extra?.info })})));`).stdout);
+  write(path.join(env.WORTHIT_HOME, 'settings.json'), JSON.stringify({ projects: { first_pass_exclude: ['github.com/acme/app-api'] } }));
+  write(path.join(env.WORTHIT_HOME, 'settings.json'), JSON.stringify({ projects: { first_pass_exclude: ['github.com/acme/app-api'] } }));
   const D = build();
+  assert.equal(D.projects.delivery.deliveries.find(r => r.project === 'github.com/acme/app-api').first_pass.state, 'not_measured', 'local config survives buildData loading');
+  fs.rmSync(path.join(env.WORTHIT_HOME, 'settings.json'));
+  assert.equal(D.projects.delivery.deliveries.find(r => r.project === 'github.com/acme/app-api').first_pass.state, 'not_measured', 'local opt-out survives real configuration loading');
   assert.equal(sum(D.projects.rows, 'output_tokens') + D.projects.no_repository.output_tokens, D.totals.output_tokens);
   assert.equal(sum(D.projects.rows, 'requests') + D.projects.no_repository.requests, sum(D.tools, 'requests'));
   assert.ok(Math.abs(sum(D.projects.rows, 'api_value_usd') + D.projects.no_repository.api_value_usd - D.totals.api_value_usd) <= D.projects.rows.length + 1);

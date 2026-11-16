@@ -383,7 +383,7 @@ def claude():
                     continue
                 cc = u.get('cache_creation') or {}
                 od = u.get('output_tokens_details') or {}
-                b = buckets[('claude', acct, m.get('model'), o.get('effort') or o.get('perTurnEffort') or '', ts[:13], sid, acct, *resolve_project(o.get('cwd')))]
+                b = buckets[('claude', acct, m.get('model'), o.get('effort') or o.get('perTurnEffort') or '', ts[:13], sid, acct, *resolve_project(o.get('cwd')), o.get('gitBranch') or '')]
                 i, cw, cr, out = (u.get('input_tokens') or 0, u.get('cache_creation_input_tokens') or 0,
                                   u.get('cache_read_input_tokens') or 0, u.get('output_tokens') or 0)
                 lc = 'lc_' if i + cw + cr > 100000 else ''        # Anthropic long-context tier (Haiku 5.5): prompt over 100K
@@ -485,7 +485,7 @@ def codex():
                 if reset: stats['codex_baseline_skipped'] += 1
                 prev = tot
                 if not any(d.values()): continue
-                b = buckets[('codex', str(last_reset), model, effort, ts[:13], s, a, *resolve_project(cwd, repo))]
+                b = buckets[('codex', str(last_reset), model, effort, ts[:13], s, a, *resolve_project(cwd, repo), branch or '')]
                 lc = 'lc_' if (lu.get('input_tokens') or d['input_tokens']) > 272000 else ''   # OpenAI long-context tier: >272K input per request
                 b[lc + 'input_uncached'] += d['input_tokens'] - d['cached_input_tokens']
                 b[lc + 'cache_read'] += d['cached_input_tokens']
@@ -624,7 +624,7 @@ def antigravity():
                                   or md.get('model') or md.get('model_name') or step_model_of.get(o.get('step_index')) or '')
                     if step_model and (not tl_conv or tl_conv[-1][1] != step_model): tl_conv.append([ts[:19], step_model])
                     stats['agy_steps_with_model' if step_model else 'agy_steps_without_model'] += 1
-                    b = buckets[('antigravity', root, step_model or model, '' if step_model else 'settings_label', ts[:13], sid, login_at(ts), None, 'no_folder_read')]
+                    b = buckets[('antigravity', root, step_model or model, '' if step_model else 'settings_label', ts[:13], sid, login_at(ts), None, 'no_folder_read', '')]
                     b['input_uncached'] += i; b['cache_read'] += cr; b['output'] += out
                     b['reasoning'] += o.get('thinking_tokens') or 0
                     b['requests'] += 1
@@ -711,7 +711,7 @@ res['token_semantics'] = {
     'output': 'output; codex includes reasoning, claude includes thinking', 'reasoning': 'subset of output where reported'}
 # 'account' keeps its old meaning (claude: tag, codex: reset anchor, agy: root) so merge_usage.py still works;
 # 'login' is the new per-session account tag used to split windows per account.
-res['buckets'] = [dict(provider=k[0], account=k[1], model=k[2], effort=k[3], hour=k[4], session=k[5], login=k[6], project=k[7], project_why=k[8], **v) for k, v in sorted(buckets.items(), key=lambda kv: tuple('' if x is None else str(x) for x in kv[0]))]
+res['buckets'] = [dict(provider=k[0], account=k[1], model=k[2], effort=k[3], hour=k[4], session=k[5], login=k[6], project=k[7], project_why=k[8], branch=k[9] or None, **v) for k, v in sorted(buckets.items(), key=lambda kv: tuple('' if x is None else str(x) for x in kv[0]))]
 res['meters'] = sorted(meters.values(), key=lambda m: (str(m['resets_at']), m['slot'], m['hour']))
 res['events'] = sorted(events, key=lambda e: str(e.get('ts')))
 res['sessions'] = sorted(sessions.values(), key=lambda s: s['first'])

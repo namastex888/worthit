@@ -168,10 +168,52 @@ overlaps the week, the week starts on/after each retirement, and there are **zer
 rows**, even rows worth $0. Otherwise usage values, tokens and requests say “at least”; log
 usage is never called measured. `coverage.prs_sources` separately checks git sources;
 `coverage.prs_attributed` checks that no PR lacks a project. If either fails, PRs say “at least”
-and cost says “partial PR count”, never a lower bound. With full PR proof and usage floor,
-cost also says “at least”. With git off, all PR counts/costs, PR checks and `prs_without_project`
-are null; run `worthit --json` to fill them. There is no project comparison, history or PR credit
-per model in this delivery.
+and cost says “partial PR count”, never a lower bound. With full PR proof, a usage-only floor says “at least”; a machine floor withholds the cost as null.
+All per-PR costs follow the single [RFC 0004 section 3 rule](docs/rfcs/0004-project-stats.md#3-delivery-2-which-model-delivered): machine floors withhold costs, usage-only floors retain linked leads and numeric lower bounds, and floors are never compared. With git off, all PR counts/costs, PR checks and `prs_without_project`
+are null; run `worthit --json` to fill them. There is no project comparison or persistent project history.
+
+RFC 0004 delivery 2 adds `projects.delivery`: model and project/model aggregates, `daily`
+project/model rows, canonical `deliveries` with member provenance and detailed `coverage`.
+Read UTC completion-day data with `worthit get projects.delivery.daily`; these are saved
+rolling-window results, not token-spend days. `days --by project` and project history wait
+for delivery 3. Physical `git.merged_prs` and each project’s `merged_prs` remain unchanged.
+
+A delivery’s lead is the unique largest positive implementation API-list value on its
+canonical project/head branch, with its own `lead_api_value_usd` and `lead_share_pct`.
+This is an observed branch-cost association, not authorship or model quality. Ties and
+incomplete evidence have no lead (visible in `model: null` rows). Reused branch names
+are ambiguous; missing branches, including omp/dsh-tui and old scan units, stay unlinked.
+Review branches `review/pr-41-1234abcd` must match the same repository’s PR/MR commit
+history uniquely. Review cost never chooses the lead. `usd_per_pr_led` divides **all**
+linked implementation plus review cost by `prs_led`, null at zero. `cost_floor: true`
+and `cost_reasons` name partial machine/usage/link/window evidence; this is not exact cost.
+
+`first_pass` is explicitly an **opened date proxy**, never a forge review or SHIP verdict.
+It uses opening and committer timestamps, which are not push times. Proven base integrations,
+base-only history, complete empty changes and narrow docs/images paths do not count as fixes;
+code does, even with a docs subject. Missing/truncated ancestry, timestamps or file inventories
+and rewritten/unproven merge history are unknown. Four states remain distinct: `first_try`,
+`not_first_try`, `unknown`, `not_measured`. Counts are beside rates: `eligible` excludes
+unknown/not-measured; `first_pass_pct` is null below five eligible (`insufficient_sample`).
+
+To opt a repository out locally, add `"projects": {"first_pass_exclude":
+["github.com/acme/app-api"]}` to your existing `WORTHIT_HOME/settings.json` (default
+`~/.worthit/settings.json`). Keep your actual identifiers only there. Opt-out wins over
+all automatic and supersede classifications and displays **not measured**.
+
+An entire `Supersedes #41` title on GitHub, or `Supersedes !41` on GitLab, combines a
+same-repository transitive chain into one delivery rooted at the original. Its first
+merged member sets the UTC completion day; later merges update signal/cost rather than
+adding a delivery. A resolved chain is not-first-try. Cycles, self-links, multiple successors,
+unavailable or invalid/cross-repository targets remain unresolved and unknown. Coverage
+keeps physical/canonical/linked counts, implementation/review rows/tokens/USD, unlinked
+usage by reason, no-lead deliveries and each host’s metadata/commit/parent/diff completeness.
+Only observed merged items in the last 14 days and resolved predecessors are available;
+no future or unseen superseder is inferred. GitHub and self-managed GitLab are supported;
+Gitea stays unknown/unlinked, with host-qualified physical keys. Overlapping legacy hostless
+Gitea keys are kept in the store but omitted from the current count, with `gitea legacy identities`
+marked incomplete and an ambiguous-legacy audit note; no host is guessed, even with one candidate.
+Unmatched hostless history/counts remain intact.
 
 Identity is the lowercase origin `host[:nondefaultport]/path`, without credentials, scheme,
 trailing `.git` or slash. Each machine reads `.git` (including gitfiles), `commondir` and the
@@ -190,7 +232,7 @@ leaves the machine or adds a table to `worthit.db`. `WORTHIT_NO_CACHE` or unwrit
 disables remembering. A pre-delivery deleted worktree can stay unresolved; scan every machine
 daily with `worthit --json --hosts all` to remember current folders.
 
-Repository names appear only in local project/JSON output, saved scans and audit logs. They
+Repository names appear only in local project/JSON output, saved scans and audit logs. Repository, implementation/review branch, commit and known short PR/MR references (`#N`/`!N`)
 are excluded from AI summary prompts, question-bar lookups and custom share topics, and from
 the dashboard, Markdown and share cards. `worthit schema` and the bundled agent skill describe
 the scan's `project`/`project_why`, core `project_activity`, cache and output fields.
@@ -238,6 +280,19 @@ Flags for a scan (`worthit` or `worthit --json`):
 What leaves your machine:
 
 Delivery 1 project statistics add no network request. Every machine also reads the session folders’ `.git` file, `commondir` and shared `config`; each read appears in the audit log. Remote URL credentials are removed on that machine before caching or returning IDs through the existing SSH scan.
+
+- RFC 0004 delivery 2 adds read-only requests to GitHub via `gh`: pull metadata and paginated
+  `/repos/:owner/:repo/pulls/:number/commits`, `/repos/:owner/:repo/commits/:sha` (parents,
+  committer time, changed files), and `/repos/:owner/:repo/compare/:sha...:base` (ancestry).
+  GitLab including self-managed via `glab`: `/projects/:id/merge_requests/:iid`, `/commits`,
+  `/projects/:id/repository/commits/:sha`, `/repository/compare`, and paginated recursive
+  `/repository/tree?ref=:sha&recursive=true` parent/commit inventories, including file modes.
+  Tree inventories avoid silently capped GitLab commit diffs. Supersede targets and ancestors
+  use the same families. Every actual request/page is a per-run audit `net` entry; identical
+  immutable requests are reused within the run. Limits are 1200 requests, 30 pages per inventory,
+  300 items, 40 predecessor depth and 250 graph nodes. Caps/failures yield named unknowns.
+  GitHub commit JSON can return file patch text; worthit ignores it and does not persist it. No separate raw-source, forge review-event or mutation requests are made. `--git no` disables all
+  these calls and gives `projects.delivery: null`. See [RFC 0004](docs/rfcs/0004-project-stats.md).
 
 - With git data on (the default for `--json`; `--git no` turns it off), GitHub searches through `gh` (one per week of history, per logged-in account, with pagination and smaller slices for full results), requests to every logged-in GitLab host through `glab`, and Gitea requests through the selected `tea` login. Absent or explicitly logged-out CLIs are skipped as a source. Auth discovery through `gh auth status` and `glab auth status` can itself contact code hosts; `glab` can request `gitlab.com/api/v4/user` even without a token. Token-less hosts are skipped as PR sources. If Automagik's open-source `usagemeter` is missing, worthit downloads its manifest and platform binary from GitHub releases, verifies the binary's SHA256, and saves it in the worthit store. Whether already installed or downloaded, the meter runs locally: `sync --no-publish --budget-secs 20` and `status`. The sync publishes nothing. Local `git log` reads checkouts found in the meter store; it does not fetch them.
 - With an AI agent, the prompt and week's numbers go through your own Claude, Codex, omp or dsh login to write the summary. With other machines selected from your saved SSH hosts (or remembered from an earlier run), worthit sends the bundled Python scanner over SSH and reads back usage plus sanitized repository IDs; nothing is installed there, but it keeps a scan cache in `~/.worthit/` there. `--hosts none` disables that SSH scan. `--git no --ai no` disables the forge/meter and AI steps; selected SSH scans still run.

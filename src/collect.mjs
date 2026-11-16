@@ -5,7 +5,8 @@ import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'; import { createRequire } from 'node:module';
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');   // loaded here, after quiet.mjs, so its 'experimental' warning stays silent
 import { C } from './draw.mjs';
-import { buildProjects } from './projects.mjs';
+import { buildProjects, projectFromKey } from './projects.mjs';
+import { collectDeliveryEvidence } from './delivery-forges.mjs';
 import { roundPercent } from './percent.mjs';
 import { readHosts, writeHosts, activeHosts, retirementBlocks, retirementStatement } from './hosts.mjs';
 import { copyFileAtomic, writeFileAtomic, cleanSavedTemps } from './atomic.mjs';
@@ -305,7 +306,7 @@ export async function git(cfg, on) {
     else if (!logins.length) audit('note', 'tea has no logged-in account: source skipped');
     else {
       await forge('Gitea', 'tea', 'gitea', (page, from) => ['api', `/repos/issues/search?type=pulls&state=closed&created=true&since=${from}&limit=50&page=${page}`],
-    x => x.pull_request && x.pull_request.merged && x.pull_request.merged_at ? [('gitea/' + (x.repository ? x.repository.full_name : x.html_url) + '#' + x.number).toLowerCase(), Date.parse(x.pull_request.merged_at), kindOf(x.title)] : null, 50);
+    x => { if (!x.pull_request?.merged || !x.pull_request.merged_at) return null; const url = new URL(x.html_url); return [(url.host + '/' + url.pathname.split('/pulls/')[0].replace(/^\//, '') + '#' + x.number).toLowerCase(), Date.parse(x.pull_request.merged_at), kindOf(x.title)]; }, 50);
     }
   }
   let glHosts = [];
@@ -353,15 +354,28 @@ export async function git(cfg, on) {
     x => x.merged_at ? [(host + '/' + ((x.references && x.references.full) || x.web_url)).toLowerCase(), Date.parse(x.merged_at), kindOf(x.title)] : null, 100);
   // every forge row of the last 12 weeks (stored + this run); the last 14 days of them join the usagemeter rows
   let rows = fresh; if (db) { try { rows = db.prepare('SELECT key, merged_ms, kind FROM pr_kind WHERE merged_ms >= ?').all(histFrom).map(r => [r.key, r.merged_ms, r.kind || 'other']); } catch { /* keep this run's rows */ } try { db.close(); } catch { /* closed */ } }
+  // Delivery 1's Gitea keys omitted the host. An overlap cannot prove which host
+  // the old row belonged to. Keep it stored, omit the potentially repeated count,
+  // and expose a PR floor instead of inventing an alias (even with one new host).
+  const qualifiedGitea = rows.filter(([k]) => !k.startsWith('gitea/') && !k.startsWith('github.com/') && /#\d+$/.test(k) && projectFromKey(k));
+  const legacyOverlap = new Set(rows.filter(([k, t]) => k.startsWith('gitea/') && qualifiedGitea.some(([q, qt]) => qt === t && q.slice(q.indexOf('/') + 1) === k.slice(6))).map(([k]) => k));
+  if (legacyOverlap.size) {
+    audit('note', `ambiguous legacy Gitea identities: ${legacyOverlap.size} overlapping hostless rows kept in pr_kind, excluded from this run's physical counts; no host inferred`);
+    answer('gitea legacy identities', false, ['prs']);
+    rows = rows.filter(([k]) => !legacyOverlap.has(k));
+    for (const k of legacyOverlap) if (prs.delete(k)) src.meter--;
+  }
   const tail = k => k.slice(k.lastIndexOf('/')), fromMeter = new Map(), kinds = new Map(); for (const [k, t] of prs) fromMeter.set(tail(k), [k, t]);
   for (const [k, t, kind] of rows) { kinds.set(k, [t, kind]); if (t < since) continue;
     const m = fromMeter.get(tail(k));      // same repo name, same number, merged within the hour: one pull request the usagemeter store holds under an older owner name
     if (m && m[0] !== k && prs.has(m[0]) && Math.abs(m[1] - t) < 3600e3) { prs.delete(m[0]); src.meter--; }
-    if (!prs.has(k)) src[k.startsWith('github.com/') ? 'github' : k.startsWith('gitea/') ? 'gitea' : 'gitlab']++; prs.set(k, t); }
+    if (!prs.has(k)) src[k.startsWith('github.com/') ? 'github' : k.includes('#') ? 'gitea' : 'gitlab']++; prs.set(k, t); }
   for (const [k, t] of prs) if (!kinds.has(k)) kinds.set(k, [t, 'other']);      // a pull request only the usagemeter store knows has no title here
   on({ pct: 1, detail: 'done' });
   const coverage = { sources: answers, prs: answers.filter(x => x.metrics.includes('prs')).every(x => x.answered), commits: !recentNoCheckout && answers.filter(x => x.metrics.includes('commits')).every(x => x.answered) };
-  return { coverage, project_prs: [...prs].map(([key, merged_ms]) => ({ key, merged_ms })), prs: [...prs.values()], kinds: [...kinds.values()], commits: [...commits.values()], repos, src, meter: meter && { version: meter.version, downloaded: meter.downloaded } };
+  const project_prs = [...prs].map(([key, merged_ms]) => ({ key, merged_ms }));
+  const delivery_evidence = await collectDeliveryEvidence(project_prs, { run: runOut, audit, enabled: cfg.git !== false });
+  return { coverage, project_prs, delivery_evidence, prs: [...prs.values()], kinds: [...kinds.values()], commits: [...commits.values()], repos, src, meter: meter && { version: meter.version, downloaded: meter.downloaded } };
 }
 
 // ---------------------------------------------------------------- shape the data the dashboard draws
@@ -485,7 +499,14 @@ export function buildData(report, g, cfg, scanInfo) {
       prs_per_day: per, usd_per_pr_per_day: per.map((k, i) => !allMachines ? null : k ? D.totals.value_per_day[i] / k : 0), sources: g.src, meter: g.meter, coverage: g.coverage };
   }
 
-  D.projects = buildProjects(report.project_activity || [], g, allMachines, w1, now);
+  let projectSettings = {};
+  try { projectSettings = JSON.parse(fs.readFileSync(path.join(HOME, 'settings.json'), 'utf8')).projects || {}; }
+  catch (e) { if (e.code !== 'ENOENT') throw new Error('cannot read local project settings: ' + e.message); }
+  if (projectSettings.first_pass_exclude !== undefined && (!Array.isArray(projectSettings.first_pass_exclude) || projectSettings.first_pass_exclude.some(x => typeof x !== 'string' || /[#!]/.test(x) || projectFromKey(x) !== x))) throw new Error('projects.first_pass_exclude must be an array of canonical repository ids');
+  D.projects = buildProjects(report.project_activity || [], g, allMachines, w1, now, { exclude: projectSettings.first_pass_exclude || [], scanStart: Date.parse(report.history_since) });
+  // The one per-PR floor policy also excludes usage-only floors at either endpoint.
+  const priorProjectUsage = (report.project_activity || []).filter(a => Date.parse(a.hour + ':00:00Z') < w1);
+  if (D.git && (D.projects.floor || buildProjects(priorProjectUsage, null, true, w0, w1).floor)) D.git.usd_per_pr_change_pct = null;
 
   // player history: one small row per day, kept forever; XP, level, streak and bests are computed from it
   const hf = path.join(HOME, 'history.json'); let hist = { days: {} }; try { hist = JSON.parse(fs.readFileSync(hf, 'utf8')); } catch { /* first run */ }

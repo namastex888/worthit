@@ -50,7 +50,7 @@ const auditedCommands = (mode, calls) => {
     if (command === 'glab' && args.join(' ') === 'auth status') assert.deepEqual(authEnv,
       { GLAB_CHECK_UPDATE: 'false', GLAB_SHOW_WHATS_NEW: 'false' }, `${mode}: discovery disables update requests and notices`);
     // gh's audit displays the endpoint, search and pagination; output-format flags are omitted.
-    const shown = command === 'gh' && args[0] === 'api' ? ['api', 'search/issues', args.find(x => x.startsWith('q=')), '--paginate'] : args;
+    const shown = command === 'gh' && args[0] === 'api' && args.includes('search/issues') ? ['api', 'search/issues', args.find(x => x.startsWith('q=')), '--paginate'] : args;
     const text = [command, ...shown].join(' '), index = entries.findIndex(entry => entry.text === text);
     assert.ok(index >= 0, `${mode}: audit records ${text}`);
     entries.splice(index, 1); // Repeated calls need separate audit entries.
@@ -58,7 +58,9 @@ const auditedCommands = (mode, calls) => {
 };
 const collect = mode => {
   fs.writeFileSync(env.FIXTURE_MODE, mode); const start = trace().length, data = run([path.join(folder, 'collect.mjs')]);
-  auditedCommands(mode, trace().slice(start)); return data;
+  auditedCommands(mode, trace().slice(start));
+  if (data.projects.delivery.coverage.forges.length) assert.ok(data.projects.delivery.coverage.forges.every(f => !f.metadata.complete), 'legacy count fixtures retain explicit incomplete delivery metadata');
+  return data;
 };
 const coverage = (data, prs, commits, failed, name) => {
   assert.equal(data.git.coverage.prs, prs, `${name}: PR coverage`); assert.equal(data.git.coverage.commits, commits, `${name}: commit coverage`);
@@ -125,7 +127,7 @@ try {
     check(mode, data);
     assert.equal(data.git.sources.gitlab, e.keys.length, `${mode}: literal GitLab merge request count`);
     assert.ok(data.git.coverage.sources.some(x => x.source === 'glab:' + e.host && x.answered === !e.portRejected), `${mode}: host answer matches glab validation`);
-    const calls = trace().slice(start).filter(x => x.command === 'glab' && x.args[0] === 'api');
+    const calls = trace().slice(start).filter(x => x.command === 'glab' && x.args[0] === 'api' && x.args.at(-1).startsWith('merge_requests?'));
     assert.deepEqual(calls.map(x => x.args), [['api', '--hostname', e.host, 'merge_requests?scope=created_by_me&state=merged&updated_after=2026-08-22T12:00:00.000Z&per_page=100&page=1']], `${mode}: exact configured key and relative REST request passed to glab`);
     const db = new DatabaseSync(path.join(env.WORTHIT_HOME, 'worthit.db'), { readOnly: true });
     assert.deepEqual(db.prepare('SELECT key FROM pr_kind ORDER BY key').all().map(x => x.key), e.keys, `${mode}: literal MR identity persisted`); db.close();
