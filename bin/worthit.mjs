@@ -27,6 +27,7 @@ import { scan, analyse, git, buildData, audit, writeAudit, has, tilde, ROOT, HOM
 import { activeHosts, readHosts, hostsCommand } from '../src/hosts.mjs';
 import { query, run as runQuery, QUERY_COMMANDS } from '../src/query.mjs';
 import { deliveryText, cardSpec, customSpec, renderCardImage, barCells } from '../src/card.mjs';
+import { screenshotArgs } from '../src/screenshot.mjs';
 import { allowanceText, openWeekly, weeklyBaseline, prepareWeekly, saveWeekly } from '../src/weekly.mjs';
 import { startPet, petLines, petSummary, PET_W } from '../src/pet.mjs';
 import { demoHosts, demoScan, demoGit, demoPricing, demoData, demoSpec, demoAnswer, demoPet } from '../src/demo.mjs';
@@ -270,11 +271,14 @@ function writeFiles(spec) {
     '## How it is measured', '', 'Every request in your local logs is priced at the provider\'s API list rate (input, cached input, cache writes, output with thinking). A plan\'s number is the priced usage inside one stretch of its weekly meter, scaled to 100% of the week. "Floor" means use of the same account on machines not scanned is missing, so the real value can only be higher. Unused allowance counts as waste only when the week closed without hitting the cap.', '',
     '```', ...dash.map(strip), '```', ''].join('\n');
   const f1 = `${STAMP}-worthit.md`; fs.writeFileSync(f1, md); audit('write', './' + f1); out.push(f1);
-  const chrome = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(c => fs.existsSync(c));
-  if (chrome) { const all = [...head, ...dash], hp = path.join(os.tmpdir(), `worthit-${process.pid}.html`), f2 = `${STAMP}-worthit.png`; fs.writeFileSync(hp, ansiHtml(all));
-    audit('run', 'headless Chrome screenshot of the dashboard (local file, no network)');
-    spawnSync(chrome, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=2', `--window-size=${Math.round(W * 9.05 + 64)},${Math.round(all.length * 18.6 + 60)}`, '--screenshot=' + path.resolve(f2), 'file://' + hp], { stdio: 'ignore', timeout: 60000 });
-    fs.rmSync(hp, { force: true }); if (fs.existsSync(f2)) { audit('write', './' + f2); out.push(f2); } }
+  const chrome = process.env.WORTHIT_TEST_CHROME || ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(c => fs.existsSync(c));
+  if (chrome) { const all = [...head, ...dash], scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'worthit-dashboard-')), hp = path.join(scratch, 'dashboard.html'), f2 = `${STAMP}-worthit.png`;
+    try {
+      fs.writeFileSync(hp, ansiHtml(all));
+      audit('run', 'headless Chrome screenshot of the dashboard (local file, no network)');
+      spawnSync(chrome, [...screenshotArgs(path.join(scratch, 'profile')), '--force-device-scale-factor=2', `--window-size=${Math.round(W * 9.05 + 64)},${Math.round(all.length * 18.6 + 60)}`, '--screenshot=' + path.resolve(f2), 'file://' + hp], { stdio: 'ignore', timeout: 60000 });
+    } finally { fs.rmSync(scratch, { recursive: true, force: true }); }
+    if (fs.existsSync(f2)) { audit('write', './' + f2); out.push(f2); } }
   const f3 = `${STAMP}-worthit-audit.log`; writeAudit('./' + f3, VERSION); out.push(f3);
   return out;
 }

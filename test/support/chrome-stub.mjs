@@ -27,10 +27,20 @@ export function installChromeStub(bin) {
   fs.writeFileSync(executable, `#!${process.execPath}\nimport { chromeMain } from ${JSON.stringify(import.meta.url)}; chromeMain();\n`, { mode: 0o755 });
   return executable;
 }
+export function recordChromeCall(args) {
+  const html = args.find(a => a.startsWith('file://')).slice(7);
+  const profile = args.find(a => a.startsWith('--user-data-dir='))?.slice(16);
+  if (profile) { fs.mkdirSync(profile, { recursive: true }); fs.writeFileSync(path.join(profile, 'sentinel'), 'synthetic profile'); }
+  fs.appendFileSync(process.env.FIXTURE_CHROME_TRACE, JSON.stringify({ command: 'headless-chrome', args,
+    png: args.find(a => a.startsWith('--screenshot='))?.slice(13), html, source: fs.readFileSync(html, 'utf8'),
+    profile, scratch: profile ? fs.realpathSync(path.dirname(profile)) : null,
+    scratchMode: profile ? fs.statSync(path.dirname(profile)).mode & 0o777 : null,
+    mode: process.env.FIXTURE_CHROME_MODE }) + '\n');
+}
 export function chromeMain() {
   const args = process.argv.slice(2), png = args.find(a => a.startsWith('--screenshot='))?.slice(13);
   const mode = process.env.FIXTURE_CHROME_MODE || 'exit0';
-  fs.appendFileSync(process.env.FIXTURE_CHROME_TRACE, JSON.stringify({ command: 'headless-chrome', args, png }) + '\n');
+  recordChromeCall(args);
   if (!['none', 'no-write-zero'].includes(mode)) {
     let bytes = fixturePng(mode === 'wrong-size' ? 1 : 1600, mode === 'wrong-size' ? 1 : 900);
     if (mode === 'invalid') bytes = Buffer.from('not a PNG');

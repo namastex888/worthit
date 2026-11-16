@@ -1,6 +1,7 @@
 // RFC 0002: retirement changes selection, never the saved scan's contents.
 import fs from 'node:fs';
 import path from 'node:path';
+import { writeFileAtomic, cleanSavedTemps } from './atomic.mjs';
 
 export function readHosts(home) {
   const file = path.join(home, 'hosts.json');
@@ -21,8 +22,7 @@ export function readHosts(home) {
 }
 export function writeHosts(home, state) {
   fs.mkdirSync(home, { recursive: true });
-  const file = path.join(home, 'hosts.json'), tmp = file + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(state)); fs.renameSync(tmp, file);
+  writeFileAtomic(path.join(home, 'hosts.json'), JSON.stringify(state));
 }
 export const activeHosts = (home, aliases) => {
   const retired = new Set(readHosts(home).retired.map(r => r.machine));
@@ -30,6 +30,7 @@ export const activeHosts = (home, aliases) => {
 };
 const validAlias = alias => typeof alias === 'string' && alias !== 'local' && alias !== '.' && alias !== '..' && !/[\/\\\0]/.test(alias) && alias.length > 0;
 export function hostsCommand(home, known, argv) {
+  cleanSavedTemps(home);
   const state = readHosts(home), [action, machine, ...options] = argv;
   const saved = path.join(home, 'run-keep'), frozen = path.join(saved, 'retired');
   if (action == null) {

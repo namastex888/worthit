@@ -7,6 +7,7 @@ const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');   // loa
 import { C } from './draw.mjs';
 import { roundPercent } from './percent.mjs';
 import { readHosts, writeHosts, activeHosts, retirementBlocks, retirementStatement } from './hosts.mjs';
+import { copyFileAtomic, writeFileAtomic, cleanSavedTemps } from './atomic.mjs';
 
 export const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 export const HOME = process.env.WORTHIT_HOME || path.join(os.homedir(), '.worthit');
@@ -73,6 +74,7 @@ function savedLeftOut(keepDir, selected, retired, freshHosts) {
   return leftOut;
 }
 export async function scan(cfg, on) {
+  cleanSavedTemps(HOME);
   const startedAt = Date.now(), retirement = readHosts(HOME).retired;
   cfg = { ...cfg, hosts: activeHosts(HOME, cfg.hosts || []) };
   for (const r of retirement) {
@@ -86,7 +88,10 @@ export async function scan(cfg, on) {
   fs.mkdirSync(runDir, { recursive: true });
   const script = path.join(ROOT, 'core', 'extract_usage.py'), counts = { claude: 0, codex: 0, antigravity: 0 };
   const cache = path.join(HOME, 'run-counts.json'), keepDir = path.join(HOME, 'run-keep');
-  if (!cfg.fresh && !retirement.length && process.env.WORTHIT_REUSE && fs.existsSync(path.join(keepDir, 'local.json'))) { fs.cpSync(keepDir, runDir, { recursive: true, filter: f => f !== path.join(keepDir, 'retired') }); audit('note', 'WORTHIT_REUSE: using the previous scan'); return { runDir, counts: JSON.parse(fs.readFileSync(cache, 'utf8')), hosts: [], left_out: savedLeftOut(keepDir, cfg.hosts, retirement, new Set()), started_at: 0 }; }
+  if (!cfg.fresh && !retirement.length && process.env.WORTHIT_REUSE && fs.existsSync(path.join(keepDir, 'local.json'))) {
+    for (const f of fs.readdirSync(keepDir, { withFileTypes: true })) if (f.isFile() && f.name.endsWith('.json')) fs.copyFileSync(path.join(keepDir, f.name), path.join(runDir, f.name));
+    audit('note', 'WORTHIT_REUSE: using the previous scan'); return { runDir, counts: JSON.parse(fs.readFileSync(cache, 'utf8')), hosts: [], left_out: savedLeftOut(keepDir, cfg.hosts, retirement, new Set()), started_at: 0 };
+  }
   let cached = 0; const names = cfg.hosts || [], pcts = { local: 0 }; names.forEach(a => { pcts[a] = 0; });
   const emit = detail => { const v = Object.values(pcts); on({ pct: v.reduce((a, b) => a + b, 0) / v.length, detail, counts }); };
   audit('run', `${py} core/extract_usage.py ${cfg.days}   (reads local session logs, read-only)`);
@@ -137,7 +142,11 @@ export async function scan(cfg, on) {
   const leftOut = savedLeftOut(keepDir, names, retirement, freshHosts);
   if (leftOut.length) audit('note', `saved machines with usage left out of this run: ${leftOut.join(', ')}`);
   fs.writeFileSync(cache, JSON.stringify(counts));
-  fs.cpSync(runDir, keepDir, { recursive: true, force: true, filter: f => !retirement.some(r => path.basename(f) === r.machine + '.json') });
+  fs.mkdirSync(keepDir, { recursive: true });
+  for (const f of fs.readdirSync(runDir, { withFileTypes: true })) {
+    if (!f.isFile() || !f.name.endsWith('.json') || retirement.some(r => f.name === r.machine + '.json')) continue;
+    copyFileAtomic(path.join(runDir, f.name), path.join(keepDir, f.name));
+  }
   return { runDir, counts, hosts, cached, left_out: leftOut, retained, retired, retirement, retirement_conflicts: conflicts, started_at: startedAt };
 }
 
@@ -485,7 +494,7 @@ export function buildData(report, g, cfg, scanInfo) {
   for (const [k, old] of Object.entries(hist.days)) if (!agg[k]) agg[k] = { out: old.out || 0, usd: old.usd || 0, prs: 0, commits: 0 };
   const oldValue = (k, f) => (hist.days[k] || {})[f] || 0;
   for (const [k, o] of Object.entries(agg)) hist.days[k] = { out: Math.max(Math.round(o.out), oldValue(k, 'out')), usd: Math.max(Math.round(o.usd), oldValue(k, 'usd')), prs: Math.max(o.prs, gitCovered(k, 'prs') ? 0 : oldValue(k, 'prs')), commits: Math.max(o.commits, gitCovered(k, 'commits') ? 0 : oldValue(k, 'commits')) };
-  fs.mkdirSync(HOME, { recursive: true }); fs.writeFileSync(hf, JSON.stringify(hist)); audit('write', tilde(hf) + `  (${Object.keys(hist.days).length} daily rows)`);
+  fs.mkdirSync(HOME, { recursive: true }); writeFileAtomic(hf, JSON.stringify(hist)); audit('write', tilde(hf) + `  (${Object.keys(hist.days).length} daily rows)`);
   // delivery: what the merged pull requests were (title prefix), ranked, and how features and their cost moved day by day, week by week, month by month
   if (g && g.kinds && g.kinds.length) {
     const K = g.kinds, count = rs => { const c = { prs: rs.length }; for (const [, k] of rs) c[k] = (c[k] || 0) + 1; return c; }, between = (a, b) => K.filter(([t]) => t >= a && t < b);
