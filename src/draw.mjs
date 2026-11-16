@@ -82,12 +82,12 @@ export const blocks = {
   },
 
   PlanRanking(D) {
-    if (!D.plans.length) return box('WHICH PLAN GAVE MORE', [m('No finished weekly limit in your logs yet.'), d('A plan is ranked once its weekly meter runs to the cap,'), d('or closes, inside the scanned days.')], 56, C.ink, '$ per full weekly limit', 9);
-    const ps = [...D.plans].sort((a, b) => b.usd_per_full_week - a.usd_per_full_week), mx = ps[0].usd_per_full_week;
-    const l = ps.map((p, i) => bold(w(String(i + 1))) + ' ' + pad(fg(p.color, p.plan), 16) + lpad(bold(w(usd(p.usd_per_full_week))), 7) + ' ' + bar(p.usd_per_full_week, mx, 13, dark(p.color), p.color, false) + lpad(w(p.times_plan_price + '×'), 4) + ' ' + d(p.proof));
+    const ps = [...D.plans].sort((a, b) => b.usd_per_full_week - a.usd_per_full_week), mx = ps[0]?.usd_per_full_week;
+    const l = ps.length ? ps.map((p, i) => bold(w(String(i + 1))) + ' ' + pad(fg(p.color, p.plan), 16) + lpad(bold(w(usd(p.usd_per_full_week))), 7) + ' ' + bar(p.usd_per_full_week, mx, 13, dark(p.color), p.color, false) + lpad(w(p.times_plan_price + '×'), 4) + ' ' + d(p.proof))
+      : [m('No finished weekly limit in your logs yet.'), d('A plan is ranked once its weekly meter runs to the cap,'), d('or closes, inside the scanned days.')];
     l.push(...machineNotes(D).flatMap(t => wrap(t, 50).map((line, i) => (i ? '  ' : fg(C.gold, '! ')) + m(line))));
-    while (l.length < 7) l.push('');
-    l.push(d('measured  meter + every machine on the account'), d('floor     use elsewhere not counted: value ≥ shown'));
+    while (l.length < (ps.length ? 7 : 9)) l.push('');
+    if (ps.length) l.push(d('measured  meter + every machine on the account'), d('floor     use elsewhere not counted: value ≥ shown'));
     return box('WHICH PLAN GAVE MORE', l, 56, C.ink, '$ per full weekly limit');
   },
 
@@ -116,7 +116,7 @@ export const blocks = {
     const p = D.plans.find(x => (x.history || []).length > 1) || D.plans[0], cv = p.history, mx = Math.max(...cv), l = [];
     for (let r = 4; r >= 0; r--) l.push(d(r === 4 ? lpad(usd(mx), 6) + ' ' : r === 0 ? '    $0 ' : '       ') + cv.map((v, i) => fg(i === cv.length - 1 ? p.color : mix(C.track, p.color, .6), ' ▁▂▃▄▅▆▇█'[Math.round(Math.max(0, Math.min(1, v / mx * 5 - r)) * 8)].repeat(3))).join(' '));
     l.push('');
-    for (const q of D.plans) l.push(pad(fg(q.color, q.plan.replace(' AI', '')), 13) + bold(w(usd(q.usd_per_full_week))) + '  ' + (q.proof !== 'measured' ? d('floor: not compared') : q.change_vs_last_week_pct != null ? delta(q.change_vs_last_week_pct) + d(' vs last') : d('first reading')));
+    for (const q of D.plans) l.push(pad(fg(q.color, q.plan.replace(' AI', '')), 13) + bold(w(usd(q.usd_per_full_week))) + '  ' + (q.proof !== 'measured' ? d('floor: not compared') : q.change_vs_last_week_pct != null ? (q.change_vs_last_week_pct === 0 ? d('0%') : delta(q.change_vs_last_week_pct)) + d(' vs last') : d('no baseline')));
     return box('DID THE LIMIT MOVE', l, 39, C.cx, cv.length + ' weeks');
   },
 

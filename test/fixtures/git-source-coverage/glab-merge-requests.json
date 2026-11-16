@@ -1,0 +1,38 @@
+{
+  "10.0.0.5": [
+    {
+      "merged_at": "2026-11-10T15:00:00Z",
+      "references": {
+        "full": "example/host!101"
+      },
+      "title": "feat: synthetic host delivery"
+    }
+  ],
+  "gitlab.k8s": [
+    {
+      "merged_at": "2026-11-10T15:00:00Z",
+      "references": {
+        "full": "example/host!103"
+      },
+      "title": "feat: synthetic host delivery"
+    }
+  ],
+  "gitlab": [
+    {
+      "merged_at": "2026-11-10T15:00:00Z",
+      "references": {
+        "full": "example/host!104"
+      },
+      "title": "feat: synthetic host delivery"
+    }
+  ],
+  "ERROR": [
+    {
+      "merged_at": "2026-11-10T15:00:00Z",
+      "references": {
+        "full": "example/host!106"
+      },
+      "title": "feat: synthetic badge-named host delivery"
+    }
+  ]
+}

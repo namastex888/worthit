@@ -1,0 +1,7 @@
+[
+  { "name": "tiny drop", "from": 1000, "to": 997, "raw_pct": -0.3, "pct": 0, "moved": false },
+  { "name": "positive half", "from": 200, "to": 211, "raw_pct": 5.5, "pct": 6, "moved": true },
+  { "name": "negative half", "from": 200, "to": 189, "raw_pct": -5.5, "pct": -6, "moved": true },
+  { "name": "positive threshold", "from": 200, "to": 210, "raw_pct": 5, "pct": 5, "moved": false },
+  { "name": "negative threshold", "from": 200, "to": 190, "raw_pct": -5, "pct": -5, "moved": false }
+]
