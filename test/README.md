@@ -75,7 +75,8 @@ Leaving box-b out yields a current $18 while the store preserves the earlier $54
 The left-out case also selects box-c while the previously saved box-b is left out: two
 machines answer, current usage is $36, box-b is named as left out, and the plan stays a
 floor with no allowance comparison. A fresh-store box-a + box-c control measures $6 per
-full Claude week with an eligible comparison. This distinguishes the left-out rule from
+full Claude week but has no measured observation saved seven days earlier, so its
+allowance change is null too. This distinguishes the left-out rule from
 the separate rule for a run with no remote answers. Both runs use their own literal expectations.
 Both stored weeks are checked through the real CLI's SQL command.
 
@@ -85,6 +86,21 @@ is three current PRs (two features, one fix) and two previous PRs. The case adds
 inactive second account after the first account is already cached, reruns for
 deduplication, selects the second account alone in a fresh store, and reverses the
 active account order in another fresh store.
+
+`ledger-week-proof` runs the actual CLI twice a week apart, withholding future source
+logs for the first run. A missing box-b records a $3 floor; a fresh complete $9 run
+must show no change in JSON, the TUI, allowance card HTML or actual `worthit share`
+text. Two complete $9 runs show 0%. A literal stored $6 observation produces 50%
+while the independent ledger pool stays $9, proving the denominator is the stored
+value. Exact-day controls reject measured rows six or eight days back, the wrong
+provider/plan, zero USD, absent/null proof and a same-day overwritten floor. A local
+New York date crossing UTC midnight pins the run-day key; spring-forward and fall-back
+controls require seven local calendar days rather than 168 elapsed hours. A first git
+run creating its tables without `plan_value` must not log a missing-baseline error. Retained prior-week units
+still override stored measured proof. Historical ledger rows remain unmeasured.
+The common source cases and saved-days fixture expect null for ledger-only history:
+today's complete machine answers cannot prove an earlier observation. Saved-days then
+seeds a measured $10 baseline and checks a 100% change, including its intact seven-day window.
 
 Each case keeps literal expectations in its own `expected-data.json`. Every root key must
 be exercised, including the adopted saved-days expectations; unused or misspelled keys fail.

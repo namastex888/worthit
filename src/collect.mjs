@@ -370,6 +370,19 @@ export function buildData(report, g, cfg, scanInfo) {
   const ledgerProofAt = end => retirementBlocks(retired, end).length ||
     retained.some(x => x.units.some(u => retainedUnitOverlapsWeek(u, end))) ? { proof: 'floor' } : {};
   let ledger = []; try { ledger = fs.readFileSync(path.join(HOME, 'weeks', 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch { /* first run */ }
+  // A daily observation certifies only its own stored value, never a ledger pool.
+  // Read before this run replaces today's row; do not substitute a nearby day.
+  const previousDay = new Date(now); previousDay.setDate(previousDay.getDate() - 7);
+  let previousValues = [];
+  if (fs.existsSync(path.join(HOME, 'worthit.db'))) {
+    let db;
+    try {
+      db = new DatabaseSync(path.join(HOME, 'worthit.db'), { readOnly: true });
+      if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'plan_value'").get())
+        previousValues = db.prepare('SELECT provider, plan, usd_per_full_week, proof FROM plan_value WHERE day = ?').all(dayKey(previousDay));
+    } catch (e) { audit('note', 'previous plan value unavailable: ' + e.message); }
+    finally { db?.close(); }
+  }
   const day0 = new Date(w1).toISOString().slice(0, 10), events = loadEvents().filter(e => e.date_utc >= day0).map(e => ({ date: e.date_utc, provider: e.provider, type: e.type, title: e.title, confidence: e.confidence, source: e.source_url }));
   const plans = [];
   for (const key of ['claude', 'google', 'codex']) {
@@ -382,12 +395,15 @@ export function buildData(report, g, cfg, scanInfo) {
     const byWeek = {}; for (const k in acc) if (+k >= 1) byWeek[String(99 - k).padStart(2, '0')] = acc[k].pts >= 15 ? Math.round(acc[k].usd / (acc[k].pts / 100)) : acc[k].max;
     const past = Object.keys(byWeek).sort().slice(-5).map(k => byWeek[k]), pl = (report.pooled || {})[key], v = pl ? pl.usd_per_full_week : w.usd_per_full_week, resets = events.filter(e => e.provider === key && e.type === 'reset' && e.confidence === 'high').length, from = Math.round(w.meter_start_pct), to = Math.round(w.meter_end_pct), per = report.prices.plan_usd_per_week[key];
     const proofAt = end => key === 'claude' && measuredAt(end) ? 'measured' : 'floor';
+    const previous = previousValues.find(p => p.provider === key && p.plan === PLAN[key].plan);
+    const change = proofAt(now) === 'measured' && previous?.proof === 'measured' && previous.usd_per_full_week > 0 && ledgerProofAt(w1).proof !== 'floor'
+      ? pctChange(v, previous.usd_per_full_week) : null;
     const retirementNote = allMachines && key === 'claude' ? retirementStatement(retired) : '';
     plans.push({ key, ...PLAN[key], usd_per_full_week: v, times_plan_price: Math.round(v / per), proof: proofAt(now), ...(retirementNote ? { retirement_note: retirementNote } : {}), plan_usd_per_week: Math.round(per), meter_from: from, meter_to: to,
       meter: pl ? `${pl.stretches} stretches · ${pl.meter_points} points` : key === 'google' ? `no meter · cap after ${w.hours} h` : `meter ${from}% → ${to}% in ${w.hours} h`, priced_usd: pl ? pl.api_usd : w.measured.api_usd, fraction_of_week: pl ? +(pl.meter_points / 100).toFixed(2) : +((to - from) / 100).toFixed(2),
       other_machines_usd: pl && pl.other_machines_usd >= 1 ? Math.round(pl.other_machines_usd) : 0, usd_per_full_week_all_machines: pl && pl.other_machines_usd >= 1 ? pl.usd_per_full_week_all_machines : null,
       stretches: pl ? pl.stretches : 1, range_usd: report.this_week[key + '_range'] || null, resets_this_week: resets,
-      tokens: pl ? `${ft(pl.output_tokens)} out ${ft(pl.cached_input_tokens)} cached` : `${ft(w.measured.output_tokens)} out ${ft(w.measured.cached_input_tokens)} cached`, models: models(w.measured.model_mix_by_usd), history: [...past, v], weeks: [...Object.keys(byWeek).sort().slice(-11).map(k => ({ weeks_ago: 99 - +k, to: new Date(now - (99 - +k) * 7 * DAY).toISOString().slice(0, 10), usd: byWeek[k], ...ledgerProofAt(now - (99 - +k) * 7 * DAY) })), { weeks_ago: 0, to: new Date(now).toISOString().slice(0, 10), usd: v, proof: proofAt(now) }], change_vs_last_week_pct: byWeek['98'] != null && proofAt(now) === 'measured' && proofAt(w1) === 'measured' ? pctChange(v, byWeek['98']) : null });
+      tokens: pl ? `${ft(pl.output_tokens)} out ${ft(pl.cached_input_tokens)} cached` : `${ft(w.measured.output_tokens)} out ${ft(w.measured.cached_input_tokens)} cached`, models: models(w.measured.model_mix_by_usd), history: [...past, v], weeks: [...Object.keys(byWeek).sort().slice(-11).map(k => ({ weeks_ago: 99 - +k, to: new Date(now - (99 - +k) * 7 * DAY).toISOString().slice(0, 10), usd: byWeek[k], ...ledgerProofAt(now - (99 - +k) * 7 * DAY) })), { weeks_ago: 0, to: new Date(now).toISOString().slice(0, 10), usd: v, proof: proofAt(now) }], change_vs_last_week_pct: change });
   }
 
   // waste: account-weeks that closed in the last 7 days (and ones still open, shown as at risk, never as waste)

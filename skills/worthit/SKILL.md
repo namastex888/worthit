@@ -149,8 +149,15 @@ week start >= every `retired_at`. A pre-retirement week stays floor. Machine not
 the machine and the first possible measured week end (retired_at + seven days).
 `plans[].weeks[].proof`: week 0 gets its actual proof; a ledger week gets `floor`
 when retirement or a retained unit blocks it; otherwise the key is absent.
-Ledger weeks carry no machine check. Ordinary comparisons retain their existing
-retirement/retained eligibility checks; this field does not certify ledger coverage. Weekly baseline proof is likewise
+Ledger weeks carry no machine check: keep their values, but never label them measured
+or use them for a change. `plans[].change_vs_last_week_pct` compares this run's measured
+value with the measured `plan_value` observation recorded exactly seven days earlier:
+the row exactly seven local calendar days earlier (also across DST), with the same provider and plan and positive
+stored USD. That exact stored USD is the denominator, even if the ledger pool differs.
+Otherwise the change is null: no nearby-date or floor fallback. Same-day runs replace
+that daily observation; it does not record an exact run time or rolling period.
+Known retirement/retained floors at either endpoint still suppress the change.
+Weekly baseline proof is likewise
 checked against current retirements without rewriting saved checkpoints or searching
 past a floor. `worthit hosts unretire <machine>` restores the full frozen scan, removes
 retirement and reselects the alias. Its next answer merges normally. There is no
@@ -222,7 +229,8 @@ Query it with `worthit sql "SELECT generated_at, week_to, safe FROM weekly ORDER
 - **`usd_per_full_week`** pools every clean, finished meter stretch of the week: priced dollars divided by meter points consumed. `times_plan_price` divides it by the plan's weekly price ($200/month ≈ $46/week).
 - **Proof:** `measured` is read from the plan's own meter with every selected machine answering; `floor` means usage elsewhere may be missing, so the true value is at least this. Say "at least" for a floor and do not compare a floor week to week.
 - **One account on several machines** draws the same meter line on each; worthit joins those lines into one stretch. Use on machines that keep no meter log cannot be tied to an account: it is left out of `usd_per_full_week` and counted only in `usd_per_full_week_all_machines`.
-- **Week over week** compares 7-day blocks counted back from now, each pooled the same way.
+- **Week over week:** use `change_vs_last_week_pct`, comparing measured values recorded seven local calendar days apart.
+- Ledger weeks in `plans[].weeks` must not be used to work out a change.
 - **Months:** "times plan price" is against one subscription. A user with several accounts on a plan should divide by the number of accounts.
 - **Resets** are listed in `events` and never assumed used. Usage counts in the period it happened.
 - **omp and dsh** come from the Automagik usagemeter store. omp's own reported cost is used; dsh is priced at the rates those costs imply. Their history only goes back as far as that store (about 30 days).
