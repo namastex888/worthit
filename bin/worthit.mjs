@@ -513,19 +513,21 @@ async function makeShare(D, ask, { agent = null, clipOk = false, files = true, s
         if (bad.length) fallback(`the agent's post used numbers that are not in your data (${bad.slice(0, 3).join(', ')})`); else { key = 'custom'; spec = customSpec(D, ask, { ...j, facts }); text = j.text.trim().slice(0, 280); by = agent.label; } } }
   }
   const card = cardLines(spec);
-  const url = 'https://x.com/intent/post?text=' + encodeURIComponent(text); let image = null, clip = false;
+  const url = 'https://x.com/intent/post?text=' + encodeURIComponent(text); let image = null, clip = false, imageError = null, imageNote = null;
   if (files) { say('drawing the card image');
     const slug = key === 'custom' ? (ask.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 28) || 'custom') : key;
-    image = await renderCardImage(spec, `${STAMP}-worthit-share-${slug}.png`); }
+    const rendered = await renderCardImage(spec, `${STAMP}-worthit-share-${slug}.png`);
+    image = rendered.image; imageError = rendered.error; imageNote = rendered.note;
+    if (imageError || imageNote) warnings.push(imageError || imageNote); }
   if (image && clipOk) {     // best effort: put the image on the clipboard so it can be pasted into the post
     if (process.platform === 'darwin') clip = spawnSync('osascript', ['-e', `set the clipboard to (read (POSIX file "${image}") as «class PNGf»)`], { stdio: 'ignore' }).status === 0;
     else if (has('wl-copy')) clip = spawnSync('sh', ['-c', `wl-copy --type image/png < "${image}"`], { stdio: 'ignore' }).status === 0;
     else if (has('xclip')) clip = spawnSync('xclip', ['-selection', 'clipboard', '-t', 'image/png', '-i', image], { stdio: 'ignore' }).status === 0; }
-  return { key, by, text, card, url, image, clip, warnings };
+  return { key, by, text, card, url, image, clip, warnings, imageError, imageNote };
 }
 // what a share looks like on screen, below the card or the blocks
 const shareText = r => [...r.warnings.map(x => fg(C.gold, ' ! ') + m(x)), '', ' ' + bold(w('Suggested post')) + d(`  ·  ${r.text.length} characters  ·  ${r.by}`), '', ...r.text.split('\n').map(l => '   ' + w(l)), '',
-  ' ' + d('image  ') + (r.image ? m(r.image) + (r.clip ? fg(C.cx, '  ✓ copied: paste it into the post') : d('  (attach it to the post)')) : d('not written (Chrome not found)'))];
+  ' ' + d('image  ') + (r.image ? m(r.image) + (r.clip ? fg(C.cx, '  ✓ copied: paste it into the post') : d('  (attach it to the post)')) : d(`not written (${r.imageError || 'files disabled'})`))];
 const sharePanel = (r, tty) => [...r.card, ...shareText(r), ...(tty ? [] : [' ' + d('link   ') + m(r.url)]), '',
   ' ' + d('other cards: ask to share ') + m(Object.keys(SHARE_TOPICS).filter(k => k !== r.key).join(' · ')) + d(', or say what you want to brag about')];
 async function share() {
@@ -559,7 +561,8 @@ if (WEEKLY) {
     const checkpoint = prepareWeekly(D, db ? weeklyBaseline(db, D) : null);
     checkpoint.audit_log = NO_FILES ? null : path.resolve(`${STAMP}-worthit-audit.log`);
     const result = await makeShare(D, 'allowance', { agent: null, clipOk: false, files: !NO_FILES });
-    if (!NO_FILES && !result.image) throw new Error('allowance PNG could not be rendered; install Chrome or Chromium, or use --no-files');
+    if (!NO_FILES && !result.image) throw new Error(`allowance PNG could not be rendered: ${result.imageError}; use --no-files to skip the image`);
+    if (result.imageNote) console.error('worthit weekly: ' + result.imageNote);
     checkpoint.text = result.text; checkpoint.image = result.image;
     if (result.image) {
       audit('run', 'headless Chrome screenshot of the allowance card (local file, no network)');

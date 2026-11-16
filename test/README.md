@@ -148,9 +148,25 @@ success and failure, including tilde paths, and checks the README/header exclusi
 An INSERT trigger fails after the first successful audit write: no checkpoint is
 saved, and the retained audit explains the attempted checkpoint and repeated audit
 write attempts. Removing the merge command's audit entry fails this guard.
-Only headless Chrome is replaced by a deterministic one-pixel PNG writer; no browser
+Only headless Chrome is replaced by a deterministic 1600x900 PNG executable; no browser
 is launched. `--no-files` keeps each output folder empty, reports null paths and
 still stores its checkpoint; demo also reports a null audit path without store writes.
+
+`card-render` exercises share and weekly through the real CLI/render boundary.
+The test-only `WORTHIT_TEST_CHROME` executable override selects a synthetic PNG
+writer in the isolated PATH; normal card discovery keeps its fixed Chrome paths.
+Valid 1600x900 images survive exit 2 or a teardown signal with a named diagnostic.
+Missing, stale, invalid, truncated and wrong-size outputs fail, even beside an
+existing destination. The fixture checks absolute image identity, private profile
+and network flags, scratch cleanup, and weekly checkpoint/unsafe exit semantics.
+Ordinary cases use the executable override for both CLI commands, including
+external signals, stale scratch files and exact ENOENT/EACCES diagnostics.
+A dedicated test-only preload injects EMFILE without a close event and fires the
+real 60-second timeout callback as soon as the synthetic PNG is ready. Both CLIs
+must settle, clear the deadline and name the timeout distinctly from an external
+signal, without a real 60-second wait or production test configuration. The
+weekly audit fixture checks tilde privacy and canonical file identity together.
+No browser, real store or network is used.
 
 `git-source-coverage` seeds literal daily PR and commit counts in both stores and
 uses synthetic meter, local git, gh (two accounts), glab (two hosts), and tea
