@@ -161,7 +161,8 @@ else {const r=spawnSync(${JSON.stringify(python)},args,{stdio:'inherit'});proces
   const cli = (dir, hosts = 'box-a,box-b') => JSON.parse(run(process.execPath, ['bin/worthit.mjs', '--json', '--git', 'no', '--hosts', hosts], { env: { ...env, FIXTURE_SCAN_DIR: dir } }));
   const before = cli(baselineDir), oldHistory = read(path.join(env.WORTHIT_HOME, 'history.json'));
   const after = cli(nextDir), newHistory = read(path.join(env.WORTHIT_HOME, 'history.json'));
-  assert.deepEqual(after.totals, before.totals, 'weekly USD and output stay stable');
+  // #102: retained usage preserves amounts, but its week-to-week changes are null.
+  assert.deepEqual(after.totals, { ...before.totals, output_tokens_change_pct: null, api_value_change_pct: null }, 'weekly USD and output stay stable');
   assert.deepEqual(newHistory, oldHistory, 'every history row stays stable');
   assert.equal(after.machines, 2, 'duplicate SSH alias of local machine is counted once');
   assert.equal(after.machines_retained[0].machine, 'box-a');
