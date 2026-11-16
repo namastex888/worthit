@@ -7,6 +7,15 @@ in `test/run-fixtures.mjs` are required, so deleting a folder or its check fails
 whitespace-only scripts fail with the folder's name while other checks still run. Add another
 folder with a `check.mjs` to add a case; no registration or framework is needed.
 
+`share-delivery-fallback` invokes the actual `share delivery --ai no --no-files` CLI
+against a literal synthetic saved run. Missing delivery or an unavailable cost must
+name the weekly allowance fallback in `warnings`, report `topic: allowance`, and
+keep the saved run unchanged. Aliases and the bundled demo follow the same rule.
+Usable delivery retains its topic with complete, partial or absent Git coverage,
+including a zero cost and floor plan proof. The case pins the existing JSON shape
+and PR #77's partial-count wording and comparison guard. The allowance card spec
+is unchanged; this case does not launch Chrome or call a model or network service.
+
 `log-evidence` uses real synthetic Claude/Codex files with controlled actual mtimes.
 A 90-day scan seeds 35 stored days, a 21-day scan clears the older run-keep units,
 and actual file removal leaves 30 recent daily logs plus surviving mixed-provider
@@ -148,9 +157,25 @@ success and failure, including tilde paths, and checks the README/header exclusi
 An INSERT trigger fails after the first successful audit write: no checkpoint is
 saved, and the retained audit explains the attempted checkpoint and repeated audit
 write attempts. Removing the merge command's audit entry fails this guard.
-Only headless Chrome is replaced by a deterministic one-pixel PNG writer; no browser
+Only headless Chrome is replaced by a deterministic 1600x900 PNG executable; no browser
 is launched. `--no-files` keeps each output folder empty, reports null paths and
 still stores its checkpoint; demo also reports a null audit path without store writes.
+
+`card-render` exercises share and weekly through the real CLI/render boundary.
+The test-only `WORTHIT_TEST_CHROME` executable override selects a synthetic PNG
+writer in the isolated PATH; normal card discovery keeps its fixed Chrome paths.
+Valid 1600x900 images survive exit 2 or a teardown signal with a named diagnostic.
+Missing, stale, invalid, truncated and wrong-size outputs fail, even beside an
+existing destination. The fixture checks absolute image identity, private profile
+and network flags, scratch cleanup, and weekly checkpoint/unsafe exit semantics.
+Ordinary cases use the executable override for both CLI commands, including
+external signals, stale scratch files and exact ENOENT/EACCES diagnostics.
+A dedicated test-only preload injects EMFILE without a close event and fires the
+real 60-second timeout callback as soon as the synthetic PNG is ready. Both CLIs
+must settle, clear the deadline and name the timeout distinctly from an external
+signal, without a real 60-second wait or production test configuration. The
+weekly audit fixture checks tilde privacy and canonical file identity together.
+No browser, real store or network is used.
 
 `git-source-coverage` seeds literal daily PR and commit counts in both stores and
 uses synthetic meter, local git, gh (two accounts), glab (two hosts), and tea
@@ -233,3 +258,24 @@ and fixed share text assert at least on counts, partial denominators on costs an
 no comparisons; complete PR coverage preserves changes even if commits failed.
 `WORTHIT_FIXTURE_ARTIFACTS` optionally saves synthetic data/drawn text for image
 inspection. Source failures are never simulated by editing output proof flags.
+
+`dashboard-lines` runs the actual `--demo --git no --ai no` CLI through installed Ink.
+Demo and fixture-only retained data each exercise controlled stdout widths 80/120,
+non-TTY pipes at `COLUMNS=80` and `COLUMNS=200`, plus retained data on real sized
+stdout PTYs at 80/120. The PTYs have closed stdin and are not interactive sessions;
+`capture-pty.py` uses Python's standard library under `-I`, with no `isTTY` spoofing.
+All cases pin account rows and amounts, Total unused, footers, later content and
+an exact two-line Events-to-Summary gap. The notice is expected only on narrow
+TTY stdout, never on pipes. Retained data includes one `box-z` day, floor plans
+and $24 unused; production `src/demo-data.json` is unchanged.
+
+Set `WORTHIT_FIXTURE_ARTIFACTS` to save captures and individual CLI/capture statuses.
+`node test/fixtures/dashboard-lines/render.mjs <captures> <images> 80` renders only
+the [80-column PTY stream excerpt](fixtures/dashboard-lines/retained-80.png), including
+the actual notice position and Events-to-Summary spacing. It strips ANSI and
+renders physical wrapping of fixed-width lines; it is not a terminal frame. The
+previously inspected [120-column capture](fixtures/dashboard-lines/retained-120.png)
+is unchanged. The new narrow Chrome process exited 2 after writing its inspected
+PNG; the render wrapper exited 1, while all ten product CLI runs exited 0.
+`evidence.json` separates these statuses and retains the old wide-image provenance.
+Image generation is outside `make check`.

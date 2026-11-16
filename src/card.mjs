@@ -6,27 +6,68 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
+// Relative value ratios can exceed 1; bound only the terminal drawing, including NaN/Infinity.
+export const barCells = (pct, w = 20) => Math.max(1, Math.round(Math.max(0, Math.min(1, pct || 0)) * w));
+
+// Bound the output check to Chrome's card contract, without imposing a decoder
+// or color format. Walk chunk lengths so a truncated body cannot masquerade as
+// a complete PNG merely by containing the signature or the text "IEND".
+function validCardPng(bytes) {
+  if (bytes.length < 57 || !bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return false;
+  let offset = 8, hasData = false;
+  while (offset + 12 <= bytes.length) {
+    const size = bytes.readUInt32BE(offset), end = offset + 12 + size;
+    if (end > bytes.length) return false;
+    const type = bytes.toString('ascii', offset + 4, offset + 8);
+    if (offset === 8) {
+      if (type !== 'IHDR' || size !== 13 || bytes.readUInt32BE(offset + 8) !== 1600 || bytes.readUInt32BE(offset + 12) !== 900) return false;
+    } else if (type === 'IHDR') return false;
+    else if (type === 'IDAT' && size > 0) hasData = true;
+    else if (type === 'IEND') return hasData && size === 0 && end === bytes.length;
+    offset = end;
+  }
+  return false;
+}
+
 // A private headless profile never touches the person's browser session. Render
 // to scratch first: a stale destination image must not count as a successful run.
 export async function renderCardImage(spec, destination) {
-  const chrome = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(c => fs.existsSync(c));
-  if (!chrome) return null;
+  // Test-only executable seam; normal discovery remains fixed (never PATH).
+  const chrome = process.env.WORTHIT_TEST_CHROME || ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(c => fs.existsSync(c));
+  const failure = error => ({ image: null, error, note: null });
+  if (!chrome) return failure('Chrome not found');
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'worthit-card-'));
   try {
     const html = path.join(scratch, 'card.html'), png = path.join(scratch, 'card.png');
     fs.writeFileSync(html, cardHtml(spec));
-    const ok = await new Promise(resolve => {
+    // Use filesystem time: isolated fixtures can freeze the JavaScript clock.
+    const started = fs.statSync(html).mtimeMs;
+    const result = await new Promise(resolve => {
       const child = spawn(chrome, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=1',
         '--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-component-update',
         '--disable-sync', '--disable-default-apps', '--metrics-recording-only', '--host-resolver-rules=MAP * ~NOTFOUND',
         '--user-data-dir=' + path.join(scratch, 'profile'), '--window-size=1600,900', '--screenshot=' + png, 'file://' + html], { stdio: 'ignore' });
-      const timer = setTimeout(() => child.kill(), 60000);
-      child.on('error', () => { clearTimeout(timer); resolve(false); });
-      child.on('close', code => { clearTimeout(timer); resolve(code === 0); });
+      let settled = false, timedOut = false;
+      const settle = (code, signal, error = null) => {
+        if (settled) return;
+        settled = true; clearTimeout(timer);
+        resolve({ code, signal, error, timedOut });
+      };
+      const timer = setTimeout(() => { timedOut = true; child.kill(); }, 60000);
+      child.on('error', error => settle(null, null, error));
+      child.on('close', (code, signal) => settle(code, signal));
     });
-    if (!ok || !fs.existsSync(png) || !fs.readFileSync(png).subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return null;
-    const image = path.resolve(destination); fs.copyFileSync(png, image); return image;
-  } finally { fs.rmSync(scratch, { recursive: true, force: true }); }
+    if (result.error) return failure(result.error.code === 'ENOENT' ? 'Chrome not found (ENOENT)' : `Chrome could not start (${result.error.code || result.error.message})`);
+    const outcome = result.timedOut ? `Chrome killed after the 60 s timeout (${result.signal || 'exit ' + result.code})`
+      : result.signal ? `Chrome terminated by ${result.signal}` : `Chrome exited ${result.code}`;
+    if (!fs.existsSync(png)) return failure(`${outcome}: no PNG was written`);
+    const stat = fs.lstatSync(png);
+    if (!stat.isFile() || stat.mtimeMs < started || stat.size > 32 * 1024 * 1024 || !validCardPng(fs.readFileSync(png)))
+      return failure(`${outcome}: render did not produce a fresh valid 1600x900 PNG`);
+    const image = path.resolve(destination); fs.copyFileSync(png, image);
+    return { image, error: null, note: result.code === 0 && !result.signal && !result.timedOut ? null : `${outcome} after writing a valid PNG; image accepted` };
+  } catch (e) { return failure(`Chrome render failed: ${e.message}`); }
+  finally { fs.rmSync(scratch, { recursive: true, force: true }); }
 }
 
 const MONTHS = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ');

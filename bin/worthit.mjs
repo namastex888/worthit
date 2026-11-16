@@ -26,7 +26,7 @@ import { blocks, C, W, bar, fg, bold, d, m, w, pad, lpad, len, strip, grad, fmtT
 import { scan, analyse, git, buildData, audit, writeAudit, has, tilde, ROOT, HOME, sshHosts, savedHosts, saveHosts } from '../src/collect.mjs';
 import { activeHosts, readHosts, hostsCommand } from '../src/hosts.mjs';
 import { query, run as runQuery, QUERY_COMMANDS } from '../src/query.mjs';
-import { deliveryText, cardSpec, customSpec, renderCardImage } from '../src/card.mjs';
+import { deliveryText, cardSpec, customSpec, renderCardImage, barCells } from '../src/card.mjs';
 import { allowanceText, openWeekly, weeklyBaseline, prepareWeekly, saveWeekly } from '../src/weekly.mjs';
 import { startPet, petLines, petSummary, PET_W } from '../src/pet.mjs';
 import { demoHosts, demoScan, demoGit, demoPricing, demoData, demoSpec, demoAnswer, demoPet } from '../src/demo.mjs';
@@ -86,14 +86,24 @@ const forModel = () => { const { heat, ...rest } = DATA; return JSON.stringify({
 // ---------------------------------------------------------------- headless: --json
 const SHARE = argv[0] === 'share' || flag('--share');
 if (JSON_MODE && !SHARE && !WEEKLY) {
-  if (DEMO) { console.log(JSON.stringify({ worthit: VERSION, ...demoData() }, null, 1)); process.exit(0); }
+  if (DEMO) { console.log(JSON.stringify({ worthit: VERSION, ...demoData(), audit_log: null }, null, 1)); process.exit(0); }
   const cfg = { days: DAYS, hosts: HOSTS, git: F_GIT !== 'no' };
+  const auditFile = NO_FILES ? null : path.resolve(`${STAMP}-worthit-audit.log`);
   const tick = (label, p) => { if (process.stderr.isTTY) process.stderr.write(`\r\x1b[K${label} ${p.pct == null ? '' : Math.round(p.pct * 100) + '%'} ${String(p.detail || '').slice(0, 90)}`); };
   try {
     const gP = cfg.git ? git(cfg, () => {}) : null, s = await scan(cfg, p => tick('scanning', p)), report = await analyse(s.runDir), g = gP ? await gP : null;
     if (process.stderr.isTTY) process.stderr.write('\r\x1b[K');
-    console.log(JSON.stringify({ worthit: VERSION, ...buildData(report, g, cfg, s) }, null, 1)); process.exit(0);
-  } catch (e) { console.error('\nworthit: ' + e.message); process.exit(1); }
+    const data = buildData(report, g, cfg, s);
+    if (auditFile) writeAudit(auditFile, VERSION);
+    console.log(JSON.stringify({ worthit: VERSION, ...data, audit_log: auditFile }, null, 1)); process.exit(0);
+  } catch (e) {
+    console.error('\nworthit: ' + e.message);
+    if (auditFile) {
+      try { writeAudit(auditFile, VERSION); console.error('worthit: audit log: ' + auditFile); }
+      catch (error) { console.error('worthit: could not write audit log ' + auditFile + ': ' + error.message); }
+    }
+    process.exit(1);
+  }
 }
 
 // ---------------------------------------------------------------- catalog: the only things the agent can place
@@ -150,7 +160,8 @@ const ASK_SYSTEM = catalog.prompt({ system: 'You answer questions about a develo
 
 const safe = (type, props) => { try { return blocks[type](DATA, props || {}); } catch (e) { return ['  ' + type + ': could not draw (' + String(e.message).slice(0, 60) + ')']; } };
 const registry = { Stack: ({ children }) => h(Box, { flexDirection: 'column' }, children), Row: ({ children }) => h(Box, { flexDirection: 'row', gap: 1 }, children) };
-for (const t of Object.keys(blocks)) registry[t] = ({ element }) => h(Text, { wrap: 'truncate-end' }, safe(t, element.props).join('\n'));
+// Ink truncates a whole multiline Text, including later rows. Wrap blocks to keep every line.
+for (const t of Object.keys(blocks)) registry[t] = ({ element }) => h(Text, { wrap: 'wrap' }, safe(t, element.props).join('\n'));
 const InkRenderer = createRenderer(catalog, registry);
 class Guard extends React.Component { constructor(p) { super(p); this.state = { e: null }; } static getDerivedStateFromError(e) { return { e }; }
   render() { return this.state.e ? h(Text, { dimColor: true }, '  (waiting for the next patch)') : this.props.children; } }
@@ -159,7 +170,10 @@ function ready(spec) {               // a streamed spec can name children that h
   const el = {}; for (const [k, v] of Object.entries(spec.elements)) if (v && v.type && registry[v.type]) el[k] = { ...v, props: v.props || {}, children: (v.children || []).filter(c => spec.elements[c] && registry[spec.elements[c].type]) };
   return el[spec.root] ? { ...spec, elements: el } : null;
 }
-const View = ({ spec, k }) => { const r = ready(spec); return r ? h(Guard, { key: k }, h(InkRenderer, { spec: r, state: {} })) : null; };
+// Match measurement to the 98-column blocks drawn by Static; the terminal handles narrow wrapping.
+const View = ({ spec, k }) => { const r = ready(spec); return r ? h(Box, { flexDirection: 'column', width: W, flexShrink: 0 },
+  process.stdout.isTTY && process.stdout.columns < W ? h(Text, { color: 'yellow' }, `  Below ${W} columns: dashboard lines wrap.`) : null,
+  h(Guard, { key: k }, h(InkRenderer, { spec: r, state: {} }))) : null; };
 // the same spec as plain lines, for the image and the .md
 function specLines(spec) {
   const r = ready(spec); if (!r) return [];
@@ -486,7 +500,10 @@ const SHARE_TOPICS = {
 };
 // the card as a few terminal lines: the same headline, caption and rows the image shows
 const cardLines = c => [' ' + d(c.eyebrow.toUpperCase()), '', ' ' + bold(fg(c.color, c.hero)) + '  ' + w(c.cap) + (c.sub ? d('  ·  ') + fg(c.subColor, c.sub) : ''), '',
-  ...c.rows.flatMap(r => [ ' ' + pad(fg(r.color, r.label), 26) + (r.pct == null ? '' : fg(r.color, '█'.repeat(Math.max(1, Math.round(r.pct * 20)))) + fg(C.track, '█'.repeat(20 - Math.max(1, Math.round(r.pct * 20)))) + ' ') + lpad(bold(w(r.value)), 10) + '  ' + d(r.note), ...(r.retirement_note ? [' ' + d(r.retirement_note)] : [])])];
+  ...c.rows.flatMap(r => {
+    const n = barCells(r.pct);
+    return [ ' ' + pad(fg(r.color, r.label), 26) + (r.pct == null ? '' : fg(r.color, '█'.repeat(n)) + fg(C.track, '█'.repeat(20 - n)) + ' ') + lpad(bold(w(r.value)), 10) + '  ' + d(r.note), ...(r.retirement_note ? [' ' + d(r.retirement_note)] : [])];
+  })];
 const numbersIn = s => (strip(String(s)).match(/\d[\d,]*(?:\.\d+)?/g) || []).map(x => String(+x.replace(/,/g, '')));
 // every number the data holds (walked value by value, so neighbours in a list are never glued together), plus each one rounded to 0, 1 and 2 decimals
 const knownNumbers = D => { const out = new Set(); (function walk(v) { if (typeof v === 'number') { for (const k of [String(v), v.toFixed(0), v.toFixed(1), v.toFixed(2)]) out.add(String(+k)); } else if (typeof v === 'string') numbersIn(v).forEach(x => out.add(x)); else if (v && typeof v === 'object') Object.values(v).forEach(walk); })(D); return out; };
@@ -497,9 +514,10 @@ async function makeShare(D, ask, { agent = null, clipOk = false, files = true, s
   const floors = D.plans.filter(p => p.proof !== 'measured').map(p => p.plan); if (floors.length) warnings.push(`${floors.join(' and ')}: a floor ("at least this much"), not a full measurement; the card says so`);
   if (D.git && !D.git.coverage?.prs) warnings.push('merged PRs and features: at least (git source coverage is incomplete); costs use a partial count');
   const lc = ask.toLowerCase(); let key = keys.find(k => k === lc || SHARE_TOPICS[k].alias.includes(lc)), spec, text, by = 'built-in';
-  if (key) { spec = cardSpec(key, D); text = SHARE_TOPICS[key].text(D); }
+  const fallback = why => { warnings.push(why + ': using the weekly allowance post instead'); key = 'allowance'; spec = cardSpec('allowance', D); text = SHARE_TOPICS.allowance.text(D); };
+  if (key === 'delivery' && D.delivery?.usd_per_feature == null) fallback(D.delivery ? 'delivery has no cost per feature in this run' : 'delivery data is unavailable in this run');
+  else if (key) { spec = cardSpec(key, D); text = SHARE_TOPICS[key].text(D); }
   else {      // anything else: the agent chooses the blocks and writes the post; its numbers are checked against the data
-    const fallback = why => { warnings.push(why + ': using the weekly allowance post instead'); key = 'allowance'; spec = cardSpec('allowance', D); text = SHARE_TOPICS.allowance.text(D); };
     if (!agent) fallback(`"${ask}" needs an AI agent (none found, or --ai no)`);
     else { say(`asking ${agent.label} for a post about: ${ask}`);
       const system = 'You write ONE post for X about a developer\'s own AI coding statistics. Voice: lowercase, casual, first person, no hashtags, no emojis, at most 250 characters, and it ends with "npx worthit". '
@@ -513,19 +531,21 @@ async function makeShare(D, ask, { agent = null, clipOk = false, files = true, s
         if (bad.length) fallback(`the agent's post used numbers that are not in your data (${bad.slice(0, 3).join(', ')})`); else { key = 'custom'; spec = customSpec(D, ask, { ...j, facts }); text = j.text.trim().slice(0, 280); by = agent.label; } } }
   }
   const card = cardLines(spec);
-  const url = 'https://x.com/intent/post?text=' + encodeURIComponent(text); let image = null, clip = false;
+  const url = 'https://x.com/intent/post?text=' + encodeURIComponent(text); let image = null, clip = false, imageError = null, imageNote = null;
   if (files) { say('drawing the card image');
     const slug = key === 'custom' ? (ask.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 28) || 'custom') : key;
-    image = await renderCardImage(spec, `${STAMP}-worthit-share-${slug}.png`); }
+    const rendered = await renderCardImage(spec, `${STAMP}-worthit-share-${slug}.png`);
+    image = rendered.image; imageError = rendered.error; imageNote = rendered.note;
+    if (imageError || imageNote) warnings.push(imageError || imageNote); }
   if (image && clipOk) {     // best effort: put the image on the clipboard so it can be pasted into the post
     if (process.platform === 'darwin') clip = spawnSync('osascript', ['-e', `set the clipboard to (read (POSIX file "${image}") as «class PNGf»)`], { stdio: 'ignore' }).status === 0;
     else if (has('wl-copy')) clip = spawnSync('sh', ['-c', `wl-copy --type image/png < "${image}"`], { stdio: 'ignore' }).status === 0;
     else if (has('xclip')) clip = spawnSync('xclip', ['-selection', 'clipboard', '-t', 'image/png', '-i', image], { stdio: 'ignore' }).status === 0; }
-  return { key, by, text, card, url, image, clip, warnings };
+  return { key, by, text, card, url, image, clip, warnings, imageError, imageNote };
 }
 // what a share looks like on screen, below the card or the blocks
 const shareText = r => [...r.warnings.map(x => fg(C.gold, ' ! ') + m(x)), '', ' ' + bold(w('Suggested post')) + d(`  ·  ${r.text.length} characters  ·  ${r.by}`), '', ...r.text.split('\n').map(l => '   ' + w(l)), '',
-  ' ' + d('image  ') + (r.image ? m(r.image) + (r.clip ? fg(C.cx, '  ✓ copied: paste it into the post') : d('  (attach it to the post)')) : d('not written (Chrome not found)'))];
+  ' ' + d('image  ') + (r.image ? m(r.image) + (r.clip ? fg(C.cx, '  ✓ copied: paste it into the post') : d('  (attach it to the post)')) : d(`not written (${r.imageError || 'files disabled'})`))];
 const sharePanel = (r, tty) => [...r.card, ...shareText(r), ...(tty ? [] : [' ' + d('link   ') + m(r.url)]), '',
   ' ' + d('other cards: ask to share ') + m(Object.keys(SHARE_TOPICS).filter(k => k !== r.key).join(' · ')) + d(', or say what you want to brag about')];
 async function share() {
@@ -559,7 +579,8 @@ if (WEEKLY) {
     const checkpoint = prepareWeekly(D, db ? weeklyBaseline(db, D) : null);
     checkpoint.audit_log = NO_FILES ? null : path.resolve(`${STAMP}-worthit-audit.log`);
     const result = await makeShare(D, 'allowance', { agent: null, clipOk: false, files: !NO_FILES });
-    if (!NO_FILES && !result.image) throw new Error('allowance PNG could not be rendered; install Chrome or Chromium, or use --no-files');
+    if (!NO_FILES && !result.image) throw new Error(`allowance PNG could not be rendered: ${result.imageError}; use --no-files to skip the image`);
+    if (result.imageNote) console.error('worthit weekly: ' + result.imageNote);
     checkpoint.text = result.text; checkpoint.image = result.image;
     if (result.image) {
       audit('run', 'headless Chrome screenshot of the allowance card (local file, no network)');
