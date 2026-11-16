@@ -208,7 +208,10 @@ keeps physical/canonical/linked counts, implementation/review rows/tokens/USD, u
 usage by reason, no-lead deliveries and each host’s metadata/commit/parent/diff completeness.
 Only observed merged items in the last 14 days and resolved predecessors are available;
 no future or unseen superseder is inferred. GitHub and self-managed GitLab are supported;
-Gitea stays unknown/unlinked, with host-qualified physical keys.
+Gitea stays unknown/unlinked, with host-qualified physical keys. Overlapping legacy hostless
+Gitea keys are kept in the store but omitted from the current count, with `gitea legacy identities`
+marked incomplete and an ambiguous-legacy audit note; no host is guessed, even with one candidate.
+Unmatched hostless history/counts remain intact.
 
 Identity is the lowercase origin `host[:nondefaultport]/path`, without credentials, scheme,
 trailing `.git` or slash. Each machine reads `.git` (including gitfiles), `commondir` and the
@@ -227,7 +230,7 @@ leaves the machine or adds a table to `worthit.db`. `WORTHIT_NO_CACHE` or unwrit
 disables remembering. A pre-delivery deleted worktree can stay unresolved; scan every machine
 daily with `worthit --json --hosts all` to remember current folders.
 
-Repository names appear only in local project/JSON output, saved scans and audit logs. They
+Repository names appear only in local project/JSON output, saved scans and audit logs. Repository, implementation/review branch, commit and known short PR/MR references (`#N`/`!N`)
 are excluded from AI summary prompts, question-bar lookups and custom share topics, and from
 the dashboard, Markdown and share cards. `worthit schema` and the bundled agent skill describe
 the scan's `project`/`project_why`, core `project_activity`, cache and output fields.
@@ -286,7 +289,7 @@ Delivery 1 project statistics add no network request. Every machine also reads t
   use the same families. Every actual request/page is a per-run audit `net` entry; identical
   immutable requests are reused within the run. Limits are 1200 requests, 30 pages per inventory,
   300 items, 40 predecessor depth and 250 graph nodes. Caps/failures yield named unknowns.
-  No code contents, forge review events or mutations are requested. `--git no` disables all
+  GitHub commit JSON can return file patch text; worthit ignores it and does not persist it. No separate raw-source, forge review-event or mutation requests are made. `--git no` disables all
   these calls and gives `projects.delivery: null`. See [RFC 0004](docs/rfcs/0004-project-stats.md).
 
 - With git data on (the default for `--json`; `--git no` turns it off), GitHub searches through `gh` (one per week of history, per logged-in account, with pagination and smaller slices for full results), requests to every logged-in GitLab host through `glab`, and Gitea requests through the selected `tea` login. Absent or explicitly logged-out CLIs are skipped as a source. Auth discovery through `gh auth status` and `glab auth status` can itself contact code hosts; `glab` can request `gitlab.com/api/v4/user` even without a token. Token-less hosts are skipped as PR sources. If Automagik's open-source `usagemeter` is missing, worthit downloads its manifest and platform binary from GitHub releases, verifies the binary's SHA256, and saves it in the worthit store. Whether already installed or downloaded, the meter runs locally: `sync --no-publish --budget-secs 20` and `status`. The sync publishes nothing. Local `git log` reads checkouts found in the meter store; it does not fetch them.

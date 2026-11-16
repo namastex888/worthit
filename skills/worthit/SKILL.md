@@ -471,3 +471,13 @@ Gitea unknown/unlinked, host-qualified keys preserved.
 Every metadata/commit/parent/compare/tree/chain request and pagination page is audited net and
 named in README. Immutable metadata reused within run. Hard limits: 1200 requests, 30 pages,
 300 items, 40 chain depth, 250 lineage/base nodes; exhaustion unknown. --git no makes none.
+
+
+Delivery 2 upgrade/privacy rules: a legacy `gitea/path#n` row overlapping a host-qualified
+Gitea path/number/exact merge time remains in pr_kind but is omitted from current physical
+counts. Source `gitea legacy identities` is incomplete; audit says ambiguous legacy. Never
+infer its host, even with one candidate. Unmatched legacy history/counts remain intact.
+Privacy redacts implementation/review branches, commit ids and known short #N/!N references
+as well as canonical repository/PR keys from all agent prose, lookups and custom shares.
+GitHub commit JSON may return patch text; it is ignored and never persisted. No separate
+raw-source request is added.

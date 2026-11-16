@@ -319,8 +319,11 @@ Preserve members and reasons. No claim about unobserved superseders is possible.
 
 **Forge scope.** GitHub via `gh`, GitLab including self-managed via `glab` are included. An older or
 unsupported host/response yields unknown with reason. Gitea stays unknown/unlinked; its new physical
-keys use the hostname from its item URL, never the synthetic `gitea/` prefix. Old hostless keys are
-still delivery 1's `no_host_in_key`. No account/auth settings change.
+keys use the hostname from its item URL, never the synthetic `gitea/` prefix. An old hostless
+`gitea/path#n` row overlapping a qualified path/number/exact merge time is retained in `pr_kind`
+but excluded from that run's physical counts: the `gitea legacy identities` source is incomplete,
+and the audit names ambiguous legacy evidence, even with one observed host. No host is inferred.
+Unmatched hostless history/counts remain intact in delivery 1's `no_host_in_key`. No account/auth settings change.
 
 Tree inventory requests are read-only GitLab `GET /projects/:id/repository/tree?ref=:sha&recursive=true`; every page is audited.
 
@@ -335,14 +338,14 @@ API contracts: [GitHub PRs](https://docs.github.com/en/rest/pulls/pulls),
   log. Each machine's scan reads the `.git` file, `commondir` and `config` of the folders its sessions
   ran in (audit `read` lines). The ssh scan now brings back repository ids with the usage, to the
   person's own machine.
-- **Delivery 2: read-only per-item forge metadata.** GitHub through `gh`: `repos/:owner/:repo/pulls/:number`, `/commits`, `repos/:owner/:repo/commits/:sha` (parents, committer time, paginated changed files), `repos/:owner/:repo/compare/:sha...:base` (ancestry). GitLab including self-managed through `glab`: `projects/:id/merge_requests/:iid`, `/commits`, `projects/:id/repository/commits/:sha`, `/repository/compare`, and paginated `/repository/tree?ref=:sha&recursive=true` inventories at parent/commit refs, including file mode. Supersede predecessors and base ancestry add bounded requests of those same families. Every request/page is an audit `net` line. Immutable requests are cached within a run. Limits: 1200 requests, 30 pages per inventory, 300 items, 40 predecessor depth, 250 lineage/base-graph nodes; hitting a limit is explicit unknown. See the [GitLab repositories API](https://docs.gitlab.com/api/repositories/). `--git no` disables all these requests. No review-event requests, code fetch, publication or forge mutation.
+- **Delivery 2: read-only per-item forge metadata.** GitHub through `gh`: `repos/:owner/:repo/pulls/:number`, `/commits`, `repos/:owner/:repo/commits/:sha` (parents, committer time, paginated changed files), `repos/:owner/:repo/compare/:sha...:base` (ancestry). GitLab including self-managed through `glab`: `projects/:id/merge_requests/:iid`, `/commits`, `projects/:id/repository/commits/:sha`, `/repository/compare`, and paginated `/repository/tree?ref=:sha&recursive=true` inventories at parent/commit refs, including file mode. Supersede predecessors and base ancestry add bounded requests of those same families. Every request/page is an audit `net` line. Immutable requests are cached within a run. Limits: 1200 requests, 30 pages per inventory, 300 items, 40 predecessor depth, 250 lineage/base-graph nodes; hitting a limit is explicit unknown. See the [GitLab repositories API](https://docs.gitlab.com/api/repositories/). `--git no` disables all these requests. No review-event, separate raw-source, publication or forge-mutation requests. GitHub commit JSON can return file patch text; it is ignored and never persisted in saved results.
 
 ### 5. Privacy
 
 - Repository names are the person's own data. They appear in local output only: `worthit projects`,
   `--json`, `last.json`, `worthit get projects` and the audit log.
 - They are not drawn into the dashboard, the PNG, the `.md` or any share card.
-- They do not reach the AI agent (question 3) by any path: the summary prompt, the question bar's
+- Repository ids, implementation/review branches, commit ids and known short PR/MR references (`#N`/`!N`) do not reach the AI agent (question 3) by any path: the summary prompt, the question bar's
   lookups, or a custom share topic. A fixture covers each path.
 - A token inside a remote URL, read from `config` or from a Codex log, is removed on the machine that
   read it, before anything is cached, stored or sent back.

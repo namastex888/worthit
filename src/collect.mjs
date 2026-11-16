@@ -354,6 +354,17 @@ export async function git(cfg, on) {
     x => x.merged_at ? [(host + '/' + ((x.references && x.references.full) || x.web_url)).toLowerCase(), Date.parse(x.merged_at), kindOf(x.title)] : null, 100);
   // every forge row of the last 12 weeks (stored + this run); the last 14 days of them join the usagemeter rows
   let rows = fresh; if (db) { try { rows = db.prepare('SELECT key, merged_ms, kind FROM pr_kind WHERE merged_ms >= ?').all(histFrom).map(r => [r.key, r.merged_ms, r.kind || 'other']); } catch { /* keep this run's rows */ } try { db.close(); } catch { /* closed */ } }
+  // Delivery 1's Gitea keys omitted the host. An overlap cannot prove which host
+  // the old row belonged to. Keep it stored, omit the potentially repeated count,
+  // and expose a PR floor instead of inventing an alias (even with one new host).
+  const qualifiedGitea = rows.filter(([k]) => !k.startsWith('gitea/') && !k.startsWith('github.com/') && /#\d+$/.test(k) && projectFromKey(k));
+  const legacyOverlap = new Set(rows.filter(([k, t]) => k.startsWith('gitea/') && qualifiedGitea.some(([q, qt]) => qt === t && q.slice(q.indexOf('/') + 1) === k.slice(6))).map(([k]) => k));
+  if (legacyOverlap.size) {
+    audit('note', `ambiguous legacy Gitea identities: ${legacyOverlap.size} overlapping hostless rows kept in pr_kind, excluded from this run's physical counts; no host inferred`);
+    answer('gitea legacy identities', false, ['prs']);
+    rows = rows.filter(([k]) => !legacyOverlap.has(k));
+    for (const k of legacyOverlap) if (prs.delete(k)) src.meter--;
+  }
   const tail = k => k.slice(k.lastIndexOf('/')), fromMeter = new Map(), kinds = new Map(); for (const [k, t] of prs) fromMeter.set(tail(k), [k, t]);
   for (const [k, t, kind] of rows) { kinds.set(k, [t, kind]); if (t < since) continue;
     const m = fromMeter.get(tail(k));      // same repo name, same number, merged within the hour: one pull request the usagemeter store holds under an older owner name
