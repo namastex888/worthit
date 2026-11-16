@@ -51,6 +51,8 @@ before a retirement make usage a floor. `totals.output_tokens_change_pct`,
 `delivery.usd_per_feature_change_pct` are null if either compared week is a floor.
 An overlapping retained local day counts even when it straddles the week's start.
 Complete Git counts can still be compared when usage is a floor.
+Eligible usage changes use the ordinary symmetric whole-number percentage rule
+(halves away from zero, negative zero normalized to 0); floors remain null.
 
 When current usage is a floor, `git.usd_per_merged_pr`, every entry of
 `git.usd_per_pr_per_day`, and `delivery.usd_per_feature` are null. With
@@ -243,7 +245,10 @@ JSON fields (also documented by `worthit schema`):
   `image` (absolute PNG path), `audit_log` (absolute audit log path beside the PNG).
   Both paths are null with `--no-files` or `--demo`.
 - `plans: [{plan, usd_per_full_week, times_plan_price, proof, change_vs_last_week_pct, retirement_note?}]`.
-  Proof is `measured` or `floor`; change is a number or null.
+  Proof is `measured` or `floor`; change is a whole-number percent or null.
+  Ordinary and weekly percentage changes round symmetrically (halves away from zero):
+  +5.5% becomes +6%, -5.5% becomes -6%. Negative zero is normalized to 0;
+  allowance text, card and TUI show 0% neutrally with no arrow.
 - `machines_read` (number included), `machines_missing: [{machine, saved_scan_at}]`,
   `machines_left_out` (aliases), `machines_retired: [{machine, retired_at, last_scan_at, days_kept}]`,
   `machines_retained: [{machine, days_kept, units: [{day, provider}]}]`.
@@ -253,7 +258,8 @@ JSON fields (also documented by `worthit schema`):
   Never search past a floor. The first checkpoint has null changes even if the meter
   ledger has history; weekly never uses ledger comparisons.
   An unsafe rerun in the same week becomes the newest row, so next week's change is null.
-- `moved: [{plan, from, to, pct}]` includes only eligible absolute changes strictly >5%.
+- `moved: [{plan, from, to, pct}]` includes only eligible rounded absolute changes strictly >5%.
+  `pct` is the same whole-number percent; +6% and -6% both count as moved, ±5% do not.
 - `safe_to_post` is true iff missing and left-out lists are empty and no retained local-day
   unit overlaps this week. A floor alone, including a pre-retirement week, or retained
   units only in earlier weeks are safe.

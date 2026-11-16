@@ -74,6 +74,8 @@ try {
       if (mode === 'left-out') assert.deepEqual(data.machines_left_out, ['box-c']);
       if (mode.startsWith('retained-')) assert.equal(data.machines_retained.length, 1);
     });
+    // These positive non-half percentages also follow symmetric rounding; every
+    // machine-floor assertion still requires null, before any presentation rule.
     check(`${mode} usage-derived changes`, () => assert.deepEqual(changes,
       floor || priorFloor ? [null, null, null, null] : [100, 100, covered ? 50 : null, covered ? 67 : null]));
     check(`${mode} current costs`, () => {

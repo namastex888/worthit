@@ -6,10 +6,11 @@ import { createRequire } from 'node:module';
 import { usd } from './draw.mjs';
 import { retirementBlocks } from './hosts.mjs';
 import { retainedUnitOverlapsWeek } from './collect.mjs';
+import { roundPercent } from './percent.mjs';
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');
 
 export const allowanceText = data => {
-  const lines = data.plans.map(p => `${p.plan.toLowerCase()} ${usd(p.usd_per_full_week)}${p.proof !== 'measured' ? ' (at least)' : p.change_vs_last_week_pct == null ? '' : ` (${p.change_vs_last_week_pct >= 0 ? '▲' : '▼'}${Math.abs(p.change_vs_last_week_pct)}% vs the week before)`}${p.proof === 'measured' && p.retirement_note ? ` · ${p.retirement_note}` : ''}`);
+  const lines = data.plans.map(p => `${p.plan.toLowerCase()} ${usd(p.usd_per_full_week)}${p.proof !== 'measured' ? ' (at least)' : p.change_vs_last_week_pct == null ? '' : ` (${p.change_vs_last_week_pct === 0 ? '' : p.change_vs_last_week_pct > 0 ? '▲' : '▼'}${Math.abs(p.change_vs_last_week_pct)}% vs the week before)`}${p.proof === 'measured' && p.retirement_note ? ` · ${p.retirement_note}` : ''}`);
   return `weekly ai allowance check, week to ${data.week.to}.. what one full weekly limit was worth at api prices:\n${lines.join('\n')}\nmeasured from my local logs: npx worthit`;
 };
 
@@ -40,7 +41,7 @@ export function prepareWeekly(data, comparedWith) {
     const previous = comparedWith?.plans.find(p => p.plan === plan.plan);
     const pct = plan.proof === 'measured' && previous?.proof === 'measured' && previous.usd_per_full_week > 0
       ? 100 * (plan.usd_per_full_week - previous.usd_per_full_week) / previous.usd_per_full_week : null;
-    plan.change_vs_last_week_pct = pct == null ? null : Math.round(pct);
+    plan.change_vs_last_week_pct = pct == null ? null : roundPercent(pct);
     if (plan.change_vs_last_week_pct != null && Math.abs(plan.change_vs_last_week_pct) > 5) moved.push({ plan: plan.plan, from: previous.usd_per_full_week,
       to: plan.usd_per_full_week, pct: plan.change_vs_last_week_pct });
   }
