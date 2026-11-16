@@ -1,0 +1,7 @@
+gitlab.k8s
+  ✓ Logged in to gitlab.k8s as coder-a (keyring)
+  ✓ Git operations for gitlab.k8s configured to use ssh protocol.
+  ✓ API calls for gitlab.k8s are made over https protocol.
+  ✓ REST API Endpoint: https://api.gitlab.k8s:8443/api/v4/
+  ✓ GraphQL Endpoint: https://api.gitlab.k8s:8443/api/graphql/
+  ✓ Token found in operating system keyring: **************************

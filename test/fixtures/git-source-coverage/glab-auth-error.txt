@@ -12,4 +12,8 @@ forge-b.test
   ✓ REST API Endpoint: https://forge-b.test/api/v4/
   ✓ GraphQL Endpoint: https://forge-b.test/api/graphql/
   ✓ Token found in operating system keyring: **************************
-  X could not authenticate to one or more of the configured GitLab instances.
+          
+   ERROR  
+          
+  X could not authenticate to one or more of the configured GitLab instances.                                         
+

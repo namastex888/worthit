@@ -157,6 +157,34 @@ cover token-less gitlab.com alone, a self-hosted login beside it, token-bearing
 host errors, and the no-authenticated-instances message. Only synthetic identities
 are used; source references are recorded with the PR.
 
+Issue #54 adds literal merged-request rows for `10.0.0.5`, `gitlab.k8s`, bare
+`gitlab` and the unindented `ERROR` host key. Each contributes one MR and its exact
+persisted identity, replaces seeded daily counts in both stores, and passes its
+unchanged config key plus a relative REST path to the synthetic subprocess. The
+valid digit-TLD key advertises a distinct HTTPS `api_host` with a port, while bare
+`gitlab` advertises an HTTP API host with a port; these config keys pass glab's
+validator, and glab owns their API host/protocol configuration. The fake API mirrors glab 1.123.0's hostname
+validator before reading any MR rows: keys containing `:` or `/` exit 1 with
+`Error parsing --hostname: invalid hostname.`. Accordingly, `gitlab:3000` and
+`localhost:3000` retain PR MAX in both stores, count no GitLab MR, report false PR
+coverage and name the unusable answer. Port-key support is tracked separately in
+#91. Every attempted API argv still needs its own `net` audit entry.
+
+All auth error frames, including token-less self-hosted/logged-out and no-instance
+cases, use the badge, margins and trailing padding from an authorized offline
+`glab 1.123.0 (5686d7484)` capture of mutually exclusive `auth status --all
+--hostname x` flags. That validation exits before auth/host contact. Fixed error
+messages from the checked source replace only the frame's message; no real auth
+output or credentials are used. Malformed blocks before and after token-less
+gitlab.com keep coverage false, name their line and retain the readable IP host's
+MR. Orphan/unreadable/empty blocks and token-read/client-init errors also preserve
+PR MAX independently of commits. Both streams and the environment-token footer
+are covered. The auth stub records and requires `GLAB_CHECK_UPDATE=false` and
+`GLAB_SHOW_WHATS_NEW=false`, even with both inherited as true, proving discovery
+suppresses update requests and notices. Case-prefixed assertions identify malformed
+coverage failures. Counts and MR identities are literal; the old-regex negative
+control belongs only in a private copy. Existing fixture registrations stay intact.
+
 `retire-machine` primes a real scan with fourteen literal daily Claude source rows
 (Oct 25–Nov 7, 200,000 output tokens and $2 per day), retires box-b, and verifies
 all fourteen frozen days, empty missing/left-out lists, measured $6 Claude allowance

@@ -278,26 +278,42 @@ export async function git(cfg, on) {
   }
   let glHosts = [];
   if (optional('glab')) {
-    const st = spawnSync('glab', ['auth', 'status'], { encoding: 'utf8', timeout: 20000 });
-    const txt = ((st.stdout || '') + '\n' + (st.stderr || '')).replace(/\x1b\[[0-9;]*m/g, '');
-    const blocks = new Map(); let cur = null;
-    for (const line of txt.split('\n')) {
-      const h = /^([a-z0-9][a-z0-9.-]*\.[a-z]{2,}(?::\d+)?)\s*$/i.exec(line);
-      if (h) { cur = h[1].toLowerCase(); if (!blocks.has(cur)) blocks.set(cur, ''); }
-      else if (cur) blocks.set(cur, blocks.get(cur) + '\n' + line);
+    const st = spawnSync('glab', ['auth', 'status'], { encoding: 'utf8', timeout: 20000,
+      env: { ...process.env, GLAB_CHECK_UPDATE: 'false', GLAB_SHOW_WHATS_NEW: 'false' } });
+    const blocks = []; let malformed = false, noInstances = false;
+    const unreadable = line => { malformed = true; audit('note', `glab discovery could not read line: ${line.trim()}`); };
+    // glab prints unindented host keys and indents their messages by two spaces.
+    // Keep the exact key for --hostname; glab rejects port keys before making a request.
+    for (const stream of [st.stdout || '', st.stderr || '']) {
+      let cur = null, footer = false;
+      for (const raw of stream.replace(/\x1b\[[0-9;]*m/g, '').split(/\r?\n/)) {
+        const line = raw.trimEnd();
+        if (!line || /^ +ERROR$/.test(line)) continue;
+        if (/^\s*[Xx✗×] could not authenticate to one or more of the configured GitLab instances\.?$/.test(line)) { cur = null; continue; }
+        if (/^\s*no GitLab instances have been authenticated with glab; run .+ to authenticate\.?$/i.test(line)) { noInstances = true; cur = null; continue; }
+        if (/^[!⚠] Token is from environment variable \w+\. This takes precedence over tokens stored in config or keyring\.$/.test(line)) { footer = true; cur = null; continue; }
+        if (footer && /^  (Run .+ to find the source:|A plain path means it is set in your environment)/.test(line)) continue;
+        if (/^\s/.test(line)) {
+          if (cur && /^  (?:[✓x!] |  )/.test(line)) cur.body += '\n' + line;
+          else unreadable(line);
+          continue;
+        }
+        cur = null; footer = false;
+        // Host keys are opaque glab configuration keys, not DNS names to normalize.
+        if (/\s/.test(line)) unreadable(line);
+        else { cur = { host: line, body: '' }; blocks.push(cur); }
+      }
     }
-    // glab can exit 1 because its default gitlab.com host has no token, while other hosts answer.
-    // Classify each host's actual auth result; the aggregate process exit cannot select sources.
-    let failed = !!st.error || st.signal != null || st.status == null ||
-      (!blocks.size && !/no GitLab instances have been authenticated with glab/i.test(txt));
-    for (const [host, block] of blocks) {
-      const loggedIn = /Logged in to\s+/i.test(block), noToken = /No token found/i.test(block);
-      const error = /API call failed:|could not read the token:|failed to initialize api client:/i.test(block);
+    // A token-less default host can make glab exit 1 while other hosts answer.
+    let failed = malformed || !!st.error || st.signal != null || st.status == null || (!blocks.length && !noInstances);
+    for (const { host, body } of blocks) {
+      const loggedIn = /Logged in to\s+/i.test(body), noToken = /No token found/i.test(body);
+      const error = /API call failed:|could not read the token:|failed to initialize api client:/i.test(body);
       if (noToken && !loggedIn) audit('note', `glab ${host} has no token: skipped as a source`);
-      else if (error || !loggedIn || noToken) failed = true;
-      else glHosts.push(host);
+      else if (error || !loggedIn || noToken) { failed = true; audit('note', `glab discovery could not read authenticated block for line: ${host}`); }
+      else if (!glHosts.includes(host)) glHosts.push(host);
     }
-    if (!blocks.size && !failed) audit('note', 'glab has no authenticated instance: skipped as a source');
+    if (!blocks.length && !failed) audit('note', 'glab has no authenticated instance: skipped as a source');
     if (failed) answer('glab discovery', false, ['prs']);
     audit('run', 'glab auth status' + `   (GitLab hosts you are logged in to: ${glHosts.join(', ') || 'none'}; discovery may contact gitlab.com even without a token)`);
   }
