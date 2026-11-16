@@ -656,5 +656,285 @@
         -50
       ]
     }
+  },
+  "glab-ip": {
+    "prs": true,
+    "commits": true,
+    "failed": [],
+    "counts": [
+      3,
+      2,
+      0,
+      0
+    ],
+    "live": {
+      "prs": 3,
+      "commits": 2,
+      "repos": 1
+    },
+    "host": "10.0.0.5",
+    "keys": [
+      "10.0.0.5/example/host!101"
+    ]
+  },
+  "glab-port": {
+    "prs": false,
+    "commits": true,
+    "failed": [
+      "glab:gitlab:3000"
+    ],
+    "counts": [
+      9,
+      2,
+      7,
+      0
+    ],
+    "live": {
+      "prs": 2,
+      "commits": 2,
+      "repos": 1
+    },
+    "host": "gitlab:3000",
+    "keys": [],
+    "portRejected": true
+  },
+  "glab-digit-tld": {
+    "prs": true,
+    "commits": true,
+    "failed": [],
+    "counts": [
+      3,
+      2,
+      0,
+      0
+    ],
+    "live": {
+      "prs": 3,
+      "commits": 2,
+      "repos": 1
+    },
+    "host": "gitlab.k8s",
+    "keys": [
+      "gitlab.k8s/example/host!103"
+    ]
+  },
+  "glab-bare": {
+    "prs": true,
+    "commits": true,
+    "failed": [],
+    "counts": [
+      3,
+      2,
+      0,
+      0
+    ],
+    "live": {
+      "prs": 3,
+      "commits": 2,
+      "repos": 1
+    },
+    "host": "gitlab",
+    "keys": [
+      "gitlab/example/host!104"
+    ]
+  },
+  "glab-localhost": {
+    "prs": false,
+    "commits": true,
+    "failed": [
+      "glab:localhost:3000"
+    ],
+    "counts": [
+      9,
+      2,
+      7,
+      0
+    ],
+    "live": {
+      "prs": 2,
+      "commits": 2,
+      "repos": 1
+    },
+    "host": "localhost:3000",
+    "keys": [],
+    "portRejected": true
+  },
+  "glab-malformed-before": {
+    "prs": false,
+    "commits": true,
+    "failed": [
+      "glab discovery"
+    ],
+    "counts": [
+      9,
+      2,
+      7,
+      0
+    ],
+    "live": {
+      "prs": 3,
+      "commits": 2,
+      "repos": 1
+    },
+    "host": "10.0.0.5",
+    "keys": [
+      "10.0.0.5/example/host!101"
+    ],
+    "line": "not a host ???"
+  },
+  "glab-malformed-after": {
+    "prs": false,
+    "commits": true,
+    "failed": [
+      "glab discovery"
+    ],
+    "counts": [
+      9,
+      2,
+      7,
+      0
+    ],
+    "live": {
+      "prs": 3,
+      "commits": 2,
+      "repos": 1
+    },
+    "host": "10.0.0.5",
+    "keys": [
+      "10.0.0.5/example/host!101"
+    ],
+    "line": "not a host ???"
+  },
+  "glab-orphan-body": {
+    "prs": false,
+    "commits": true,
+    "failed": [
+      "glab discovery"
+    ],
+    "counts": [
+      9,
+      2,
+      7,
+      0
+    ],
+    "live": {
+      "prs": 3,
+      "commits": 2,
+      "repos": 1
+    },
+    "host": "10.0.0.5",
+    "keys": [
+      "10.0.0.5/example/host!101"
+    ],
+    "line": "??? orphan inventory line"
+  },
+  "glab-empty-block": {
+    "prs": false,
+    "commits": true,
+    "failed": [
+      "glab discovery"
+    ],
+    "counts": [
+      9,
+      2,
+      7,
+      0
+    ],
+    "live": {
+      "prs": 3,
+      "commits": 2,
+      "repos": 1
+    },
+    "host": "10.0.0.5",
+    "keys": [
+      "10.0.0.5/example/host!101"
+    ],
+    "line": "forge-empty.test"
+  },
+  "glab-partial-errors": {
+    "prs": false,
+    "commits": true,
+    "failed": [
+      "glab discovery"
+    ],
+    "counts": [
+      9,
+      2,
+      7,
+      0
+    ],
+    "live": {
+      "prs": 3,
+      "commits": 2,
+      "repos": 1
+    },
+    "host": "10.0.0.5",
+    "keys": [
+      "10.0.0.5/example/host!101"
+    ],
+    "line": "forge-b.test"
+  },
+  "glab-footer": {
+    "prs": true,
+    "commits": true,
+    "failed": [],
+    "counts": [
+      3,
+      2,
+      0,
+      0
+    ],
+    "live": {
+      "prs": 3,
+      "commits": 2,
+      "repos": 1
+    },
+    "host": "10.0.0.5",
+    "keys": [
+      "10.0.0.5/example/host!101"
+    ]
+  },
+  "glab-unreadable-body": {
+    "prs": false,
+    "commits": true,
+    "failed": [
+      "glab discovery"
+    ],
+    "counts": [
+      9,
+      2,
+      7,
+      0
+    ],
+    "live": {
+      "prs": 3,
+      "commits": 2,
+      "repos": 1
+    },
+    "host": "10.0.0.5",
+    "keys": [
+      "10.0.0.5/example/host!101"
+    ],
+    "line": "??? unreadable inventory body"
+  },
+  "glab-error-host": {
+    "prs": true,
+    "commits": true,
+    "failed": [],
+    "counts": [
+      3,
+      2,
+      0,
+      0
+    ],
+    "live": {
+      "prs": 3,
+      "commits": 2,
+      "repos": 1
+    },
+    "host": "ERROR",
+    "keys": [
+      "error/example/host!106"
+    ]
   }
 }

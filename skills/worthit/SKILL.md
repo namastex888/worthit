@@ -38,7 +38,7 @@ Parts of the last run. Dots walk into objects and arrays (`plans.0.usd_per_full_
 | `game` | Level, XP, streak, personal bests |
 | `heat` | Output tokens per weekday and hour |
 | `week`, `machines`, `days_scanned`, `generated_at` | What the run covered |
-| `machines_missing`, `machines_left_out` | Machines that gave no answer this run (`saved_scan_at` set = their last saved scan was used) and saved machines with usage left out. Either one not empty = the week may be undercounted and every plan is a floor |
+| `machines_missing`, `machines_left_out` | Machines that gave no answer this run (`saved_scan_at` set = their last saved scan was used) and saved machines with usage (or unreadable saved scans) left out. Removing an SSH alias does not clear it; retire the machine or scan a fresh equivalent machine. Either one not empty = the week may be undercounted and every plan is a floor |
 | `machines_retained` | Older scans kept for machines that answered with less data. Each row names `machine` (SSH alias or `this machine`), `days_kept` (distinct local days) and `units` (`day`, `provider`). Each machine/local-day/provider keeps the whole scan unit with higher API-list USD at this run's prices, then total tokens; fresh wins a full tie. Mention the named machines and days kept. Any retained unit intersecting this week makes every plan a floor and `change_vs_last_week_pct` null: later lost hours remain unknown |
 
 When `machines_retained` has a unit inside this week, that week's totals are a lower bound too.
@@ -96,16 +96,28 @@ worthit days --group day --tool codex --since 2026-11-05
 ```
 
 - `--group day|week|month` (default day; week is ISO, `2026-W45`)
-- `--by total|tool|model` (default total; `total` also returns `merged_prs` and `commits`)
+- `--by total|tool|model` (default total; `total` also returns `merged_prs` and `commits` when neither `--tool` nor `--model` is set)
 - `--tool claude|codex|google|omp|dsh`, `--model <part of the id>`
-- Each row has `api_usd`, `output_tokens`, `days` (days with data in the period), and `requests` unless grouped by model.
+- Each row has `api_usd`, `output_tokens`, `days` (days with data in the period), and `requests` only when reading `day_provider`.
 
-`day_provider` uses local days; `day_model` (including `--by model` and `--model`)
-uses UTC days. Each replaces every field on a fully scanned day whose start is on
-or after every retirement, with every machine covered; any other day keeps per-field MAX,
-including partial oldest days and the current day. Missing or left-out machines
-prevent replacement. In `day`, PRs and commits replace independently inside git's
-14-day window when all that metric's sources answered; otherwise they keep MAX,
+Stdout remains a bare JSON row array. Read the one-line stderr note too:
+`worthit days: local days (day_provider)` for total/tool without `--model`, or
+`worthit days: UTC days (day_model)` for `--by model` **or any `--model` filter**,
+including `--by total` and `--by tool`. The note is printed in terminals and pipes;
+internal question-bar lookups include it alongside the JSON for the model.
+Never compare UTC and local views per day. `--since`/`--until` and week/month
+grouping use the selected stored basis, so grouped boundaries can differ too.
+No stored dates or values are converted.
+
+`day_provider` uses local days; `day_model` (`--by model` or any `--model`
+filter, including `--by total` and `--by tool`) uses UTC days. Never compare UTC
+and local views per day; date filters and week/month groups use the selected stored
+basis too. Stored usage never decreases on rescan because tools prune logs:
+`day_provider`, `day_model` and `history.json` usage keep per-field MAX on every day,
+including complete, partial, current and outside-window days. Later price cuts or
+dedupe fixes cannot lower days already stored. Missing or left-out machines still
+make allowance values floors. In `day`, PRs and commits replace independently inside
+git's 14-day window when all that metric's sources answered; otherwise they keep MAX,
 including outside that window.
 
 ## `worthit sql "SELECT …"` and `worthit schema`
@@ -149,8 +161,15 @@ week start >= every `retired_at`. A pre-retirement week stays floor. Machine not
 the machine and the first possible measured week end (retired_at + seven days).
 `plans[].weeks[].proof`: week 0 gets its actual proof; a ledger week gets `floor`
 when retirement or a retained unit blocks it; otherwise the key is absent.
-Ledger weeks carry no machine check. Ordinary comparisons retain their existing
-retirement/retained eligibility checks; this field does not certify ledger coverage. Weekly baseline proof is likewise
+Ledger weeks carry no machine check: keep their values, but never label them measured
+or use them for a change. `plans[].change_vs_last_week_pct` compares this run's measured
+value with the measured `plan_value` observation recorded exactly seven days earlier:
+the row exactly seven local calendar days earlier (also across DST), with the same provider and plan and positive
+stored USD. That exact stored USD is the denominator, even if the ledger pool differs.
+Otherwise the change is null: no nearby-date or floor fallback. Same-day runs replace
+that daily observation; it does not record an exact run time or rolling period.
+Known retirement/retained floors at either endpoint still suppress the change.
+Weekly baseline proof is likewise
 checked against current retirements without rewriting saved checkpoints or searching
 past a floor. `worthit hosts unretire <machine>` restores the full frozen scan, removes
 retirement and reselects the alias. Its next answer merges normally. There is no
@@ -158,9 +177,17 @@ automatic retirement; machine notes offer a one-line hint after 14 days without 
 
 ## Fresh run: `worthit --json`
 
-Scans, prices and prints the whole data object (the same sections as `get`). Useful flags:
+Scans, prices and prints the whole data object (the same sections as `get`), plus
+the root `audit_log` field: the absolute `<date>-worthit-audit.log` path in the
+current folder. It uses the shared scan audit format and writes no Markdown or
+PNG and runs no Chrome. `audit_log` is null with `--no-files` or `--demo`.
+`--no-files` still updates the store; demo reads and writes no store or files.
+On exit 1 after activity, the command attempts to retain the audit and names its
+path on stderr, without printing success JSON. This output metadata does not
+change saved `last.json` or the output shapes of `get`, `days` and `sql`.
+Useful flags:
 
-- `--git yes|no` include merged PRs and commits
+- `--git yes|no` include merged PRs and commits (default yes)
 - `--hosts all|none|a,b` other machines over ssh (default: the remembered selection)
 - `--days N` window to scan (default 21; `--days 90` backfills history once)
 - Unchanged log files are served from a cache, so repeat runs are fast.
@@ -226,10 +253,11 @@ Query it with `worthit sql "SELECT generated_at, week_to, safe FROM weekly ORDER
 - **`usd_per_full_week`** pools every clean, finished meter stretch of the week: priced dollars divided by meter points consumed. `times_plan_price` divides it by the plan's weekly price ($200/month ≈ $46/week).
 - **Proof:** `measured` is read from the plan's own meter with every selected machine answering; `floor` means usage elsewhere may be missing, so the true value is at least this. Say "at least" for a floor and do not compare a floor week to week.
 - **One account on several machines** draws the same meter line on each; worthit joins those lines into one stretch. Use on machines that keep no meter log cannot be tied to an account: it is left out of `usd_per_full_week` and counted only in `usd_per_full_week_all_machines`.
-- **Week over week** compares 7-day blocks counted back from now, each pooled the same way.
+- **Week over week:** use `change_vs_last_week_pct`, comparing measured values recorded seven local calendar days apart.
+- Ledger weeks in `plans[].weeks` must not be used to work out a change.
 - **Months:** "times plan price" is against one subscription. A user with several accounts on a plan should divide by the number of accounts.
 - **Resets** are listed in `events` and never assumed used. Usage counts in the period it happened.
-- **omp and dsh** come from the Automagik usagemeter store. omp's own reported cost is used; dsh is priced at the rates those costs imply. Their history only goes back as far as that store (about 30 days).
+- **omp and dsh** come from the Automagik usagemeter store. omp's own reported cost is used; dsh is priced at the rates those costs imply. Their source history only goes back as far as that store; no fixed retention period is assumed.
 - **Open vs closed:** open = DeepSeek, GLM, Kimi, Qwen, Llama, Mistral, Gemma, MiniMax. Everything else is closed.
 - A partial period is partial: check `days` before comparing months or weeks.
 

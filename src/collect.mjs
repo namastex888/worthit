@@ -15,7 +15,7 @@ export const AUDIT = [];
 export const audit = (kind, text) => { AUDIT.push(new Date().toISOString() + '  ' + kind.padEnd(5) + ' ' + text); };
 export function writeAudit(file, version) {
   audit('write', tilde(file));
-  fs.writeFileSync(file, [`worthit ${version} audit log · ${new Date().toISOString()}`, "Recorded session-log reads and cache hits, collector commands, network activity, agent calls, sent data and output writes. It does not list executable lookup (which), hardware probes, the zstd decompressor used for .zst logs, the account ids read from Claude and Codex login files (.claude.json, auth.json; hashed), ~/.ssh/config, or worthit's own store files. Kinds: read, cache, run, net, agent, sent, write, note.", '', ...AUDIT, ''].join('\n'));
+  fs.writeFileSync(file, [`worthit ${version} audit log · ${new Date().toISOString()}`, "Recorded session-log reads and cache hits, collector commands, network activity, agent calls, sent data and output writes. It does not list executable lookup (which), hardware probes, the zstd decompressor used for .zst logs, the account ids read from Claude and Codex login files (.claude.json, auth.json; hashed), the model names read from Gemini/Antigravity settings (.gemini/antigravity-cli/settings.json, .gemini/antigravity/settings.json, .gemini/settings.json), claude-limits.jsonl in the meter state directories, ~/.ssh/config, all reads and writes inside worthit's own store folder (WORTHIT_HOME, default ~/.worthit: its database and its sidecar files, caches, saved scans, settings and temporary files), or temporary files and working directories worthit creates under the system temporary folder, including rendering scratch and AI-agent working directories. Some store writes are listed, not all. Kinds: read, cache, run, net, agent, sent, write, note.", '', ...AUDIT, ''].join('\n'));
 }
 export const has = c => spawnSync('which', [c], { stdio: 'ignore' }).status === 0;
 const H = 3600e3, DAY = 24 * H;
@@ -53,6 +53,25 @@ export const saveHosts = sel => { writeHosts(HOME, { ...readHosts(HOME), selecte
 
 // ---------------------------------------------------------------- step 1: scan
 const SPAN = { claude: [0, .68], codex: [.68, .97], antigravity: [.97, 1] }, TOOL = { claude: 'Claude Code', codex: 'Codex', antigravity: 'Antigravity', omp: 'omp', dsh: 'dsh', meter: 'usagemeter store' };
+const readScan = file => { try { const value = JSON.parse(fs.readFileSync(file, 'utf8')); return value && typeof value === 'object' && !Array.isArray(value) ? value : null; } catch { return null; } };
+function savedLeftOut(keepDir, selected, retired, freshHosts) {
+  // Saved aliases remain known after SSH config changes, until explicitly retired.
+  const aliases = new Set(sshHosts().map(h => h.alias));
+  if (fs.existsSync(keepDir)) for (const entry of fs.readdirSync(keepDir, { withFileTypes: true })) {
+    if (entry.isFile() && entry.name.endsWith('.json') && entry.name !== 'local.json') aliases.add(entry.name.slice(0, -5));
+  }
+  const leftOut = [];
+  for (const alias of aliases) {
+    const file = path.join(keepDir, alias + '.json');
+    if (alias === 'local' || retired.some(r => r.machine === alias) || selected.includes(alias) || !fs.existsSync(file)) continue;
+    const saved = readScan(file);
+    // Only a fresh equivalent machine answers for an omitted alias; a fallback cannot.
+    if (saved?.host && freshHosts.has(saved.host)) continue;
+    const unknown = !saved || !Array.isArray(saved.buckets) || !Array.isArray(saved.meter_usage);
+    if (unknown || saved.buckets.length || saved.meter_usage.length) leftOut.push(alias);
+  }
+  return leftOut;
+}
 export async function scan(cfg, on) {
   const startedAt = Date.now(), retirement = readHosts(HOME).retired;
   cfg = { ...cfg, hosts: activeHosts(HOME, cfg.hosts || []) };
@@ -67,7 +86,7 @@ export async function scan(cfg, on) {
   fs.mkdirSync(runDir, { recursive: true });
   const script = path.join(ROOT, 'core', 'extract_usage.py'), counts = { claude: 0, codex: 0, antigravity: 0 };
   const cache = path.join(HOME, 'run-counts.json'), keepDir = path.join(HOME, 'run-keep');
-  if (!cfg.fresh && !retirement.length && process.env.WORTHIT_REUSE && fs.existsSync(path.join(keepDir, 'local.json'))) { fs.cpSync(keepDir, runDir, { recursive: true, filter: f => f !== path.join(keepDir, 'retired') }); audit('note', 'WORTHIT_REUSE: using the previous scan'); return { runDir, counts: JSON.parse(fs.readFileSync(cache, 'utf8')), hosts: [], started_at: 0 }; }
+  if (!cfg.fresh && !retirement.length && process.env.WORTHIT_REUSE && fs.existsSync(path.join(keepDir, 'local.json'))) { fs.cpSync(keepDir, runDir, { recursive: true, filter: f => f !== path.join(keepDir, 'retired') }); audit('note', 'WORTHIT_REUSE: using the previous scan'); return { runDir, counts: JSON.parse(fs.readFileSync(cache, 'utf8')), hosts: [], left_out: savedLeftOut(keepDir, cfg.hosts, retirement, new Set()), started_at: 0 }; }
   let cached = 0; const names = cfg.hosts || [], pcts = { local: 0 }; names.forEach(a => { pcts[a] = 0; });
   const emit = detail => { const v = Object.values(pcts); on({ pct: v.reduce((a, b) => a + b, 0) / v.length, detail, counts }); };
   audit('run', `${py} core/extract_usage.py ${cfg.days}   (reads local session logs, read-only)`);
@@ -103,17 +122,19 @@ export async function scan(cfg, on) {
   const seenHost = new Map([[hostOf(path.join(runDir, 'local.json')), 'this machine']]);
   for (const x of [...hosts].sort((a, b) => !!a.saved_at - !!b.saved_at)) { if (!x.ok) continue; const f = path.join(runDir, x.alias + '.json'), hn = hostOf(f);   // fresh answers first: a saved copy never wins over one
     if (hn && seenHost.has(hn)) { x.same_as = seenHost.get(hn); x.ok = false; delete x.saved_at; fs.rmSync(f, { force: true }); audit('note', `${x.alias} is the same machine as ${x.same_as} (${hn}): its copy is dropped`); } else if (hn) seenHost.set(hn, x.alias); }
+  const freshHosts = new Set(['local', ...hosts.filter(x => x.ok && !x.saved_at).map(x => x.alias)]
+    .map(alias => readScan(path.join(runDir, alias + '.json'))?.host).filter(h => typeof h === 'string' && h));
   // Merge only the deduplicated machines (including local), before pricing and persisting run-keep.
-  const merged = spawnSync(py, [path.join(ROOT, 'core', 'merge_scans.py'), runDir, keepDir, HOSTS_FILE, String(startedAt), String(cfg.days), JSON.stringify(['local.json', ...hosts.filter(x => x.ok && !x.saved_at).map(x => x.alias + '.json')])], { env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' }, encoding: 'utf8', maxBuffer: 64 << 20 });
+  const mergeArgs = [path.join(ROOT, 'core', 'merge_scans.py'), runDir, keepDir, HOSTS_FILE, String(startedAt), String(cfg.days), JSON.stringify(['local.json', ...hosts.filter(x => x.ok && !x.saved_at).map(x => x.alias + '.json')])];
+  audit('run', `${py} core/merge_scans.py ${mergeArgs.slice(1).map((a, i) => i < 3 ? tilde(a) : i === 5 ? "'" + a + "'" : a).join(' ')}   (merges saved scans into this run: kept days, retirements, conflicts)`);
+  const merged = spawnSync(py, mergeArgs, { env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' }, encoding: 'utf8', maxBuffer: 64 << 20 });
   if (merged.status) throw new Error('keeping saved scan days failed: ' + String(merged.stderr).trim().split('\n').pop());
   const { retained, retired, conflicts } = JSON.parse(merged.stdout);
   for (const x of conflicts) audit('note', `${x.machine} is retired but answers as ${x.same_as}`);
   for (const x of retained) for (const u of x.units) audit('note', `${x.machine}: older ${u.day} ${u.provider} scan kept (higher API value, then tokens)`);
   on({ pct: 1, detail: 'done', counts });
-  // saved machines the person left out of this run, whose last scan (inside the window) holds usage: the plans' numbers are then "at least"
-  const leftOut = []; for (const h of sshHosts()) { const k = path.join(keepDir, h.alias + '.json'); if (retirement.some(r => r.machine === h.alias) || names.includes(h.alias) || !fs.existsSync(k)) continue;
-    const hn = hostOf(k), at = Date.parse(savedAt(k) || ''); if ((hn && seenHost.has(hn)) || !(at > Date.now() - cfg.days * DAY)) continue; if (hn) seenHost.set(hn, h.alias);
-    let used = false; try { used = !/"buckets"\s*:\s*\[\s*\]/.test(fs.readFileSync(k, 'utf8')); } catch { /* unreadable: not counted as use */ } if (used) leftOut.push(h.alias); }
+  // Saved usage (including meter-only usage) stays left out regardless of scan age.
+  const leftOut = savedLeftOut(keepDir, names, retirement, freshHosts);
   if (leftOut.length) audit('note', `saved machines with usage left out of this run: ${leftOut.join(', ')}`);
   fs.writeFileSync(cache, JSON.stringify(counts));
   fs.cpSync(runDir, keepDir, { recursive: true, force: true, filter: f => !retirement.some(r => path.basename(f) === r.machine + '.json') });
@@ -279,26 +300,42 @@ export async function git(cfg, on) {
   }
   let glHosts = [];
   if (optional('glab')) {
-    const st = spawnSync('glab', ['auth', 'status'], { encoding: 'utf8', timeout: 20000 });
-    const txt = ((st.stdout || '') + '\n' + (st.stderr || '')).replace(/\x1b\[[0-9;]*m/g, '');
-    const blocks = new Map(); let cur = null;
-    for (const line of txt.split('\n')) {
-      const h = /^([a-z0-9][a-z0-9.-]*\.[a-z]{2,}(?::\d+)?)\s*$/i.exec(line);
-      if (h) { cur = h[1].toLowerCase(); if (!blocks.has(cur)) blocks.set(cur, ''); }
-      else if (cur) blocks.set(cur, blocks.get(cur) + '\n' + line);
+    const st = spawnSync('glab', ['auth', 'status'], { encoding: 'utf8', timeout: 20000,
+      env: { ...process.env, GLAB_CHECK_UPDATE: 'false', GLAB_SHOW_WHATS_NEW: 'false' } });
+    const blocks = []; let malformed = false, noInstances = false;
+    const unreadable = line => { malformed = true; audit('note', `glab discovery could not read line: ${line.trim()}`); };
+    // glab prints unindented host keys and indents their messages by two spaces.
+    // Keep the exact key for --hostname; glab rejects port keys before making a request.
+    for (const stream of [st.stdout || '', st.stderr || '']) {
+      let cur = null, footer = false;
+      for (const raw of stream.replace(/\x1b\[[0-9;]*m/g, '').split(/\r?\n/)) {
+        const line = raw.trimEnd();
+        if (!line || /^ +ERROR$/.test(line)) continue;
+        if (/^\s*[Xx✗×] could not authenticate to one or more of the configured GitLab instances\.?$/.test(line)) { cur = null; continue; }
+        if (/^\s*no GitLab instances have been authenticated with glab; run .+ to authenticate\.?$/i.test(line)) { noInstances = true; cur = null; continue; }
+        if (/^[!⚠] Token is from environment variable \w+\. This takes precedence over tokens stored in config or keyring\.$/.test(line)) { footer = true; cur = null; continue; }
+        if (footer && /^  (Run .+ to find the source:|A plain path means it is set in your environment)/.test(line)) continue;
+        if (/^\s/.test(line)) {
+          if (cur && /^  (?:[✓x!] |  )/.test(line)) cur.body += '\n' + line;
+          else unreadable(line);
+          continue;
+        }
+        cur = null; footer = false;
+        // Host keys are opaque glab configuration keys, not DNS names to normalize.
+        if (/\s/.test(line)) unreadable(line);
+        else { cur = { host: line, body: '' }; blocks.push(cur); }
+      }
     }
-    // glab can exit 1 because its default gitlab.com host has no token, while other hosts answer.
-    // Classify each host's actual auth result; the aggregate process exit cannot select sources.
-    let failed = !!st.error || st.signal != null || st.status == null ||
-      (!blocks.size && !/no GitLab instances have been authenticated with glab/i.test(txt));
-    for (const [host, block] of blocks) {
-      const loggedIn = /Logged in to\s+/i.test(block), noToken = /No token found/i.test(block);
-      const error = /API call failed:|could not read the token:|failed to initialize api client:/i.test(block);
+    // A token-less default host can make glab exit 1 while other hosts answer.
+    let failed = malformed || !!st.error || st.signal != null || st.status == null || (!blocks.length && !noInstances);
+    for (const { host, body } of blocks) {
+      const loggedIn = /Logged in to\s+/i.test(body), noToken = /No token found/i.test(body);
+      const error = /API call failed:|could not read the token:|failed to initialize api client:/i.test(body);
       if (noToken && !loggedIn) audit('note', `glab ${host} has no token: skipped as a source`);
-      else if (error || !loggedIn || noToken) failed = true;
-      else glHosts.push(host);
+      else if (error || !loggedIn || noToken) { failed = true; audit('note', `glab discovery could not read authenticated block for line: ${host}`); }
+      else if (!glHosts.includes(host)) glHosts.push(host);
     }
-    if (!blocks.size && !failed) audit('note', 'glab has no authenticated instance: skipped as a source');
+    if (!blocks.length && !failed) audit('note', 'glab has no authenticated instance: skipped as a source');
     if (failed) answer('glab discovery', false, ['prs']);
     audit('run', 'glab auth status' + `   (GitLab hosts you are logged in to: ${glHosts.join(', ') || 'none'}; discovery may contact gitlab.com even without a token)`);
   }
@@ -371,6 +408,19 @@ export function buildData(report, g, cfg, scanInfo) {
   const ledgerProofAt = end => retirementBlocks(retired, end).length ||
     retained.some(x => x.units.some(u => retainedUnitOverlapsWeek(u, end))) ? { proof: 'floor' } : {};
   let ledger = []; try { ledger = fs.readFileSync(path.join(HOME, 'weeks', 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch { /* first run */ }
+  // A daily observation certifies only its own stored value, never a ledger pool.
+  // Read before this run replaces today's row; do not substitute a nearby day.
+  const previousDay = new Date(now); previousDay.setDate(previousDay.getDate() - 7);
+  let previousValues = [];
+  if (fs.existsSync(path.join(HOME, 'worthit.db'))) {
+    let db;
+    try {
+      db = new DatabaseSync(path.join(HOME, 'worthit.db'), { readOnly: true });
+      if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'plan_value'").get())
+        previousValues = db.prepare('SELECT provider, plan, usd_per_full_week, proof FROM plan_value WHERE day = ?').all(dayKey(previousDay));
+    } catch (e) { audit('note', 'previous plan value unavailable: ' + e.message); }
+    finally { db?.close(); }
+  }
   const day0 = new Date(w1).toISOString().slice(0, 10), events = loadEvents().filter(e => e.date_utc >= day0).map(e => ({ date: e.date_utc, provider: e.provider, type: e.type, title: e.title, confidence: e.confidence, source: e.source_url }));
   const plans = [];
   for (const key of ['claude', 'google', 'codex']) {
@@ -383,12 +433,15 @@ export function buildData(report, g, cfg, scanInfo) {
     const byWeek = {}; for (const k in acc) if (+k >= 1) byWeek[String(99 - k).padStart(2, '0')] = acc[k].pts >= 15 ? Math.round(acc[k].usd / (acc[k].pts / 100)) : acc[k].max;
     const past = Object.keys(byWeek).sort().slice(-5).map(k => byWeek[k]), pl = (report.pooled || {})[key], v = pl ? pl.usd_per_full_week : w.usd_per_full_week, resets = events.filter(e => e.provider === key && e.type === 'reset' && e.confidence === 'high').length, from = Math.round(w.meter_start_pct), to = Math.round(w.meter_end_pct), per = report.prices.plan_usd_per_week[key];
     const proofAt = end => key === 'claude' && measuredAt(end) ? 'measured' : 'floor';
+    const previous = previousValues.find(p => p.provider === key && p.plan === PLAN[key].plan);
+    const change = proofAt(now) === 'measured' && previous?.proof === 'measured' && previous.usd_per_full_week > 0 && ledgerProofAt(w1).proof !== 'floor'
+      ? pctChange(v, previous.usd_per_full_week) : null;
     const retirementNote = allMachines && key === 'claude' ? retirementStatement(retired) : '';
     plans.push({ key, ...PLAN[key], usd_per_full_week: v, times_plan_price: Math.round(v / per), proof: proofAt(now), ...(retirementNote ? { retirement_note: retirementNote } : {}), plan_usd_per_week: Math.round(per), meter_from: from, meter_to: to,
       meter: pl ? `${pl.stretches} stretches · ${pl.meter_points} points` : key === 'google' ? `no meter · cap after ${w.hours} h` : `meter ${from}% → ${to}% in ${w.hours} h`, priced_usd: pl ? pl.api_usd : w.measured.api_usd, fraction_of_week: pl ? +(pl.meter_points / 100).toFixed(2) : +((to - from) / 100).toFixed(2),
       other_machines_usd: pl && pl.other_machines_usd >= 1 ? Math.round(pl.other_machines_usd) : 0, usd_per_full_week_all_machines: pl && pl.other_machines_usd >= 1 ? pl.usd_per_full_week_all_machines : null,
       stretches: pl ? pl.stretches : 1, range_usd: report.this_week[key + '_range'] || null, resets_this_week: resets,
-      tokens: pl ? `${ft(pl.output_tokens)} out ${ft(pl.cached_input_tokens)} cached` : `${ft(w.measured.output_tokens)} out ${ft(w.measured.cached_input_tokens)} cached`, models: models(w.measured.model_mix_by_usd), history: [...past, v], weeks: [...Object.keys(byWeek).sort().slice(-11).map(k => ({ weeks_ago: 99 - +k, to: new Date(now - (99 - +k) * 7 * DAY).toISOString().slice(0, 10), usd: byWeek[k], ...ledgerProofAt(now - (99 - +k) * 7 * DAY) })), { weeks_ago: 0, to: new Date(now).toISOString().slice(0, 10), usd: v, proof: proofAt(now) }], change_vs_last_week_pct: byWeek['98'] != null && proofAt(now) === 'measured' && proofAt(w1) === 'measured' ? pctChange(v, byWeek['98']) : null });
+      tokens: pl ? `${ft(pl.output_tokens)} out ${ft(pl.cached_input_tokens)} cached` : `${ft(w.measured.output_tokens)} out ${ft(w.measured.cached_input_tokens)} cached`, models: models(w.measured.model_mix_by_usd), history: [...past, v], weeks: [...Object.keys(byWeek).sort().slice(-11).map(k => ({ weeks_ago: 99 - +k, to: new Date(now - (99 - +k) * 7 * DAY).toISOString().slice(0, 10), usd: byWeek[k], ...ledgerProofAt(now - (99 - +k) * 7 * DAY) })), { weeks_ago: 0, to: new Date(now).toISOString().slice(0, 10), usd: v, proof: proofAt(now) }], change_vs_last_week_pct: change });
   }
 
   // waste: account-weeks that closed in the last 7 days (and ones still open, shown as at risk, never as waste)
@@ -425,20 +478,13 @@ export function buildData(report, g, cfg, scanInfo) {
   const hf = path.join(HOME, 'history.json'); let hist = { days: {} }; try { hist = JSON.parse(fs.readFileSync(hf, 'utf8')); } catch { /* first run */ }
   const agg = {}; for (const a of act) { const k = dayKey(a.t), o = agg[k] = agg[k] || { out: 0, usd: 0, prs: 0, commits: 0 }; o.out += a.output || 0; o.usd += a.usd || 0; }
   if (g) { for (const t of g.prs) (agg[dayKey(t)] = agg[dayKey(t)] || { out: 0, usd: 0, prs: 0, commits: 0 }).prs++; for (const t of g.commits) (agg[dayKey(t)] = agg[dayKey(t)] || { out: 0, usd: 0, prs: 0, commits: 0 }).commits++; }
-  // The scanner cuts at now - days (UTC), while history groups local calendar days.
-  // Use a conservative cutoff and the scan start: even a run crossing midnight cannot lower its partial day.
-  const scanFrom = now - cfg.days * DAY, scanTo = scanInfo.started_at ?? now;
-  const complete = (k, utc = false) => {
-    const start = new Date(k + 'T00:00:00' + (utc ? 'Z' : '')), end = new Date(start);
-    if (utc) end.setUTCDate(end.getUTCDate() + 1); else end.setDate(end.getDate() + 1);
-    return !missing.length && !leftOut.length && retired.every(r => +start >= Date.parse(r.retired_at)) && +start >= scanFrom && +end <= scanTo;
-  };
+  // Tools prune their logs. Even a complete rescan cannot lower saved usage.
   // Git has its own 14-day window; usage coverage and machine selection do not govern delivery counts.
   const gitCovered = (k, metric) => !!g?.coverage?.[metric] && +new Date(k + 'T00:00:00') >= now - 14 * DAY;
   // A complete empty answer also replaces a saved delivery day with zero.
   for (const [k, old] of Object.entries(hist.days)) if (!agg[k]) agg[k] = { out: old.out || 0, usd: old.usd || 0, prs: 0, commits: 0 };
-  const was = (k, f, covered) => covered ? 0 : (hist.days[k] || {})[f] || 0;
-  for (const [k, o] of Object.entries(agg)) hist.days[k] = { out: Math.max(Math.round(o.out), was(k, 'out', complete(k))), usd: Math.max(Math.round(o.usd), was(k, 'usd', complete(k))), prs: Math.max(o.prs, was(k, 'prs', gitCovered(k, 'prs'))), commits: Math.max(o.commits, was(k, 'commits', gitCovered(k, 'commits'))) };
+  const oldValue = (k, f) => (hist.days[k] || {})[f] || 0;
+  for (const [k, o] of Object.entries(agg)) hist.days[k] = { out: Math.max(Math.round(o.out), oldValue(k, 'out')), usd: Math.max(Math.round(o.usd), oldValue(k, 'usd')), prs: Math.max(o.prs, gitCovered(k, 'prs') ? 0 : oldValue(k, 'prs')), commits: Math.max(o.commits, gitCovered(k, 'commits') ? 0 : oldValue(k, 'commits')) };
   fs.mkdirSync(HOME, { recursive: true }); fs.writeFileSync(hf, JSON.stringify(hist)); audit('write', tilde(hf) + `  (${Object.keys(hist.days).length} daily rows)`);
   // delivery: what the merged pull requests were (title prefix), ranked, and how features and their cost moved day by day, week by week, month by month
   if (g && g.kinds && g.kinds.length) {
@@ -468,13 +514,12 @@ export function buildData(report, g, cfg, scanInfo) {
       CREATE TABLE IF NOT EXISTS plan_value (day TEXT, provider TEXT, plan TEXT, usd_per_full_week INTEGER, times_plan_price INTEGER, stretches INTEGER, proof TEXT, PRIMARY KEY (day, provider));
       CREATE VIEW IF NOT EXISTS month AS SELECT substr(day, 1, 7) AS month, provider, ROUND(SUM(api_usd)) AS api_usd, SUM(output_tokens) AS output_tokens, SUM(requests) AS requests, COUNT(DISTINCT day) AS days FROM day_provider GROUP BY 1, 2;`);
     const dp = {}; for (const a of act) { const k = dayKey(a.t) + '|' + (a.provider === 'antigravity' ? 'google' : a.provider), o = dp[k] = dp[k] || { usd: 0, out: 0, req: 0 }; o.usd += a.usd || 0; o.out += a.output || 0; o.req += a.requests || 0; }
-    // Both stores replace covered days and keep per-field maxima outside each source's coverage.
-    const replaceP = db.prepare('INSERT OR REPLACE INTO day_provider VALUES (?, ?, ?, ?, ?)');
+    // Stored usage always keeps per-field maxima; Git has independent coverage.
     const upP = db.prepare('INSERT INTO day_provider VALUES (?, ?, ?, ?, ?) ON CONFLICT (day, provider) DO UPDATE SET api_usd = MAX(api_usd, excluded.api_usd), output_tokens = MAX(output_tokens, excluded.output_tokens), requests = MAX(requests, excluded.requests)');
     const upD = db.prepare('INSERT INTO day VALUES (?, ?, ?) ON CONFLICT (day) DO UPDATE SET prs = CASE WHEN ? THEN excluded.prs ELSE MAX(prs, excluded.prs) END, commits = CASE WHEN ? THEN excluded.commits ELSE MAX(commits, excluded.commits) END');
     const upV = db.prepare('INSERT OR REPLACE INTO plan_value VALUES (?, ?, ?, ?, ?, ?, ?)');
     db.exec('BEGIN');
-    for (const [k, o] of Object.entries(dp)) { const [day, provider] = k.split('|'); (complete(day) ? replaceP : upP).run(day, provider, +o.usd.toFixed(2), Math.round(o.out), o.req); }
+    for (const [k, o] of Object.entries(dp)) { const [day, provider] = k.split('|'); upP.run(day, provider, +o.usd.toFixed(2), Math.round(o.out), o.req); }
     for (const [k, o] of Object.entries(hist.days)) upD.run(k, o.prs || 0, o.commits || 0, +gitCovered(k, 'prs'), +gitCovered(k, 'commits'));
     for (const p of plans) upV.run(dayKey(now), p.key, p.plan, p.usd_per_full_week, p.times_plan_price, p.stretches || 1, p.proof);
     db.exec('COMMIT');
@@ -486,9 +531,8 @@ export function buildData(report, g, cfg, scanInfo) {
 
     // model mix: per day and model in the store, shown as rolling 7-day blocks ending today (UTC days)
     db.exec('CREATE TABLE IF NOT EXISTS day_model (day TEXT, model TEXT, provider TEXT, output_tokens INTEGER, api_usd REAL, PRIMARY KEY (day, model, provider))');
-    const replaceM = db.prepare('INSERT OR REPLACE INTO day_model VALUES (?, ?, ?, ?, ?)');
     const upM = db.prepare('INSERT INTO day_model VALUES (?, ?, ?, ?, ?) ON CONFLICT (day, model, provider) DO UPDATE SET output_tokens = MAX(output_tokens, excluded.output_tokens), api_usd = MAX(api_usd, excluded.api_usd)');
-    db.exec('BEGIN'); for (const r of report.model_days || []) (complete(r.day, true) ? replaceM : upM).run(r.day, r.model, r.provider, r.output, r.usd); db.exec('COMMIT');
+    db.exec('BEGIN'); for (const r of report.model_days || []) upM.run(r.day, r.model, r.provider, r.output, r.usd); db.exec('COMMIT');
     const NW = 8, tdy = Date.parse(new Date(now).toISOString().slice(0, 10) + 'T00:00:00Z'), blk = {}, seenDays = {};
     const prov = {};
     for (const r of db.prepare('SELECT day, model, provider, output_tokens AS o, api_usd AS u FROM day_model WHERE day >= ?').all(new Date(tdy - (NW * 7 - 1) * DAY).toISOString().slice(0, 10))) {

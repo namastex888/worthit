@@ -1,0 +1,9 @@
+{
+  "generated_at": "2026-11-14T12:00:00Z",
+  "week": { "from": "2026-11-08", "to": "2026-11-14" },
+  "plans": [{
+    "plan": "Sample plan", "proof": "floor", "color": "#c898ff",
+    "usd_per_full_week": 100, "change_vs_last_week_pct": null
+  }],
+  "git": null
+}

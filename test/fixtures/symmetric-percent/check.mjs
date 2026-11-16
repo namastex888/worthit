@@ -74,6 +74,14 @@ for (const c of cases) {
   const report = reportFor(c), original = structuredClone(report);
   fs.writeFileSync(path.join(HOME, 'weeks/ledger.jsonl'), JSON.stringify({ provider: 'claude', quality: 'clean',
     start: '2026-11-01T12', end: '2026-11-06T12', usd_per_full_week: c.from }) + '\n');
+  // Test adaptation to PR 76: ordinary comparisons require a measured daily observation.
+  const { DatabaseSync } = await import('node:sqlite');
+  const baselineDb = new DatabaseSync(path.join(HOME, 'worthit.db'));
+  baselineDb.exec('CREATE TABLE IF NOT EXISTS plan_value (day TEXT, provider TEXT, plan TEXT, usd_per_full_week INTEGER, times_plan_price INTEGER, stretches INTEGER, proof TEXT, PRIMARY KEY (day, provider))');
+  const prior = new Date(); prior.setDate(prior.getDate() - 7);
+  const baselineDay = [prior.getFullYear(), String(prior.getMonth() + 1).padStart(2, '0'), String(prior.getDate()).padStart(2, '0')].join('-');
+  baselineDb.prepare("INSERT OR REPLACE INTO plan_value (day, provider, plan, usd_per_full_week, proof) VALUES (?, 'claude', 'Claude Ultra', ?, 'measured')").run(baselineDay, c.from);
+  baselineDb.close();
   const ordinary = buildData(report, null, { days: 21 }, { hosts: [], counts: {} });
   const plan = ordinary.plans[0];
   assert.deepEqual(report, original, 'priced source values remain unchanged');
