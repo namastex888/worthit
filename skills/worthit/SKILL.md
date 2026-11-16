@@ -20,6 +20,14 @@ Run it as `worthit` (or `npx worthit`). All commands below print JSON on stdout;
 
 Start with `worthit get` (no argument): it lists the sections and when the data was generated. If `generated_at` is older than the question needs, run `worthit --json` first, then query.
 
+For safe sample lookups, use `worthit get <section> --demo` (including dotted fields),
+or `worthit get --demo` to list the bundled sample's sections. It uses the same data
+as `worthit --json --demo`. A standalone `--demo` may also precede the lookup command.
+`days --demo` and `sql ... --demo` reject with exit 2 and a one-line error because the
+sample has no historical query tables. Demo lookups never read or write the store,
+even when it is missing or unreadable. Text containing `--demo` inside a SQL statement
+is SQL text, not a CLI flag.
+
 ## `worthit get [section[.field…]]`
 
 Parts of the last run. Dots walk into objects and arrays (`plans.0.usd_per_full_week`).

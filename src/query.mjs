@@ -1,4 +1,4 @@
-// worthit query commands: instant answers from what earlier runs stored (no scan, no model, no network).
+// worthit query commands: instant answers from earlier runs or the bundled --demo sample (no scan, no model, no network).
 //   worthit get [section[.field…]]      a part of the last run's data (plans, months, model_mix, tools, waste, git, events, game, totals…)
 //   worthit days [--since D] [--until D] [--group day|week|month] [--by total|tool|model] [--tool X] [--model X]
 //   worthit sql "SELECT …"              read-only SQL over the local store
@@ -9,6 +9,7 @@ import fs from 'node:fs'; import path from 'node:path';
 import { createRequire } from 'node:module';
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');   // loaded here, after quiet.mjs, so its 'experimental' warning stays silent
 import { HOME, ROOT } from './collect.mjs';
+import { demoData } from './demo.mjs';
 
 const DB = path.join(HOME, 'worthit.db'), LAST = path.join(HOME, 'last.json');
 const out = v => console.log(JSON.stringify(v, null, 1));
@@ -58,22 +59,33 @@ export const SCHEMA = {
 };
 
 export const QUERY_COMMANDS = ['get', 'days', 'sql', 'schema'];
+// Match standalone CLI flags only; SQL text containing "--demo" remains one statement.
+const withoutDemo = argv => argv.filter(arg => arg !== '--demo' && !arg.startsWith('--demo='));
 // CLI entry: prints the answer as JSON; false when argv is not a query command
 export async function query(argv) {
   if (argv.includes('--skill')) { console.log(fs.readFileSync(path.join(ROOT, 'skills', 'worthit', 'SKILL.md'), 'utf8')); return true; }
-  if (!QUERY_COMMANDS.includes(argv[0])) return false;
+  if (!QUERY_COMMANDS.includes(withoutDemo(argv)[0])) return false;
   try { out(run(argv, note => console.error(note))); } catch (e) { console.error('worthit: ' + e.message); process.exit(2); }
   return true;
 }
 // The same commands as a function: returns the value, with an optional day-basis note for the caller.
 export function run(argv, note = () => {}) {
+  const demo = argv.includes('--demo');
+  if (argv.some(arg => arg.startsWith('--demo='))) fail('--demo takes no value: use `--demo`.');
+  argv = withoutDemo(argv);
   const cmd = argv[0], arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
+  if (demo && ['days', 'sql'].includes(cmd)) fail(`--demo is not supported for ${cmd}: the bundled sample has no query tables. Use \`worthit get <section> --demo\`.`);
   if (cmd === 'schema') return SCHEMA;
   if (cmd === 'get') {
-    if (!fs.existsSync(LAST)) fail('no saved run yet. Run `worthit --json` once.');
-    const data = JSON.parse(fs.readFileSync(LAST, 'utf8')), p = argv[1] && !argv[1].startsWith('--') ? argv[1] : '';
+    let data;
+    if (demo) data = demoData();
+    else {
+      if (!fs.existsSync(LAST)) fail('no saved run yet. Run `worthit --json` once.');
+      data = JSON.parse(fs.readFileSync(LAST, 'utf8'));
+    }
+    const p = argv[1] && !argv[1].startsWith('--') ? argv[1] : '';
     if (!p) return { generated_at: data.generated_at, sections: Object.keys(data), hint: 'worthit get <section>, e.g. worthit get plans, worthit get model_mix.series, worthit get plans.0.usd_per_full_week' };
-    let v = data; for (const k of p.split('.')) { if (v == null || !(k in Object(v))) fail(`no "${p}" in the last run. Sections: ${Object.keys(data).join(', ')}`); v = v[k]; }
+    let v = data; for (const k of p.split('.')) { if (v == null || !(k in Object(v))) fail(`no "${p}" in the ${demo ? 'sample' : 'last'} run. Sections: ${Object.keys(data).join(', ')}`); v = v[k]; }
     return p.includes('.') ? v : { generated_at: data.generated_at, [p]: v };
   }
   if (cmd === 'days') {
