@@ -42,13 +42,13 @@ try {
   const first = scan(21); assert.deepEqual(first.machines_missing, []); assert.deepEqual(first.machines_left_out, []);
   check('before_models', rows('model')); check('before_totals', rows('total'));
   // Same literal source requests, actual API output price corrected from $20/M to $10/M.
-  // Nov 10 is complete; Nov 7 starts before the new cutoff; Nov 14 is still in progress.
+  // Complete, oldest partial and current days all keep their stored usage maxima.
   price(10);
   const second = scan(7); assert.deepEqual(second.machines_missing, []); assert.deepEqual(second.machines_left_out, []);
   const models = rows('model'), totals = rows('total');
   check('corrected_models', models); check('corrected_totals', totals);
   assert.deepEqual(models.map(({ period, api_usd, output_tokens }) => ({ period, api_usd, output_tokens })),
-    totals.map(({ period, api_usd, output_tokens }) => ({ period, api_usd, output_tokens })), 'complete-day price correction: CLI --by model and --by total agree');
+    totals.map(({ period, api_usd, output_tokens }) => ({ period, api_usd, output_tokens })), 'rescan MAX: CLI --by model and --by total agree in UTC');
   check('corrected_models', rows('model')); // A query never changes stored values.
   scan(7); check('corrected_models', rows('model')); check('corrected_totals', rows('total'));
   // buildData controls isolate both field updates and coverage from scan merging/pricing.
@@ -68,9 +68,9 @@ try {
     ['retired_local_only', 'America/Los_Angeles', '2026-11-14T12:00:00Z', '2026-11-10T15'],
   ]) check(name, run([path.join(folder, 'controls.mjs'), name, now, hour], { ...env, TZ: tz, WORTHIT_HOME: path.join(tmp, name) }));
   const schema = cli(['schema']);
-  assert.match(schema.day_model.about, /fully scanned UTC day/);
-  assert.match(schema.day_model.about, /every retirement.*per-field MAX/);
-  assert.match(schema.day_provider.about, /fully scanned local day/);
+  assert.match(schema.day_model.about, /UTC day.*never decreases.*MAX/);
+  assert.match(schema.day_model.about, /price cuts or dedupe fixes cannot lower/);
+  assert.match(schema.day_provider.about, /local day.*never decreases.*MAX/);
   assert.match(schema.day.about, /14-day window.*sources answered.*MAX.*outside/);
   expected.done();
   assert.ok(!fs.readFileSync(env.FIXTURE_TRACE, 'utf8').includes('"unexpected"'));

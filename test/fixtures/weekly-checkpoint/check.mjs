@@ -15,13 +15,33 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
   for (const name of ['open', 'xdg-open', 'osascript', 'wl-copy', 'xclip', 'claude', 'codex', 'omp', 'dsh', 'git']) {
     fs.writeFileSync(path.join(bin, name), `#!${process.execPath}\nimport fs from 'node:fs';fs.appendFileSync(process.env.FIXTURE_TRACE,JSON.stringify({unexpected:${JSON.stringify(name)}})+'\\n');process.exit(86);\n`, { mode: 0o755 });
   }
-  const weekly = (store, { args = [], overrides = {}, status = 0, files = false, blockAudit = false } = {}) => {
+  const auditCoverage = (audit, calls) => {
+    const merge = calls.find(c => c.command === 'merge-scans');
+    assert.ok(merge, 'synthetic scan actually invokes merge_scans');
+    const display = file => file.startsWith(env.HOME) ? '~' + file.slice(env.HOME.length) : file;
+    const command = 'python3 core/merge_scans.py ' + merge.args.slice(1).map((a, i) => i < 3 ? display(a) : i === 5 ? "'" + a + "'" : a).join(' ');
+    const exclusions = ['.gemini/antigravity-cli/settings.json', '.gemini/antigravity/settings.json', '.gemini/settings.json', 'claude-limits.jsonl', "reads and writes inside worthit's own store folder", "Some store writes are listed, not all.", 'temporary files and working directories worthit creates under the system temporary folder, including rendering scratch and AI-agent working directories'];
+    const header = audit.split('\n')[1], readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
+    return {
+      headerExclusions: exclusions.every(text => header.includes(text)),
+      readmeExclusions: exclusions.every(text => readme.includes(text)),
+      mergeCommand: audit.split('\n').some(line => line.includes('  run   ' + command + '   (merges saved scans into this run: kept days, retirements, conflicts)')),
+    };
+  };
+  const weekly = (store, { args = [], overrides = {}, status = 0, files = false, blockAudit = false, failInsert = false } = {}) => {
+    const storeDir = path.join(failInsert ? home : tmp, store);
     const outputDir = path.join(files ? home : tmp, 'output-' + store); fs.mkdirSync(outputDir, { recursive: true });
     const output = fs.realpathSync(outputDir); // macOS /var and /private/var name the same scratch directory.
     if (blockAudit) fs.mkdirSync(path.join(output, '2026-11-14-worthit-audit.log'));
+    if (failInsert) {
+      const db = openWeekly(storeDir);
+      db.exec("CREATE TRIGGER reject_weekly BEFORE INSERT ON weekly BEGIN SELECT RAISE(ABORT, 'synthetic weekly INSERT failure'); END");
+      db.close();
+    }
+    const traceBefore = trace().length;
     const rendersBefore = trace().filter(c => c.command === 'headless-chrome').length;
     const r = spawnSync(process.execPath, [path.join(root, 'bin/worthit.mjs'), 'weekly', ...(files ? [] : ['--no-files']), ...args], {
-      cwd: output, env: { ...env, NODE_OPTIONS: env.NODE_OPTIONS + ` --import=${path.join(folder, 'render.mjs')}`, WORTHIT_HOME: path.join(tmp, store),
+      cwd: output, env: { ...env, NODE_OPTIONS: env.NODE_OPTIONS + ` --import=${path.join(folder, 'render.mjs')}`, WORTHIT_HOME: storeDir,
         ...overrides },
       input: '', encoding: 'utf8', maxBuffer: 16 << 20, timeout: 30000,
     });
@@ -29,6 +49,7 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
     if (status === 1) {
       assert.equal(r.stdout, '', 'failed run prints no result JSON');
       if (files) {
+        assert.equal(query('SELECT COUNT(*) AS n FROM weekly', path.relative(tmp, storeDir))[0].n, 0, 'failed run saves no checkpoint');
         const file = path.join(output, '2026-11-14-worthit-audit.log');
         if (blockAudit) {
           assert.ok(fs.statSync(file).isDirectory(), 'unwritable audit destination remains untouched');
@@ -38,12 +59,26 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
           assert.ok(fs.existsSync(file), 'exit-1 scan still writes its audit');
           const audit = fs.readFileSync(file, 'utf8');
           assert.match(audit, /  run\s+ssh box-b .*core\/extract_usage\.py/);
-          assert.doesNotMatch(audit, /headless Chrome screenshot/);
-          assert.equal(trace().filter(c => c.command === 'headless-chrome').length, rendersBefore);
-          assert.deepEqual(fs.readdirSync(output), [path.basename(file)], 'missing Chrome leaves only the audit');
+          const coverage = auditCoverage(audit, trace().slice(traceBefore));
+          if (failInsert) {
+            assert.match(r.stderr, /synthetic weekly INSERT failure/, 'failure comes from the INSERT trigger');
+            const writes = trace().slice(traceBefore).filter(c => c.command === 'audit-written');
+            assert.equal(writes.length, 2, 'successful audit write precedes INSERT failure, then catch rewrites it');
+            assert.doesNotMatch(writes[0].text, /weekly checkpoint not saved/);
+            assert.deepEqual({ ...coverage,
+              checkpointNotSaved: /  note\s+weekly checkpoint not saved; any weekly checkpoint write above was attempted/.test(audit),
+              retryExplained: /Audit log write entries record attempts, including retries\./.test(audit),
+            }, { headerExclusions: true, readmeExclusions: true, mergeCommand: true, checkpointNotSaved: true, retryExplained: true });
+            assert.equal((audit.match(/  write\s+.*-worthit-audit\.log/g) || []).length, 2, 'both audit write attempts are retained');
+            assert.equal(trace().filter(c => c.command === 'headless-chrome').length, rendersBefore + 1);
+          } else {
+            assert.deepEqual(coverage, { headerExclusions: true, readmeExclusions: true, mergeCommand: true });
+            assert.doesNotMatch(audit, /headless Chrome screenshot/);
+            assert.equal(trace().filter(c => c.command === 'headless-chrome').length, rendersBefore);
+            assert.deepEqual(fs.readdirSync(output), [path.basename(file)], 'missing Chrome leaves only the audit');
+          }
         }
         assert.ok(r.stderr.includes(file), 'failed run names its audit path on stderr');
-        assert.equal(query('SELECT COUNT(*) AS n FROM weekly', store)[0].n, 0, 'failed run saves no checkpoint');
       } else assert.deepEqual(fs.readdirSync(output), [], '--no-files failure creates no output artifacts');
       return r;
     }
@@ -57,6 +92,7 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
       assert.equal(fs.realpathSync(data.image), fs.realpathSync(path.join(output, '2026-11-14-worthit-share-allowance.png')));
       assert.ok(fs.readFileSync(data.image).subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')));
       const audit = fs.readFileSync(data.audit_log, 'utf8');
+      assert.deepEqual(auditCoverage(audit, trace().slice(traceBefore)), { headerExclusions: true, readmeExclusions: true, mergeCommand: true });
       assert.match(audit, /^worthit .+ audit log · [^\n]+\n/);
       assert.match(audit, /Kinds: [^\n]*\bread\b[^\n]*\brun\b[^\n]*\bwrite\b/);
       assert.match(audit, /  run\s+python3 core\/extract_usage\.py/);
@@ -96,6 +132,7 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
     return d;
   };
   // Issue #60: actual synthetic scans must persist their audit on exit 0 and 3.
+  weekly('audit-insert-failed', { files: true, status: 1, failInsert: true });
   weekly('audit-no-chrome', { files: true, status: 1, overrides: { FIXTURE_NO_CHROME: '1' } });
   weekly('audit-blocked', { files: true, status: 1, blockAudit: true });
   weekly('audit-complete', { files: true });
@@ -288,5 +325,5 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, python, root, run, query, t
   const schema = JSON.parse(run(process.execPath, [path.join(root, 'bin/worthit.mjs'), 'schema']));
   assert.ok(schema.weekly.columns.json && schema['weekly.result'].fields.compared_with && schema['weekly.result'].fields.audit_log);
   assert.match(run(process.execPath, [path.join(root, 'bin/worthit.mjs'), '--skill']), /worthit weekly/);
-  assert.ok(trace().every(c => ['ssh', 'headless-chrome'].includes(c.command)), 'weekly runs no git, AI, UI or clipboard commands');
+  assert.ok(trace().every(c => ['ssh', 'headless-chrome', 'merge-scans', 'audit-written'].includes(c.command)), 'weekly runs no git, AI, UI or clipboard commands');
 });

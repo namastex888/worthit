@@ -1,0 +1,16 @@
+10.0.0.5
+  ✓ Logged in to 10.0.0.5 as coder-a (keyring)
+  ✓ Git operations for 10.0.0.5 configured to use ssh protocol.
+  ✓ API calls for 10.0.0.5 are made over https protocol.
+  ✓ REST API Endpoint: https://10.0.0.5/api/v4/
+  ✓ GraphQL Endpoint: https://10.0.0.5/api/graphql/
+  ✓ Token found in operating system keyring: **************************
+forge-b.test
+  x forge-b.test: could not read the token: synthetic keyring unavailable
+forge-c.test
+  x forge-c.test: failed to initialize api client: synthetic invalid configuration
+          
+   ERROR  
+          
+  X could not authenticate to one or more of the configured GitLab instances.                                         
+
