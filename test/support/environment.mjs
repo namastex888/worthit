@@ -7,7 +7,9 @@ import { spawnSync } from 'node:child_process';
 export function isolatedEnvironment() {
   const python = spawnSync('/usr/bin/which', ['python3'], { encoding: 'utf8' }).stdout.trim();
   if (!python || !path.isAbsolute(python)) throw new Error('Python 3 is required for fixtures');
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'worthit-fixture-'));
+  // Canonicalize once before deriving HOME, store, PATH and remote fixture roots:
+  // macOS /var and /private/var must identify the same files in every process.
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'worthit-fixture-')));
   const home = path.join(tmp, 'home'), bin = path.join(tmp, 'bin');
   fs.mkdirSync(bin); fs.mkdirSync(home);
   for (const [name, target] of Object.entries({ node: process.execPath, python3: python, python, which: '/usr/bin/which' })) fs.symlinkSync(target, path.join(bin, name));

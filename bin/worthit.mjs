@@ -141,6 +141,7 @@ const ASK_SYSTEM = catalog.prompt({ system: 'You answer questions about a develo
     'Reading the data: usd_per_full_week is what one full weekly limit of a plan was worth at API list prices. proof "measured" is read from the meter; "floor" means at least that much (say "at least", and do not compare a floor week to week). usd_per_full_week_all_machines, when present, is an upper figure that also counts machines with no meter log. machines_missing lists machines that gave no answer in this run (saved_scan_at set = their last saved scan stands in) and machines_left_out lists saved machines with usage that were not included: when either is not empty, say so in one short sentence, because the week may be undercounted. machines_retained names machines whose older local-day/provider scans were kept and days_kept counts their distinct days; say so when present. A waste row named like "ChatGPT Pro 200 (×4)" is several accounts on one plan, summed. model_mix.open and .closed split output tokens by open-weight and closed models.',
     'Delivery lives in `delivery`: each merged PR is typed by its title prefix (feat = a feature, fix = a fix). delivery.kinds ranks this week by kind with last week beside it; delivery.usd_per_feature is the week\'s API-priced usage divided by features merged; delivery.days, .weeks and .months give features, fixes, cost and cost per feature over time (a null cost means that period was not fully scanned). A PR titled feat: is not always one whole feature, so compare the person with their own earlier weeks, not with other people. Show it with Delivery.',
     'Weekly allowance history lives in plans[].weeks: seven-day blocks counted back from today, each with its end date and dollars per full weekly limit, up to 12 weeks; a missing week means no meter reading existed then (the data is not lost). Show it with AllowanceHistory. The store table plan_value only has one row per day worthit was run, so never conclude from it that history is missing. Daily usage (tokens, API value) goes back much further: use `days`.',
+    'Ledger weeks in plans[].weeks must not be used to work out a change; use change_vs_last_week_pct.',
     'This is one continuous conversation. EARLIER IN THIS SESSION, when present, lists the previous questions and what you answered: use it for follow-ups ("and last month?", "make it shorter", "share that") and never say you have no memory of them.',
     'If the person wants to share, post, tweet or brag about something, or asks whether or how they can: reply with ONLY one line of the form `SHARE: <topic>` and nothing else. topic is one of allowance (weekly limits and whether they moved), open (open vs closed models), models, value (the best plan), ranking (all plans), waste (unused allowance), or the person\'s own words when none of those fits. If they did not say what to share, use allowance. worthit then makes the card image and the post text right here and offers to open X; you never say that sharing is not possible.',
     'Start with a Verdict that answers the question directly. Then one or two blocks that prove it: prefer a ready block that already shows it (PlanRanking, Receipts, Delivery, WasteTable, LimitTrend, AllowanceHistory, Heatmap, Tiles, LevelCard, Months, ModelMix, Events); otherwise a Chart or Facts with values copied from the data. A Note is optional.',
@@ -377,7 +378,7 @@ function Main({ cfg }) {
       const cmds = !done.n && !done.err && lookups < 2 ? [...String(done.raw || '').matchAll(/^\s*`?QUERY:\s*worthit\s+(.+?)`?\s*$/gm)].map(x => x[1].trim()).slice(0, 3) : [];
       if (!cmds.length) return closeAsk(done);
       const res = cmds.map(c => { const av = [...c.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)].map(x => x[1] ?? x[2] ?? x[3]); st(setCur)('looking up', 'worthit ' + c); audit('run', `worthit ${c}   (lookup in the local store, asked for by ${agent.cli})`);
-        let v; try { if (!QUERY_COMMANDS.includes(av[0])) throw new Error('only get, days, sql and schema can be looked up'); v = JSON.stringify(runQuery(av)); } catch (e) { v = 'error: ' + e.message; }
+        let v; try { if (!QUERY_COMMANDS.includes(av[0])) throw new Error('only get, days, sql and schema can be looked up'); let note = ''; v = JSON.stringify(runQuery(av, label => { note = label + '\n'; })); v = note + v; } catch (e) { v = 'error: ' + e.message; }
         return `$ worthit ${c}\n${v.length > 6000 ? v.slice(0, 6000) + ' … (truncated)' : v}`; });
       round(base + '\n\nLookup results from the local store:\n' + res.join('\n\n') + '\n\nNow answer by placing blocks. Do not ask for more lookups.', lookups + 1); });
     round(base, 0); };
@@ -516,19 +517,21 @@ async function makeShare(D, ask, { agent = null, clipOk = false, files = true, s
         if (bad.length) fallback(`the agent's post used numbers that are not in your data (${bad.slice(0, 3).join(', ')})`); else { key = 'custom'; spec = customSpec(D, ask, { ...j, facts }); text = j.text.trim().slice(0, 280); by = agent.label; } } }
   }
   const card = cardLines(spec);
-  const url = 'https://x.com/intent/post?text=' + encodeURIComponent(text); let image = null, clip = false;
+  const url = 'https://x.com/intent/post?text=' + encodeURIComponent(text); let image = null, clip = false, imageError = null, imageNote = null;
   if (files) { say('drawing the card image');
     const slug = key === 'custom' ? (ask.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 28) || 'custom') : key;
-    image = await renderCardImage(spec, `${STAMP}-worthit-share-${slug}.png`); }
+    const rendered = await renderCardImage(spec, `${STAMP}-worthit-share-${slug}.png`);
+    image = rendered.image; imageError = rendered.error; imageNote = rendered.note;
+    if (imageError || imageNote) warnings.push(imageError || imageNote); }
   if (image && clipOk) {     // best effort: put the image on the clipboard so it can be pasted into the post
     if (process.platform === 'darwin') clip = spawnSync('osascript', ['-e', `set the clipboard to (read (POSIX file "${image}") as «class PNGf»)`], { stdio: 'ignore' }).status === 0;
     else if (has('wl-copy')) clip = spawnSync('sh', ['-c', `wl-copy --type image/png < "${image}"`], { stdio: 'ignore' }).status === 0;
     else if (has('xclip')) clip = spawnSync('xclip', ['-selection', 'clipboard', '-t', 'image/png', '-i', image], { stdio: 'ignore' }).status === 0; }
-  return { key, by, text, card, url, image, clip, warnings };
+  return { key, by, text, card, url, image, clip, warnings, imageError, imageNote };
 }
 // what a share looks like on screen, below the card or the blocks
 const shareText = r => [...r.warnings.map(x => fg(C.gold, ' ! ') + m(x)), '', ' ' + bold(w('Suggested post')) + d(`  ·  ${r.text.length} characters  ·  ${r.by}`), '', ...r.text.split('\n').map(l => '   ' + w(l)), '',
-  ' ' + d('image  ') + (r.image ? m(r.image) + (r.clip ? fg(C.cx, '  ✓ copied: paste it into the post') : d('  (attach it to the post)')) : d('not written (Chrome not found)'))];
+  ' ' + d('image  ') + (r.image ? m(r.image) + (r.clip ? fg(C.cx, '  ✓ copied: paste it into the post') : d('  (attach it to the post)')) : d(`not written (${r.imageError || 'files disabled'})`))];
 const sharePanel = (r, tty) => [...r.card, ...shareText(r), ...(tty ? [] : [' ' + d('link   ') + m(r.url)]), '',
   ' ' + d('other cards: ask to share ') + m(Object.keys(SHARE_TOPICS).filter(k => k !== r.key).join(' · ')) + d(', or say what you want to brag about')];
 async function share() {
@@ -562,7 +565,8 @@ if (WEEKLY) {
     const checkpoint = prepareWeekly(D, db ? weeklyBaseline(db, D) : null);
     checkpoint.audit_log = NO_FILES ? null : path.resolve(`${STAMP}-worthit-audit.log`);
     const result = await makeShare(D, 'allowance', { agent: null, clipOk: false, files: !NO_FILES });
-    if (!NO_FILES && !result.image) throw new Error('allowance PNG could not be rendered; install Chrome or Chromium, or use --no-files');
+    if (!NO_FILES && !result.image) throw new Error(`allowance PNG could not be rendered: ${result.imageError}; use --no-files to skip the image`);
+    if (result.imageNote) console.error('worthit weekly: ' + result.imageNote);
     checkpoint.text = result.text; checkpoint.image = result.image;
     if (result.image) {
       audit('run', 'headless Chrome screenshot of the allowance card (local file, no network)');
@@ -574,6 +578,7 @@ if (WEEKLY) {
     console.log(JSON.stringify(checkpoint, null, 1));
     process.exitCode = checkpoint.safe_to_post || flag('--allow-partial') ? 0 : 3;
   } catch (e) {
+    audit('note', 'weekly checkpoint not saved; any weekly checkpoint write above was attempted. Audit log write entries record attempts, including retries.');
     console.error('worthit weekly: ' + e.message); process.exitCode = 1;
     if (!NO_FILES) {
       const file = path.resolve(`${STAMP}-worthit-audit.log`);
