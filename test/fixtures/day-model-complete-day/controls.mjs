@@ -23,7 +23,7 @@ if (name === 'missing') info.hosts[0].ok = false;
 if (name === 'cached') info.hosts[0].saved_at = '2026-11-13T12:00:00Z';
 if (name === 'left_out') info.left_out = ['box-c'];
 if (name.startsWith('retired_')) info.retirement = [{ machine: 'box-c', retired_at: name === 'retired_boundary' ? '2026-11-10T00:00:00Z' : '2026-11-10T04:00:00Z' }];
-// Each field must replace on complete days and independently keep MAX otherwise.
+// Every field independently keeps MAX, including complete days and retirement boundaries.
 build(50000, 20); const middle = rows();
 build(200000, 5); const after = rows();
 console.log(JSON.stringify({ middle, after }));

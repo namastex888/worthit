@@ -1,0 +1,7 @@
+ERROR
+  ✓ Logged in to ERROR as coder-a (keyring)
+  ✓ Git operations for ERROR configured to use ssh protocol.
+  ✓ API calls for ERROR are made over https protocol.
+  ✓ REST API Endpoint: https://ERROR/api/v4/
+  ✓ GraphQL Endpoint: https://ERROR/api/graphql/
+  ✓ Token found in operating system keyring: **************************

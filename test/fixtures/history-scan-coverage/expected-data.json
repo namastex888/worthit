@@ -102,7 +102,7 @@
   "complete": {
     "middle": {
       "2026-11-10": {
-        "out": 50000,
+        "out": 100000,
         "usd": 20,
         "prs": 1,
         "commits": 1
@@ -111,7 +111,7 @@
     "after": {
       "2026-11-10": {
         "out": 200000,
-        "usd": 5,
+        "usd": 20,
         "prs": 0,
         "commits": 0
       }
@@ -119,9 +119,9 @@
     "providers": [
       {
         "day": "2026-11-10",
-        "api_usd": 5,
+        "api_usd": 20,
         "output_tokens": 200000,
-        "requests": 1
+        "requests": 3
       }
     ],
     "days": [
@@ -135,8 +135,8 @@
       {
         "day": "2026-11-10",
         "api_usd": 20,
-        "output_tokens": 50000,
-        "requests": 2
+        "output_tokens": 100000,
+        "requests": 3
       }
     ]
   },
@@ -225,7 +225,7 @@
   "local_complete": {
     "middle": {
       "2026-11-08": {
-        "out": 50000,
+        "out": 100000,
         "usd": 20,
         "prs": 1,
         "commits": 1
@@ -234,7 +234,7 @@
     "after": {
       "2026-11-08": {
         "out": 200000,
-        "usd": 5,
+        "usd": 20,
         "prs": 0,
         "commits": 0
       }
@@ -242,9 +242,9 @@
     "providers": [
       {
         "day": "2026-11-08",
-        "api_usd": 5,
+        "api_usd": 20,
         "output_tokens": 200000,
-        "requests": 1
+        "requests": 3
       }
     ],
     "days": [
@@ -258,15 +258,15 @@
       {
         "day": "2026-11-08",
         "api_usd": 20,
-        "output_tokens": 50000,
-        "requests": 2
+        "output_tokens": 100000,
+        "requests": 3
       }
     ]
   },
   "midnight": {
     "middle": {
       "2026-11-07": {
-        "out": 50000,
+        "out": 100000,
         "usd": 20,
         "prs": 1,
         "commits": 1
@@ -275,7 +275,7 @@
     "after": {
       "2026-11-07": {
         "out": 200000,
-        "usd": 5,
+        "usd": 20,
         "prs": 0,
         "commits": 0
       }
@@ -283,9 +283,9 @@
     "providers": [
       {
         "day": "2026-11-07",
-        "api_usd": 5,
+        "api_usd": 20,
         "output_tokens": 200000,
-        "requests": 1
+        "requests": 3
       }
     ],
     "days": [
@@ -299,8 +299,8 @@
       {
         "day": "2026-11-07",
         "api_usd": 20,
-        "output_tokens": 50000,
-        "requests": 2
+        "output_tokens": 100000,
+        "requests": 3
       }
     ]
   },
@@ -348,7 +348,7 @@
   "dst_short": {
     "middle": {
       "2026-03-08": {
-        "out": 50000,
+        "out": 100000,
         "usd": 20,
         "prs": 1,
         "commits": 1
@@ -357,7 +357,7 @@
     "after": {
       "2026-03-08": {
         "out": 200000,
-        "usd": 5,
+        "usd": 20,
         "prs": 0,
         "commits": 0
       }
@@ -365,9 +365,9 @@
     "providers": [
       {
         "day": "2026-03-08",
-        "api_usd": 5,
+        "api_usd": 20,
         "output_tokens": 200000,
-        "requests": 1
+        "requests": 3
       }
     ],
     "days": [
@@ -381,8 +381,8 @@
       {
         "day": "2026-03-08",
         "api_usd": 20,
-        "output_tokens": 50000,
-        "requests": 2
+        "output_tokens": 100000,
+        "requests": 3
       }
     ]
   },
@@ -512,7 +512,7 @@
   "git_old": {
     "middle": {
       "2026-10-25": {
-        "out": 50000,
+        "out": 100000,
         "usd": 20,
         "prs": 2,
         "commits": 2
@@ -522,14 +522,14 @@
       {
         "day": "2026-10-25",
         "api_usd": 20,
-        "output_tokens": 50000,
-        "requests": 2
+        "output_tokens": 100000,
+        "requests": 3
       }
     ],
     "after": {
       "2026-10-25": {
         "out": 200000,
-        "usd": 5,
+        "usd": 20,
         "prs": 2,
         "commits": 2
       }
@@ -537,9 +537,9 @@
     "providers": [
       {
         "day": "2026-10-25",
-        "api_usd": 5,
+        "api_usd": 20,
         "output_tokens": 200000,
-        "requests": 1
+        "requests": 3
       }
     ],
     "days": [
@@ -553,7 +553,7 @@
   "git_partial": {
     "middle": {
       "2026-10-31": {
-        "out": 50000,
+        "out": 100000,
         "usd": 20,
         "prs": 2,
         "commits": 2
@@ -563,14 +563,14 @@
       {
         "day": "2026-10-31",
         "api_usd": 20,
-        "output_tokens": 50000,
-        "requests": 2
+        "output_tokens": 100000,
+        "requests": 3
       }
     ],
     "after": {
       "2026-10-31": {
         "out": 200000,
-        "usd": 5,
+        "usd": 20,
         "prs": 2,
         "commits": 2
       }
@@ -578,9 +578,9 @@
     "providers": [
       {
         "day": "2026-10-31",
-        "api_usd": 5,
+        "api_usd": 20,
         "output_tokens": 200000,
-        "requests": 1
+        "requests": 3
       }
     ],
     "days": [
@@ -594,7 +594,7 @@
   "git_midnight": {
     "middle": {
       "2026-10-31": {
-        "out": 50000,
+        "out": 100000,
         "usd": 20,
         "prs": 1,
         "commits": 1
@@ -604,14 +604,14 @@
       {
         "day": "2026-10-31",
         "api_usd": 20,
-        "output_tokens": 50000,
-        "requests": 2
+        "output_tokens": 100000,
+        "requests": 3
       }
     ],
     "after": {
       "2026-10-31": {
         "out": 200000,
-        "usd": 5,
+        "usd": 20,
         "prs": 0,
         "commits": 0
       }
@@ -619,9 +619,9 @@
     "providers": [
       {
         "day": "2026-10-31",
-        "api_usd": 5,
+        "api_usd": 20,
         "output_tokens": 200000,
-        "requests": 1
+        "requests": 3
       }
     ],
     "days": [
@@ -635,7 +635,7 @@
   "git_no": {
     "middle": {
       "2026-11-10": {
-        "out": 50000,
+        "out": 100000,
         "usd": 20,
         "prs": 2,
         "commits": 2
@@ -645,14 +645,14 @@
       {
         "day": "2026-11-10",
         "api_usd": 20,
-        "output_tokens": 50000,
-        "requests": 2
+        "output_tokens": 100000,
+        "requests": 3
       }
     ],
     "after": {
       "2026-11-10": {
         "out": 200000,
-        "usd": 5,
+        "usd": 20,
         "prs": 2,
         "commits": 2
       }
@@ -660,9 +660,9 @@
     "providers": [
       {
         "day": "2026-11-10",
-        "api_usd": 5,
+        "api_usd": 20,
         "output_tokens": 200000,
-        "requests": 1
+        "requests": 3
       }
     ],
     "days": [
