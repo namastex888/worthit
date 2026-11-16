@@ -2,21 +2,16 @@
 
 ## Proposal in short
 
-1. The plain run leads with **today**: merged PRs and cost per merged PR so far, against yesterday by
-   the same hour. The allowance stays on screen in every view.
-2. `worthit --weekly` and `worthit --monthly` show the week and the month the same way. `worthit weekly`
-   (the scheduler checkpoint, RFC 0003) keeps its fields, exit codes, card and table.
-3. The game counts delivery only. A day wins when a PR merged. A week or a month wins when it delivered
-   more, or the same for less, than the one before. No win, streak or best comes from tokens or dollars
-   alone.
-4. Only a closed, complete period is judged. A floor is never compared, never a win and never a broken
-   streak. Every result keeps its scanner version, price basis and machines, for both ends of every
-   comparison, so a repricing or a machine that lost logs can never read as improving.
-5. Per project and per model, daily (KR1): merged PRs, value per merged PR and the first-pass share, on
-   RFC 0004's fields. A week and a month add the counts. A rate needs five PRs.
-6. Results are stored, so the assistant (the skill and the question bar) answers every other question.
-   There is no fourth view. Delivery 1, in days: the day view and the daily game, with no existing field
-   changed. Month comparisons start in January 2027. **`yes` alone accepts every recommended answer.**
+1. The plain run leads with **today** against yesterday by the same hour; the allowance stays on screen.
+2. `--weekly` and `--monthly` show the week and the month; `worthit weekly` (RFC 0003) keeps its contract.
+3. The game scores delivery only: a day wins by a merged PR, a week or month by more delivered or cheaper.
+4. Only a closed, complete period is judged, with its version, prices and machines kept for both ends.
+5. Per project and per model is cut daily (KR1); weeks and months add counts, and a rate needs five PRs.
+6. Delivery 1, in days: the day view and the daily game. **`yes` accepts every recommended answer below.**
+
+The assistant (the skill and the question bar) answers every other question from the store: there is no
+fourth view. A floor is never compared, never a win and never a broken streak. Month comparisons start in
+January 2027, because a month needs every one of its days judged.
 
 | Field | Value |
 |---|---|
@@ -333,15 +328,16 @@ every win and every best shows it for both ends.
 and beside the period it is compared with:
 
 ```json
-"basis": { "worthit": ["0.41.0"], "rules": [1], "prices": ["3fa9c1d2e4b7"],
+"basis": { "worthit": ["0.41.0"], "rules": [1], "prices": ["3fa9c1d2e4b7"], "outside_table_usd": 0,
            "machines": { "read": 3, "missing": [], "left_out": [], "retired": [], "retained": [] } }
 ```
 
 | Key | Meaning |
 |---|---|
 | `worthit` | the package version that scanned and priced. The scanner is bundled and the same file is sent to every ssh machine, so one run has one scanner version |
-| `rules` | a new integer in the scanner, starting at 1. A PR that changes what a request counts or costs (dedupe, a pricing rule, cache accounting) raises it, as `CACHE_VER` is raised today |
+| `rules` | a new integer in the scanner, starting at 1, like `CACHE_VER`. A PR that changes what a request counts or costs (dedupe, a pricing rule, cache accounting) raises it |
 | `prices` | the first 12 hex digits of the SHA-256 of `core/prices.json` without its `_sources` notes. It is computed, so nobody can forget it |
+| `outside_table_usd` | the period's dollars that the price table did not set: the cost omp reports for itself, and dsh priced at the rates those costs imply (`core/weekly.py:359-362`) |
 | `machines` | machines read, and the missing, left-out, retired and retained lists for that period, as the run JSON has them |
 
 A day has one value in each list. A week or a month has every distinct value of its days.
@@ -352,8 +348,14 @@ A day has one value in each list. A week or a month has every distinct value of 
   ends have the same single `prices` and the same single `rules`. Otherwise that measure is not compared,
   with the reason `repriced` or `rules_changed`, and the period is judged on the measures that are not
   dollars. A period that itself spans a price change has no comparable cost.
+- **Dollars outside the price table have no basis.** omp's reported cost and dsh's fitted rates can
+  change with no change to `prices`, and the fit is redone on every run. So a week or a month compares
+  cost only when `outside_table_usd` is 0 at both ends; otherwise the reason is `outside_table`
+  (question 9). Today against yesterday is priced by one run, so it is compared.
 - **A cost best does not cross a price change.** On a new basis the lowest-cost best starts again; the
   old one is kept with its basis.
+- **Wins and bests carry it.** `game.<kind>.last` and every entry of `bests` hold the `basis` of their
+  period, and for a week or a month also `before_basis`, the basis of the period it was compared with.
 - **The version alone does not block.** Every merge into `dev` cuts a release. When the two ends differ,
   both versions are printed beside the comparison.
 - **Coverage blocks as section 1 says:** a period with a machine missing, left out or with a retained
@@ -451,8 +453,9 @@ whole day 2026-11-18:
 - The `Today`, `Week` and `Month` blocks draw per model only, at most three lines. Repository names are
   not drawn into the dashboard, the PNG or the `.md` (RFC 0004, section 5). Question 7.
 - While RFC 0004's question 3 is `no`, nothing with a repository name reaches the AI agent: the
-  `projects` cut is left out of the question bar's data, and its lookups refuse
-  `get periods.<kind>.projects` and the table below. Per-model lines carry no repository name and can go.
+  `projects` cut is left out of the question bar's data, and no lookup returns it by any path. `get
+  periods`, `get periods.day` and any deeper path answer without the `projects` key, and `sql` refuses
+  the table below. Per-model lines carry no repository name and can go.
 
 **The store.** A second new table in `worthit.db`:
 
@@ -493,7 +496,7 @@ Every run that scans (`worthit`, `--json`, `last.json`) gets one new section, `p
                 "first_pass_pts": null, "not_compared": [] },
     "floor": false,
     "coverage": { "machines": true, "prs": true },
-    "basis": { "worthit": ["0.41.0"], "rules": [1], "prices": ["3fa9c1d2e4b7"],
+    "basis": { "worthit": ["0.41.0"], "rules": [1], "prices": ["3fa9c1d2e4b7"], "outside_table_usd": 0,
                "machines": { "read": 3, "missing": [], "left_out": [], "retired": [], "retained": [] } },
     "last_closed": { "id": "2026-11-18", "result": "win", "merged_prs": 8, "api_value_usd": 384,
                      "usd_per_merged_pr": 48 },
@@ -503,11 +506,12 @@ Every run that scans (`worthit`, `--json`, `last.json`) gets one new section, `p
 "game": {
   "day": {
     "today": "shipped",
-    "last": { "id": "2026-11-18", "result": "win" },
+    "last": { "id": "2026-11-18", "result": "win", "basis": "the basis object of 2026-11-18" },
     "streak": { "wins": 5, "since": "2026-11-12", "passed": 2, "best": 9 },
-    "bests": [ { "what": "merged_prs", "value": 11, "id": "2026-11-06", "new": false },
+    "bests": [ { "what": "merged_prs", "value": 11, "id": "2026-11-06", "new": false,
+                 "basis": "the basis object of 2026-11-06" },
                { "what": "usd_per_merged_pr", "value": 31, "id": "2026-11-10", "new": false,
-                 "prices": "3fa9c1d2e4b7" } ],
+                 "basis": "the basis object of 2026-11-10" } ],
     "not_judged": [ { "id": "2026-11-13", "why": "machine_missing", "machines": ["build-box"] } ]
   }
 }
@@ -516,7 +520,8 @@ Every run that scans (`worthit`, `--json`, `last.json`) gets one new section, `p
 - `through` is local time with no offset. `usd_per_merged_pr` is not rounded, as in `git`.
 - `last_closed.result` is `null` when that period is not judged.
 - `change.not_compared` lists each measure left out and why: `floor`, `under_five`, `repriced`,
-  `rules_changed`. For a week or a month, `before` has its own `basis`.
+  `rules_changed`, `outside_table`. For a week or a month, `before` has its own `basis`.
+- A `basis` shown as a sentence in the example is the full object of section 5.
 - `not_judged[].why` is one of `git_off`, `prs_not_covered`, `machine_missing`, `machine_left_out`,
   `retained_unit`, `before_retirement`, `outside_scan`, `too_old`.
 - `periods.week`, `periods.month`, `game.week` and `game.month` arrive with deliveries 3 and 4, in the
@@ -630,7 +635,7 @@ never guessed:
 
 ## Open questions (for the owner)
 
-Questions 1 and 2 block delivery 1. Question 7 blocks delivery 2. Questions 3, 4 and 8 block delivery 3.
+Questions 1 and 2 block delivery 1. Question 7 blocks delivery 2. Questions 3, 4, 8 and 9 block delivery 3.
 Question 5 blocks delivery 4. Question 6 blocks only delivery 5. Each answer is one word, and `yes` alone
 takes every recommended one.
 
@@ -651,3 +656,7 @@ takes every recommended one.
    the `Today` block, which puts repository names into the PNG and the `.md`.
 8. **A plan's change across a price change.** `null`: no percentage, with the reason (recommended).
    `show`: the percentage, with both price bases beside it.
+9. **Cost when omp or dsh was used.** `strict`: a week or a month with any dollar outside the price table
+   compares no cost, and is judged on merged PRs and first pass (recommended: an unseen repricing can then
+   never read as improving). `share`: cost is compared while those dollars stay under 5% of the period's
+   value at both ends, with the share printed.
