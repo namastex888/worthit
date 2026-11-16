@@ -90,6 +90,7 @@ worthit get plans                # one section; dots walk in: plans.0.usd_per_fu
 worthit days --group month --by tool             # daily history, grouped: day|week|month by total|tool|model
 worthit days --since 2026-11-01 --by model
 worthit sql "SELECT day, SUM(api_usd) FROM day_provider GROUP BY day"   # one read-only SELECT on the local store
+worthit projects                 # saved per-project/model usage and project PR costs, no scan
 worthit schema                   # tables and columns, with meanings
 worthit share open               # post text, card image and X link from the last run: {topic, text, image, url, warnings}
 worthit --skill                  # print the full guide
@@ -137,7 +138,56 @@ week's end. Only the same plan measured at both endpoints gets a percentage in `
 The first checkpoint has null changes. `moved` includes absolute changes strictly greater
 than 5%. `worthit schema` and the agent skill describe the complete JSON and table.
 
-### A machine that will never answer again
+### Projects: the last saved rolling week
+
+`worthit projects` reads `last.json` without scanning or making a network request.
+It shows per-project API-list value, output tokens, requests, merged PRs and cost per PR;
+inside each project, models show those usage counts and their share of its API value.
+A terminal gets a table; piped output is JSON, with the `projects` block plus `week`,
+`generated_at`, `machines_missing`, `machines_left_out`, `machines_retained` and
+`machines_retired`. `worthit get projects` reads the same saved block. `worthit projects --demo`
+uses synthetic `github.com/acme/app-api` and `github.com/acme/web-client` projects without a store.
+An older saved run needs `worthit --json` once to fill projects.
+
+The rolling seven days match `totals` and git. Project rows plus `no_repository` reconcile with
+usage totals (tokens/requests exactly, dollars within whole-dollar rounding). Model shares use
+raw API value, not request counts; shares and attributed percent are null at zero total value.
+PRs count by their stored host-qualified key, including projects with no usage. Hostless keys
+stay in `prs_without_project.why.no_host_in_key`, never matched by repository name.
+
+`floor` is false only when every active machine answered, none was left out, no retained unit
+overlaps the week, the week starts on/after each retirement, and there are **zero unresolved
+rows**, even rows worth $0. Otherwise usage values, tokens and requests say “at least”; log
+usage is never called measured. `coverage.prs_sources` separately checks git sources;
+`coverage.prs_attributed` checks that no PR lacks a project. If either fails, PRs say “at least”
+and cost says “partial PR count”, never a lower bound. With full PR proof and usage floor,
+cost also says “at least”. With git off, all PR counts/costs, PR checks and `prs_without_project`
+are null; run `worthit --json` to fill them. There is no project comparison, history or PR credit
+per model in this delivery.
+
+Identity is the lowercase origin `host[:nondefaultport]/path`, without credentials, scheme,
+trailing `.git` or slash. Each machine reads `.git` (including gitfiles), `commondir` and the
+shared `config` directly: no git process, includes or URL rewrites. HTTP(S), SSH, git URLs and
+`user@host:path` work; alias hosts with no dot, local paths, ambiguous origins and unreadable
+configs stay unresolved. Default ports disappear; nondefault ports remain distinct from forge
+PR keys. Fork usage and upstream PRs remain distinct too.
+
+`no_repository.why_usd` names `outside_a_repository` and `no_origin` (no remotes), plus the
+unresolved `origin_not_supported`, `folder_gone`, `no_folder_read` (including Antigravity,
+omp, dsh and missing cwd) and `saved_before_projects` (older retained scan buckets).
+For a deleted folder, sanitized Codex URL wins, then the machine's versioned remembered map,
+else `folder_gone`. Only live resolution updates `folder_project (path TEXT PRIMARY KEY,
+project TEXT, resolved_at TEXT, ver INTEGER)` in that machine's `scan-cache.db`; it never
+leaves the machine or adds a table to `worthit.db`. `WORTHIT_NO_CACHE` or unwritable cache
+disables remembering. A pre-delivery deleted worktree can stay unresolved; scan every machine
+daily with `worthit --json --hosts all` to remember current folders.
+
+Repository names appear only in local project/JSON output, saved scans and audit logs. They
+are excluded from AI summary prompts, question-bar lookups and custom share topics, and from
+the dashboard, Markdown and share cards. `worthit schema` and the bundled agent skill describe
+the scan's `project`/`project_why`, core `project_activity`, cache and output fields.
+
+## A machine that will never answer again
 
 Run `worthit hosts` to see each SSH machine's state. `worthit hosts retire build-box`
 keeps its saved usage and stops asking it, even with `--hosts all` or an explicit alias.
@@ -179,8 +229,10 @@ Flags for a scan (`worthit` or `worthit --json`):
 
 What leaves your machine:
 
+Delivery 1 project statistics add no network request. Every machine also reads the session folders’ `.git` file, `commondir` and shared `config`; each read appears in the audit log. Remote URL credentials are removed on that machine before caching or returning IDs through the existing SSH scan.
+
 - With git data on (the default for `--json`; `--git no` turns it off), GitHub searches through `gh` (one per week of history, per logged-in account, with pagination and smaller slices for full results), requests to every logged-in GitLab host through `glab`, and Gitea requests through the selected `tea` login. Absent or explicitly logged-out CLIs are skipped as a source. Auth discovery through `gh auth status` and `glab auth status` can itself contact code hosts; `glab` can request `gitlab.com/api/v4/user` even without a token. Token-less hosts are skipped as PR sources. If Automagik's open-source `usagemeter` is missing, worthit downloads its manifest and platform binary from GitHub releases, verifies the binary's SHA256, and saves it in the worthit store. Whether already installed or downloaded, the meter runs locally: `sync --no-publish --budget-secs 20` and `status`. The sync publishes nothing. Local `git log` reads checkouts found in the meter store; it does not fetch them.
-- With an AI agent, the prompt and week's numbers go through your own Claude, Codex, omp or dsh login to write the summary. With other machines selected from your saved SSH hosts (or remembered from an earlier run), worthit sends the bundled Python scanner over SSH and reads back usage; nothing is installed there, but it keeps a scan cache in `~/.worthit/` there. `--hosts none` disables that SSH scan. `--git no --ai no` disables the forge/meter and AI steps; selected SSH scans still run.
+- With an AI agent, the prompt and week's numbers go through your own Claude, Codex, omp or dsh login to write the summary. With other machines selected from your saved SSH hosts (or remembered from an earlier run), worthit sends the bundled Python scanner over SSH and reads back usage plus sanitized repository IDs; nothing is installed there, but it keeps a scan cache in `~/.worthit/` there. `--hosts none` disables that SSH scan. `--git no --ai no` disables the forge/meter and AI steps; selected SSH scans still run.
 - The bundled Python core scans and prices logs locally. When output files are enabled and Chrome or Chromium is installed, worthit's Node CLI runs it to render a local HTML dashboard to PNG in headless mode. In interactive setup, accepting skill installation runs `npx skills add`, which downloads the skill into your coding agents.
 
 The audit log records session-log reads and cache hits, collector commands, network activity, agent calls, sent data and output writes. It does not list executable lookup (`which`), hardware probes, the `zstd` decompressor used for `.zst` logs, the account ids read from Claude and Codex login files (`.claude.json`, `auth.json`; hashed), the model names read from Gemini/Antigravity settings (`.gemini/antigravity-cli/settings.json`, `.gemini/antigravity/settings.json`, `.gemini/settings.json`), `claude-limits.jsonl` in the meter state directories, `~/.ssh/config`, all reads and writes inside worthit's own store folder (`WORTHIT_HOME`, default `~/.worthit`: its database and its sidecar files, caches, saved scans, settings and temporary files), or temporary files and working directories worthit creates under the system temporary folder, including rendering scratch and AI-agent working directories. Some store writes are listed, not all.

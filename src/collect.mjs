@@ -5,6 +5,7 @@ import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'; import { createRequire } from 'node:module';
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');   // loaded here, after quiet.mjs, so its 'experimental' warning stays silent
 import { C } from './draw.mjs';
+import { buildProjects } from './projects.mjs';
 import { roundPercent } from './percent.mjs';
 import { readHosts, writeHosts, activeHosts, retirementBlocks, retirementStatement } from './hosts.mjs';
 
@@ -15,7 +16,7 @@ export const AUDIT = [];
 export const audit = (kind, text) => { AUDIT.push(new Date().toISOString() + '  ' + kind.padEnd(5) + ' ' + text); };
 export function writeAudit(file, version) {
   audit('write', tilde(file));
-  fs.writeFileSync(file, [`worthit ${version} audit log · ${new Date().toISOString()}`, "Recorded session-log reads and cache hits, collector commands, network activity, agent calls, sent data and output writes. It does not list executable lookup (which), hardware probes, the zstd decompressor used for .zst logs, the account ids read from Claude and Codex login files (.claude.json, auth.json; hashed), the model names read from Gemini/Antigravity settings (.gemini/antigravity-cli/settings.json, .gemini/antigravity/settings.json, .gemini/settings.json), claude-limits.jsonl in the meter state directories, ~/.ssh/config, all reads and writes inside worthit's own store folder (WORTHIT_HOME, default ~/.worthit: its database and its sidecar files, caches, saved scans, settings and temporary files), or temporary files and working directories worthit creates under the system temporary folder, including rendering scratch and AI-agent working directories. Some store writes are listed, not all. Kinds: read, cache, run, net, agent, sent, write, note.", '', ...AUDIT, ''].join('\n'));
+  fs.writeFileSync(file, [`worthit ${version} audit log · ${new Date().toISOString()}`, "Recorded session-log and repository metadata (.git, commondir, config) reads and cache hits, collector commands, network activity, agent calls, sent data and output writes. It does not list executable lookup (which), hardware probes, the zstd decompressor used for .zst logs, the account ids read from Claude and Codex login files (.claude.json, auth.json; hashed), the model names read from Gemini/Antigravity settings (.gemini/antigravity-cli/settings.json, .gemini/antigravity/settings.json, .gemini/settings.json), claude-limits.jsonl in the meter state directories, ~/.ssh/config, all reads and writes inside worthit's own store folder (WORTHIT_HOME, default ~/.worthit: its database and its sidecar files, caches, saved scans, settings and temporary files), or temporary files and working directories worthit creates under the system temporary folder, including rendering scratch and AI-agent working directories. Some store writes are listed, not all. Kinds: read, cache, run, net, agent, sent, write, note.", '', ...AUDIT, ''].join('\n'));
 }
 export const has = c => spawnSync('which', [c], { stdio: 'ignore' }).status === 0;
 const H = 3600e3, DAY = 24 * H;
@@ -89,23 +90,23 @@ export async function scan(cfg, on) {
   if (!cfg.fresh && !retirement.length && process.env.WORTHIT_REUSE && fs.existsSync(path.join(keepDir, 'local.json'))) { fs.cpSync(keepDir, runDir, { recursive: true, filter: f => f !== path.join(keepDir, 'retired') }); audit('note', 'WORTHIT_REUSE: using the previous scan'); return { runDir, counts: JSON.parse(fs.readFileSync(cache, 'utf8')), hosts: [], left_out: savedLeftOut(keepDir, cfg.hosts, retirement, new Set()), started_at: 0 }; }
   let cached = 0; const names = cfg.hosts || [], pcts = { local: 0 }; names.forEach(a => { pcts[a] = 0; });
   const emit = detail => { const v = Object.values(pcts); on({ pct: v.reduce((a, b) => a + b, 0) / v.length, detail, counts }); };
-  audit('run', `${py} core/extract_usage.py ${cfg.days}   (reads local session logs, read-only)`);
+  audit('run', `${py} core/extract_usage.py ${cfg.days}   (reads local session logs and repository .git, commondir and config metadata, read-only)`);
   const local = new Promise((res, rej) => {
     const p = spawn(py, [script, String(cfg.days)], { env: { ...process.env, WORTHIT_HOME: HOME, WORTHIT_PROGRESS: '1', PYTHONDONTWRITEBYTECODE: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
     const out = fs.createWriteStream(path.join(runDir, 'local.json')), written = new Promise(r => { out.on('finish', r); out.on('error', r); }); p.stdout.pipe(out);
     let buf = '', errs = '';
     p.stderr.on('data', c => { buf += c; let i; while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i); buf = buf.slice(i + 1);
       if (!l.startsWith('@f\t') && !l.startsWith('@c\t')) { errs += l + '\n'; continue; }
-      const [mark, tool, a, b, file] = l.split('\t'), hit = mark === '@c'; counts[tool] = (counts[tool] || 0) + 1; if (hit) cached++; audit(hit ? 'cache' : 'read', tilde(file) + (hit ? '  (unchanged since the last run: not read again)' : ''));
+      const [mark, tool, a, b, file] = l.split('\t'), hit = mark === '@c'; if (tool === 'repository') { audit('read', tilde(file) + '  (repository metadata)'); continue; } counts[tool] = (counts[tool] || 0) + 1; if (hit) cached++; audit(hit ? 'cache' : 'read', tilde(file) + (hit ? '  (unchanged since the last run: not read again)' : ''));
       const [lo, hi] = SPAN[tool] || [0, 1]; pcts.local = +b > 0 ? lo + (hi - lo) * (+a / +b) : lo; emit(`${names.length ? 'this machine · ' : ''}${TOOL[tool] || tool} · ${hit ? 'unchanged, from cache · ' : ''}${tilde(file)}`); } });
     p.on('error', rej); p.on('close', async code => { await written; pcts.local = 1; code ? rej(new Error('scanner failed: ' + (errs.trim().split('\n').pop() || 'exit ' + code))) : res(); });
   });
   const remote = (cfg.hosts || []).map(alias => new Promise(res => {      // other machines over ssh: the same script, piped in, nothing installed there
-    audit('run', `ssh ${alias} "nice python3 - ${cfg.days}" < core/extract_usage.py   (same read-only scanner, piped in; nothing is installed there)`);
+    audit('run', `ssh ${alias} "nice python3 - ${cfg.days}" < core/extract_usage.py   (same read-only scanner, piped in; repository ids returned with usage; nothing is installed there)`);
     const p = spawn('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', alias, `env WORTHIT_PROGRESS=1 PYTHONDONTWRITEBYTECODE=1 nice python3 - ${cfg.days}`], { stdio: ['pipe', 'pipe', 'pipe'] });
     let buf = '', files = 0, hcached = 0;
     p.stderr.on('data', c => { buf += c; let i; while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i); buf = buf.slice(i + 1); if (!l.startsWith('@f\t') && !l.startsWith('@c\t')) continue;
-      const [mark, tool, a, b, file] = l.split('\t'), hit = mark === '@c'; files++; if (hit) hcached++; audit(hit ? 'cache' : 'read', alias + ':' + file + (hit ? '  (unchanged since the last run: not read again)' : ''));
+      const [mark, tool, a, b, file] = l.split('\t'), hit = mark === '@c'; if (tool === 'repository') { audit('read', alias + ':' + file + '  (repository metadata)'); continue; } files++; if (hit) hcached++; audit(hit ? 'cache' : 'read', alias + ':' + file + (hit ? '  (unchanged since the last run: not read again)' : ''));
       const [lo, hi] = SPAN[tool] || [0, 1]; pcts[alias] = +b > 0 ? lo + (hi - lo) * (+a / +b) : lo; emit(`${alias} · ${TOOL[tool] || tool} · ${hit ? 'unchanged, from cache · ' : ''}${file}`); } });
     const f = path.join(runDir, alias + '.json'), out = fs.createWriteStream(f), written = new Promise(r => { out.on('finish', r); out.on('error', r); }); p.stdout.pipe(out); fs.createReadStream(script).pipe(p.stdin);
     p.stdin.on('error', () => {}); p.on('error', () => { pcts[alias] = 1; res({ alias, ok: false, files: 0 }); });
@@ -351,7 +352,7 @@ export async function git(cfg, on) {
   for (const [k, t] of prs) if (!kinds.has(k)) kinds.set(k, [t, 'other']);      // a pull request only the usagemeter store knows has no title here
   on({ pct: 1, detail: 'done' });
   const coverage = { sources: answers, prs: answers.filter(x => x.metrics.includes('prs')).every(x => x.answered), commits: !recentNoCheckout && answers.filter(x => x.metrics.includes('commits')).every(x => x.answered) };
-  return { coverage, prs: [...prs.values()], kinds: [...kinds.values()], commits: [...commits.values()], repos, src, meter: meter && { version: meter.version, downloaded: meter.downloaded } };
+  return { coverage, project_prs: [...prs].map(([key, merged_ms]) => ({ key, merged_ms })), prs: [...prs.values()], kinds: [...kinds.values()], commits: [...commits.values()], repos, src, meter: meter && { version: meter.version, downloaded: meter.downloaded } };
 }
 
 // ---------------------------------------------------------------- shape the data the dashboard draws
@@ -473,6 +474,8 @@ export function buildData(report, g, cfg, scanInfo) {
     D.git = { merged_prs: mc, merged_prs_change_pct: g.coverage?.prs ? pctChange(mc, mp) : null, commits: g.commits.filter(t => t >= w1).length, repos: g.repos, usd_per_merged_pr: cost, usd_per_pr_change_pct: g.coverage?.prs && cost != null && costPrev ? pctChange(cost, costPrev) : null,
       prs_per_day: per, usd_per_pr_per_day: per.map((k, i) => k ? D.totals.value_per_day[i] / k : 0), sources: g.src, meter: g.meter, coverage: g.coverage };
   }
+
+  D.projects = buildProjects(report.project_activity || [], g, allMachines, w1, now);
 
   // player history: one small row per day, kept forever; XP, level, streak and bests are computed from it
   const hf = path.join(HOME, 'history.json'); let hist = { days: {} }; try { hist = JSON.parse(fs.readFileSync(hf, 'utf8')); } catch { /* first run */ }

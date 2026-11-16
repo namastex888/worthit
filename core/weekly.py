@@ -355,6 +355,7 @@ _OT = {'omp': 'omp', 'dsh-tui': 'dsh'}
 _mm = []
 # hourly activity per tool (priced), and session counts: what the dashboard's totals, sparklines and heatmap are drawn from
 _act = defaultdict(lambda: defaultdict(float))
+_project_act = defaultdict(lambda: defaultdict(float))
 for r in MU.values():
     p_ = _OT.get(r[2]); o_ = other[p_]; o_['rows'] += 1; o_['models'][r[3]] += r[7]
     usd_ = r[10]
@@ -365,6 +366,8 @@ for r in MU.values():
         usd_ = 0.0; o_['unpriced_output_tokens'] += r[7]
     a_ = _act[(time.strftime('%Y-%m-%dT%H', time.gmtime(r[1] / 1000.0)), p_)]
     a_['output'] += r[7]; a_['input_uncached'] += r[4]; a_['cache_read'] += r[5]; a_['requests'] += r[9]; a_['usd'] += usd_
+    pa_ = _project_act[(time.strftime('%Y-%m-%dT%H', time.gmtime(r[1] / 1000.0)), p_, r[3] or '?', '', 'no_folder_read')]
+    pa_['output'] += r[7]; pa_['requests'] += r[9]; pa_['usd'] += usd_
     _mm.append((time.strftime('%Y-%m-%d', time.gmtime(r[1] / 1000.0)), p_, r[3] or '?', r[7], usd_))
 report['other_tools'] = {k_: dict(v_, usd_reported=round(v_['usd_reported'], 2), usd_fitted=round(v_['usd_fitted'], 2), models=dict(v_['models'].most_common(6))) for k_, v_ in other.items()}
 # per day and model (UTC day): what the model-mix chart and its week-by-week history are built from
@@ -379,6 +382,10 @@ for b in B:
     a_ = _act[(b['hour'], b['provider'])]
     for f_ in ('output', 'input_uncached', 'cache_read', 'requests'): a_[f_] += b.get(f_, 0) + b.get('lc_' + f_, 0)
     a_['usd'] += b['usd']
+    pa_ = _project_act[(b['hour'], b['provider'], b['model'] or '?', b.get('project') or '', (b.get('project_why') or '') if 'project' in b else 'saved_before_projects')]
+    for f_ in ('output', 'requests'): pa_[f_] += b.get(f_, 0) + b.get('lc_' + f_, 0)
+    pa_['usd'] += b['usd']
+report['project_activity'] = [dict(hour=k[0], provider=k[1], model=k[2], project=k[3] or None, project_why=k[4] or None, output=int(v['output']), requests=int(v['requests']), usd=v['usd']) for k, v in sorted(_project_act.items())]
 report['activity'] = [dict(hour=h_, provider=p_, **{k_: (round(v_, 2) if k_ == 'usd' else int(v_)) for k_, v_ in a_.items()}) for (h_, p_), a_ in sorted(_act.items())]
 report['sessions_by_provider'] = dict(Counter(s_['provider'] for s_ in best.values()))
 report['scan_stats'] = {h_: v_ for h_, v_ in hosts.items()}

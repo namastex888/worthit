@@ -2,9 +2,9 @@
 
 | Field | Value |
 |---|---|
-| Status | Queued |
+| Status | In delivery, 2026-11-16 (delivery 1: #115, this delivery PR; delivery 2 open) |
 | Created | 2026-11-16 |
-| Issue | none yet (the owner's ask of 2026-11-16) |
+| Issue | #115: delivery 1 |
 | Depends on | nothing for delivery 1; delivery 2 needs delivery 1's `project` in the scan |
 
 ## Summary
@@ -311,14 +311,21 @@ Fixture cases for delivery 1:
 
 | # | Delivery | State |
 |---|---|---|
-| 1 | One PR: `project` in the scan, the remembered map, `project_activity`, the `projects` block, `worthit projects`, schema, skill, README, the fixture cases | open |
+| 1 | One PR: `project` in the scan, the remembered map, `project_activity`, the `projects` block, `worthit projects`, schema, skill, README, the fixture cases | #115, this delivery PR |
 | 2 | The PR-to-model link, `prs_led`, the first-pass signal and its coverage; a host for Gitea PR keys | open |
 | 3 | Project history: a daily table, `worthit days --by project`, week-over-week | not scheduled |
 
-## Open questions (for the owner)
+## Owner decisions, 2026-11-16
 
-Questions 1, 3 and 4 block delivery 1. Question 2 blocks nothing. Questions 5 to 7 block only
-delivery 2. Each answer is one word.
+Accepted answers, exactly: 1 `command`; 2 `enough`; 3 `no`; 4 `bucket`;
+5 `opened`; 7 `lead`. Question 6 remains unanswered and affects delivery 2 only.
+Delivery 1 is #115 and this delivery PR; delivery 2 and project history are out of scope.
+The status becomes In delivery with this first delivery merge; delivery 2 remains open.
+
+## Questions (owner answers recorded above)
+
+Answers 1, 3 and 4 settle delivery 1. Question 2 blocks nothing. Questions 5 to 7 concern only
+delivery 2; question 6 alone remains unanswered. Each answer is one word.
 
 1. **Where is it shown?** `command`: `worthit projects` (recommended). `dashboard`: a block in the
    dashboard.
