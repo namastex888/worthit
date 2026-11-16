@@ -26,6 +26,7 @@ def record(operation, name, outcome='attempt'):
     try:
         with _open(_trace, 'a') as out:
             out.write(json.dumps({'actor': os.environ.get('SOURCE_ROOT_ACTOR', 'scanner'),
+                                  'machine': os.environ.get('FIXTURE_MACHINE', 'fixture-reader'),
                                   'op': operation, 'path': os.fsdecode(name), 'outcome': outcome}) + '\n')
     finally:
         _busy = False

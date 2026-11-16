@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { sourceRootsHarness, repository, output, writeJSON } from '../../support/source-roots.mjs';
 import { withWal } from '../../support/source-root-wal.mjs';
 import { future } from './future.mjs';
+import { activated } from './activation.mjs';
 
 const option = process.argv[2];
 assert.ok(!option || option === '--future' || option.startsWith('--future='), 'use check.mjs [--future[=scenario-id]]');
@@ -12,6 +13,7 @@ const focused = option?.startsWith('--future=') ? option.slice('--future='.lengt
 const selected = option ? future.filter(row => !focused || row.id === focused) : [];
 if (option) assert.ok(selected.length, 'unknown future scenario id');
 assert.equal(new Set(future.map(row => row.id)).size, future.length, 'scenario ids are unique');
+assert.ok([...activated].every(id => future.some(row => row.id === id)), 'activation cannot name an absent assertion');
 let active = 0, failed = 0;
 
 async function scenario(id, run) {
@@ -102,7 +104,9 @@ if (option) {
       assert.equal(scan.meter_usage.reduce((sum, row) => sum + row[7], 0), 30, 'reader sees committed WAL value, never uncommitted 999');
     });
   });
-  for (const row of future) console.log(`source-roots: PENDING ${row.id} | ${row.owner} | RFC0006 ${row.reference} | ${row.assertion}`);
-  console.log(`source-roots: ${active} active controls passed, ${failed} failed; ${future.length} future assertions pending (not passes). Run check.mjs --future[=id] explicitly.`);
+  for (const row of future.filter(row => activated.has(row.id))) await scenario(row.id, row.run);
+  const pending = future.filter(row => !activated.has(row.id));
+  for (const row of pending) console.log(`source-roots: PENDING ${row.id} | ${row.owner} | RFC0006 ${row.reference} | ${row.assertion}`);
+  console.log(`source-roots: ${active} active controls passed, ${failed} failed; ${pending.length} future assertions pending (not passes). Run check.mjs --future[=id] explicitly.`);
 }
 process.exitCode = failed ? 1 : 0;

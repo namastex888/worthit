@@ -38,6 +38,29 @@ const listedId = h => {
   return records[0].id;
 };
 
+add('registration-preflight-unread', B, '#144 acceptance 2/3; §2/6', 'a declared unverified root is shown unread, contributes nothing, and is never silently ignored', h => {
+  register(h); h.clearTrace(); const result = h.collect(), root = coverage(h, result)[0];
+  assert.equal(root.status, 'unreadable'); assert.equal(root.boundary, 'unverified');
+  assert.ok(root.reasons.includes('boundary_unverified'));
+  assert.match(root.reader_id, /^[a-f0-9]{64}$/);
+  assert.equal(output(scanOf(result)), 10);
+  assert.equal(h.rows().filter(row => row.actor === 'scanner' && row.op === 'open' && row.path.startsWith(h.manifest.root)).length, 0);
+});
+add('registration-machine-floor-and-guard', B, '#144 acceptance 3; §6/7', 'pre-reader registration floors the machine and withholds plain/weekly comparisons', h => {
+  register(h); const collected = h.collect(), roots = coverage(h, collected);
+  const result = weeklyGuard(h, roots, []);
+  assert.equal(result.safe_to_post, false); assert.equal(result.plans[0].proof, 'floor');
+  assert.equal(result.plans[0].change_vs_last_week_pct, null); assert.ok(result.plans[0].not_compared.includes('roots_changed'));
+  assert.deepEqual(result.moved, []);
+  const plain = h.evaluate(`
+    import {buildData} from ${JSON.stringify(pathToFileURL(path.join(repository, 'src/collect.mjs')).href)};
+    const report={activity:[],this_week:{claude:{usd_per_full_week:20,meter_start_pct:0,meter_end_pct:100,hours:1,measured:{api_usd:20,output_tokens:10,cached_input_tokens:0,model_mix_by_usd:{}}}},prices:{plan_usd_per_week:{claude:5}},hosts:{'fixture-reader':{}},claude_stints:[],codex_weeks:[],google_weeks:[]};
+    console.log(JSON.stringify(buildData(report,null,{days:21,hosts:[]},{...${JSON.stringify(collected.info)},hosts:[{alias:'synthetic-remote',ok:true}],source_roots:${JSON.stringify(roots)}})));
+  `);
+  assert.ok(plain.plans.length); assert.ok(plain.plans.every(plan => plan.proof === 'floor' && plan.change_vs_last_week_pct === null));
+  assert.ok(plain.plans.every(plan => plan.not_compared.includes('roots_changed')));
+});
+
 add('commands-add-list', B, '§1; §8 1a declaration', 'add is selected, stable, private and does not scan/connect', h => {
   const record = register(h);
   assert.equal(record.selected, true); assert.equal(record.revision, 1);
@@ -246,8 +269,9 @@ add('first-readable-empty', C, '§6/8 empty first usage', 'existing readable emp
   const result = h.admit([{ spec: { ...h.spec, sources: [{ kind: 'claude', home: 'empty-claude' }] } }]);
   assert.equal(coverage(h, result)[0].status, 'read'); assert.equal(output(scanOf(result)), 10);
 });
-for (const mode of ['offline', 'truncated', 'interrupted']) add('ssh-' + mode, C, '§7/8 each stage synthetic SSH failure audit', 'transport failure retains saved values and makes every attempted root a floor', h => {
-  h.admit(declared(h), 'synthetic-remote', ['synthetic-remote']);
+for (const saved of [false, true]) for (const mode of ['offline', 'truncated', 'interrupted']) add(`ssh-${saved ? 'saved' : 'first'}-${mode}`, C, '§7/8 each stage synthetic SSH failure audit', 'transport failure retains saved values and makes every attempted root a floor', h => {
+  if (saved) h.admit(declared(h), 'synthetic-remote', ['synthetic-remote']);
+  else h.seed(declared(h), 'synthetic-remote');
   const result = h.collect(['synthetic-remote'], { SOURCE_ROOT_TRANSPORT: mode });
   const roots = coverage(h, result);
   assert.ok(roots.every(root => ['saved', 'unreadable'].includes(root.status)));
@@ -270,7 +294,7 @@ add('ssh-private-framing', C, '§7 framed script/spec stdin and collector-memory
   const inspect = directory => {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const file = path.join(directory, entry.name);
-      if (['source-roots.json', 'source-roots.key', 'scan-cache.db', 'scan-cache.db-wal', 'scan-cache.db-shm'].includes(entry.name)) continue;
+      if (['source-roots.json', 'source-roots.key'].includes(entry.name)) continue;
       if (entry.isDirectory()) inspect(file);
       else assert.ok(!fs.readFileSync(file).includes(Buffer.from(h.manifest.root)), 'no raw pipe data becomes a staging file/log/saved scan');
     }
@@ -324,7 +348,7 @@ for (const args of [['get', 'source_roots'], ['projects']]) add('offline-' + arg
   h.clearTrace(); const before = fs.existsSync(path.join(h.base, 'transport.jsonl')) ? fs.readFileSync(path.join(h.base, 'transport.jsonl'), 'utf8') : '';
   fs.renameSync(h.manifest.root, h.manifest.root + '-offline');
   const result = h.cli(args); assert.equal(result.status, 0);
-  assert.equal(h.rows().filter(row => row.path.startsWith(h.manifest.root)).length, 0);
+  assert.equal(h.rows().filter(row => ['scanner', 'collector'].includes(row.actor) && row.path.startsWith(h.manifest.root)).length, 0);
   assert.equal(fs.existsSync(path.join(h.base, 'transport.jsonl')) ? fs.readFileSync(path.join(h.base, 'transport.jsonl'), 'utf8') : '', before);
   assert.ok(result.stdout.includes('source_roots') || Array.isArray(JSON.parse(result.stdout)));
 });
@@ -410,7 +434,7 @@ add('plain-plan-legacy-unknown-guard', C, '§7/8 default-only old baseline roots
     db.exec("CREATE TABLE plan_value(day TEXT,provider TEXT,plan TEXT,usd_per_full_week INTEGER,times_plan_price INTEGER,stretches INTEGER,proof TEXT,PRIMARY KEY(day,provider)); INSERT INTO plan_value VALUES('2026-11-07','claude','Claude Ultra',10,1,1,'measured')");db.close();
     const measured={api_usd:20,output_tokens:10,cached_input_tokens:0,model_mix_by_usd:{}};
     const report={activity:[],this_week:{claude:{usd_per_full_week:20,meter_start_pct:0,meter_end_pct:100,hours:1,measured}},prices:{plan_usd_per_week:{claude:5}},hosts:{'fixture-reader':{}},claude_stints:[],codex_weeks:[],google_weeks:[]};
-    const data=buildData(report,null,{days:21,hosts:[]},{hosts:[],left_out:[],retained:[],retirement:[],source_roots:[]});
+    const data=buildData(report,null,{days:21,hosts:[]},{counts:{claude:1},hosts:[{alias:'synthetic-remote',ok:true}],left_out:[],retained:[],retirement:[],source_roots:[]});
     console.log(JSON.stringify(data));
   `);
   assert.ok(result.plans.length, 'the plain plan path must actually produce a plan');
@@ -419,4 +443,16 @@ add('plain-plan-legacy-unknown-guard', C, '§7/8 default-only old baseline roots
   assert.deepEqual(result.source_roots, []);
   const columns = h.json(h.python, ['-c', 'import json,sqlite3,sys; db=sqlite3.connect(sys.argv[1]); print(json.dumps([r[1] for r in db.execute("pragma table_info(plan_value)")]))', path.join(h.store, 'worthit.db')]);
   assert.ok(columns.includes('source_roots'));
+});
+
+add('same-account-native-tags', C, '§3/7/8 each-stage account tags', 'per-record Codex identity uses identical account tags in defaults and roots without sharing host login fallback', h => {
+  const source = fs.readFileSync(h.manifest.codex, 'utf8').trim().split('\n').map(JSON.parse);
+  source[0].payload.creator_user_id = 'synthetic-person'; source[0].payload.creator_account_id = 'synthetic-account';
+  fs.writeFileSync(h.manifest.codex, source.map(row => JSON.stringify(row)).join('\n') + '\n');
+  const defaultFile = path.join(h.home, '.codex/sessions/default.jsonl'); fs.mkdirSync(path.dirname(defaultFile), { recursive: true });
+  const defaults = structuredClone(source); defaults[0].payload.id = 'synthetic-default-codex';
+  fs.writeFileSync(defaultFile, defaults.map(row => JSON.stringify(row)).join('\n') + '\n');
+  const result = h.admit(declared(h)), rows = scanOf(result).buckets.filter(row => row.provider === 'codex' && ['synthetic-default-codex', 'synthetic-codex'].includes(row.session));
+  assert.equal(rows.length, 2); assert.match(rows[0].login, /^acct-/); assert.equal(rows[0].login, rows[1].login);
+  assert.ok(!JSON.stringify(result.scans).includes('synthetic-person'));
 });

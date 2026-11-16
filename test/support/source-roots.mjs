@@ -76,7 +76,15 @@ export function sourceRootsHarness(label) {
   const clearTrace = () => fs.writeFileSync(trace, '');
   const scanner = (extra = {}) => json(python, [path.join(repository, 'core/extract_usage.py'), '21'], { env: { ...env, ...extra } });
   const cli = (args, extra = {}) => run(process.execPath, [path.join(repository, 'bin/worthit.mjs'), ...args], { env: { ...env, ...extra } });
-  const evaluate = (code, extra = {}) => json(process.execPath, ['--input-type=module', '--eval', code], { env: { ...env, ...extra } });
+  const evaluate = (code, extra = {}) => {
+    const result = run(process.execPath, ['--input-type=module', '--eval', code], { env: { ...env, ...extra } });
+    if (result.status !== 0) {
+      fs.writeFileSync(path.join(base, 'failed-child.json'), JSON.stringify(result));
+      assert.fail(`collector failed with exit ${result.status}; private failed-child.json`);
+    }
+    assert.ok(!result.stdout.includes(manifest.root) && !result.stderr.includes(manifest.root), 'collector stdout/stderr never expose raw root paths');
+    return JSON.parse(result.stdout);
+  };
   const collect = (hosts = [], extra = {}) => evaluate(`
     import fs from 'node:fs'; import path from 'node:path';
     import {scan, writeAudit} from ${JSON.stringify(pathToFileURL(path.join(repository, 'src/collect.mjs')).href)};
