@@ -11,7 +11,7 @@ Claude : no log names the account a request used, and switches swap accounts und
          one stretch). Tokens follow the session's readings. Machines without the meter log are
          joined to a stint only when they hit the cap at the same moment with the same reset.
 """
-import sys, os, json, glob, time, calendar, statistics, subprocess
+import sys, os, json, glob, time, calendar, statistics
 from collections import defaultdict, Counter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pricing import price, agy_model, fit_meter_prices, meter_price
@@ -410,8 +410,6 @@ with open(led, 'a') as fh:
         added += 1
 
 def mix(w): return ', '.join('%s %d%%' % (k.replace('claude-', '').replace('gpt-', 'GPT-'), round(v * 100)) for k, v in list(w['measured']['model_mix_by_usd'].items())[:2])
-# ---------------------------------------------------------------- cards (X + LinkedIn): card.py
-if os.path.exists(os.path.join(D, 'card.py')): subprocess.run([sys.executable, os.path.join(D, 'card.py'), outdir], timeout=300)
 
 # ---------------------------------------------------------------- console summary
 print('report  ', os.path.join(outdir, 'report.json'))
