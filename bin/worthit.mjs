@@ -35,6 +35,9 @@ import { allowanceText, openWeekly, weeklyBaseline, prepareWeekly, saveWeekly } 
 import { startPet, petLines, petSummary, PET_W } from '../src/pet.mjs';
 import { demoHosts, demoScan, demoGit, demoPricing, demoData, demoSpec, demoAnswer, demoPet } from '../src/demo.mjs';
 
+// A saved delivery result can exceed a pipe buffer. Flush queued JSON before exiting.
+async function finish() { await new Promise(resolve => process.stdout.write('', resolve)); process.exit(0); }
+
 const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
 const h = React.createElement, rawArgv = process.argv.slice(2);
 let demoArgs;
@@ -48,27 +51,27 @@ let hostState = { selected: [], retired: [] };
 if (!flag('--demo')) {
   try { hostState = readHosts(HOME); } catch (e) { console.error('worthit: ' + e.message); process.exit(2); }
 }
-if (flag('--version') || flag('-v')) { console.log(VERSION); process.exit(0); }
+if (flag('--version') || flag('-v')) { console.log(VERSION); await finish(); }
 if (argv[0] && !argv[0].startsWith('-') && !['get', 'days', 'sql', 'schema', 'install-skill', 'share', 'weekly', 'hosts', 'projects'].includes(argv[0])) { console.error(`worthit: unknown command "${argv[0]}". Try: worthit --help`); process.exit(2); }
 if (argv[0] === 'hosts') {
   try { const result = hostsCommand(HOME, sshHosts(), argv.slice(1));
     if (process.stdout.isTTY) console.log(Array.isArray(result) ? result.map(r => `${r.machine}: ${r.status}`).join('\n') || 'No saved SSH machines. Choose machines on your next run.' : `${result.machine}: ${result.status}`);
     else console.log(JSON.stringify(result, null, 1));
   } catch (e) { console.error('worthit hosts: ' + e.message); process.exit(2); }
-  process.exit(0);
+  await finish();
 }
 if (argv[0] === 'projects') {
   try {
     const D = flag('--demo') ? demoData() : JSON.parse(fs.readFileSync(path.join(HOME, 'last.json'), 'utf8'));
     console.log(process.stdout.isTTY && !flag('--json') ? projectsText(D) : JSON.stringify(projectsResult(D), null, 1));
   } catch (e) { console.error('worthit projects: ' + (e.code === 'ENOENT' ? 'no saved run yet. Run `worthit --json` first.' : e.message)); process.exit(2); }
-  process.exit(0);
+  await finish();
 }
-if (await query(argv)) process.exit(0);        // get / days / sql / schema / --skill: answered from the local store, no scan
+if (await query(argv)) await finish();        // get / days / sql / schema / --skill: answered from the local store, no scan
 // from here on a scan would start: never from inside another worthit run (lookups above stay allowed)
 if (process.env.WORTHIT_RUNNING) { console.error('worthit: started from inside another worthit run; stopping.'); process.exit(2); }
 process.env.WORTHIT_RUNNING = '1';        // inherited by every program this run starts
-if (flag('--help') || flag('-h')) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 12).map(l => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
+if (flag('--help') || flag('-h')) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 12).map(l => l.replace(/^\/\/ ?/, '')).join('\n')); await finish(); }
 const WEEKLY = argv[0] === 'weekly';
 const JSON_MODE = WEEKLY || flag('--json'), ASK = arg('--ask'), F_GIT = arg('--git'), F_AI = arg('--ai'), DAYS = +arg('--days', 21), F_HOSTS = arg('--hosts', WEEKLY ? 'all' : undefined), DEMO = flag('--demo'), NO_FILES = flag('--no-files') || DEMO, FRESH = flag('--fresh');
 // the agent skill (skills/worthit/SKILL.md in this package and in the repo): installed into the person's coding agents with the skills CLI
@@ -102,7 +105,7 @@ const forModel = () => dataForAgent(DATA);   // the hourly grid is drawn by the 
 // ---------------------------------------------------------------- headless: --json
 const SHARE = argv[0] === 'share' || flag('--share');
 if (JSON_MODE && !SHARE && !WEEKLY) {
-  if (DEMO) { console.log(JSON.stringify({ worthit: VERSION, ...demoData({ git: F_GIT !== 'no' }), audit_log: null }, null, 1)); process.exit(0); }
+  if (DEMO) { console.log(JSON.stringify({ worthit: VERSION, ...demoData({ git: F_GIT !== 'no' }), audit_log: null }, null, 1)); await finish(); }
   const cfg = { days: DAYS, hosts: HOSTS, git: F_GIT !== 'no' };
   const auditFile = NO_FILES ? null : path.resolve(`${STAMP}-worthit-audit.log`);
   const tick = (label, p) => { if (process.stderr.isTTY) process.stderr.write(`\r\x1b[K${label} ${p.pct == null ? '' : Math.round(p.pct * 100) + '%'} ${String(p.detail || '').slice(0, 90)}`); };
@@ -111,7 +114,7 @@ if (JSON_MODE && !SHARE && !WEEKLY) {
     if (process.stderr.isTTY) process.stderr.write('\r\x1b[K');
     const data = buildData(report, g, cfg, s);
     if (auditFile) writeAudit(auditFile, VERSION);
-    console.log(JSON.stringify({ worthit: VERSION, ...data, audit_log: auditFile }, null, 1)); process.exit(0);
+    console.log(JSON.stringify({ worthit: VERSION, ...data, audit_log: auditFile }, null, 1)); await finish();
   } catch (e) {
     console.error('\nworthit: ' + e.message);
     if (auditFile) {
@@ -622,7 +625,7 @@ if (WEEKLY) {
     }
   }
   finally { db?.close(); }
-} else if (SHARE) { await share(); process.exit(0); }
+} else if (SHARE) { await share(); await finish(); }
 else {
 console.log('\n' + LOGO.join('\n') + '\n ' + m('what your AI coding subscription is really worth') + d(`  ·  v${VERSION}  ·  ` + (DEMO ? 'demo · sample data' : 'reads your local logs')));
 const fake = () => { const s = new PassThrough(); s.isTTY = true; s.setRawMode = () => s; s.ref = () => s; s.unref = () => s; return s; };   // no keyboard (pipes, tests): a stand-in input

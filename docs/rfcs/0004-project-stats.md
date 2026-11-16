@@ -199,7 +199,8 @@ names, whether or not that project had usage this week.
   authored; rows kept from earlier runs and usagemeter rows count as stored.
 - Two checks, kept apart. `coverage.prs_sources` is `git.coverage.prs`: every source answered.
   `coverage.prs_attributed` is true when `prs_without_project.merged_prs` is 0.
-- When either is false, `merged_prs` is "at least" and `usd_per_merged_pr` is labelled "partial PR
+- Per-PR costs follow the single rule in section 3: a machine floor takes precedence and
+  withholds the ratio as null. With machines complete, when either PR check is false, `merged_prs` is "at least" and `usd_per_merged_pr` is labelled "partial PR
   count", never a lower bound: the rule the skill already has for `git.usd_per_merged_pr`. When both
   are true and `floor` is true, `usd_per_merged_pr` is "at least".
 - With git off (`--git no`, `worthit weekly`), `merged_prs`, `usd_per_merged_pr`, both PR checks and
@@ -216,52 +217,132 @@ people share, and a drawing change needs more review than a read command).
 
 ### 3. Delivery 2: which model delivered
 
-Nothing here blocks delivery 1. Three of this repository's own merged PRs were checked on 2026-11-16
-(#79, #87, #92): none has a forge review, a PR comment or a model trailer in its commits. So the design
-cannot rest on reviews or trailers.
+Delivery 2 (#119) uses source `opened`, always displayed as an **opened date proxy**. It is
+an observed branch-cost association, never authorship, model quality or a forge review/SHIP verdict.
+Dates are committer dates, not push times; rebased history cannot establish first-pass truth.
 
-**The link is an observation, not a cause.** "Model M led PR N" means: most of the API value logged on
-that PR's branch was M's. It does not say M wrote the code that merged.
+**Attribution.** Scan buckets and `project_activity` carry `branch` (string or null) and
+`cost_complete` (boolean on priced core rows; scan buckets carry branch). Claude records supply their per-record branch; Codex supplies its session
+branch (later branch switches cannot be detected). Old buckets have no branch and remain unlinked.
+No git folder stays in delivery 1's no-repository bucket: never infer a project from a basename.
+`omp` and `dsh-tui` meter rows have no branch and remain explicitly unlinked in coverage.
+Implementation usage links by canonical project and exact head branch through the merge hour
+(inclusive); only rows in the retained scan window are available. Reused implementation branch names
+among observed items in that window are ambiguous even when merge dates differ.
 
-- The usage bucket's key also gets the branch. A merged PR is linked to the buckets with its project
-  and its head branch, up to the hour it merged.
-- Buckets are hourly (`core/extract_usage.py:304`), so two PRs on one branch name cannot be told apart
-  by time. If another merged PR in the scan window used the same branch name in the same project, both
-  stay unlinked (`ambiguous`).
-- The PR's **lead model** has the largest share of API value in the linked buckets, shown with its
-  share. Per model, and per project and model: `prs_led` and `usd_per_pr_led`.
+Local review branches must match `review/pr-<number>-<sha8>` with eight hexadecimal SHA characters.
+The number is resolved on the same canonical repository and forge, and the prefix must uniquely
+match a commit in that item's complete commit history. Missing, ambiguous or unverifiable identities
+stay unlinked. Review USD joins delivery cost but never lead selection, even for review-only items.
 
-**The first-pass signal.** `first_pass` is `null` (unknown) for every PR until the owner picks its
-source (question 5). Both candidates need delivery 2's new request:
+The lead is the unique model with largest positive linked implementation API-list value, combining
+tools with the same model id. Ties, absent implementation, unpriced implementation, incomplete
+machine/link evidence yield no lead. A usage-only project floor retains the observed linked implementation lead; unlinked omp/dsh/Antigravity rows remain explicitly covered. `lead_model`, `lead_api_value_usd` and
+`lead_share_pct` retain the winning model's own implementation value/share separately from cost.
 
-- `opened`: a date proxy. No commit on the PR is dated after the PR was opened. It only tells PRs apart
-  when a squad opens the PR before its review; each of the three PRs above has such a commit.
-- `review`: the forge's own review event. It needs squads to post their verdict there (question 6).
+**One per-PR cost floor rule.** A machine floor withholds (null) every per-PR cost across
+`git.usd_per_merged_pr`, `projects.rows[].usd_per_merged_pr` and every
+`projects.delivery.{models,project_models,daily}[].usd_per_pr_led`. A usage-only floor
+(unresolved omp/dsh/Antigravity or other project rows) retains linked leads, `prs_led` and
+numeric costs as "at least", with `projects.floor` and delivery `cost_floor: true` and named
+reasons. A floor at either comparison endpoint withholds cost comparisons, including
+`git.usd_per_pr_change_pct`; independent physical PR/commit counts remain available. Under a machine floor, raw
+linked implementation/review USD remains visible as a floor while per-PR ratios are withheld. No floor
+is compared. Terminal USD uses two decimal places and percentages whole numbers; JSON
+keeps its existing precision.
 
-Per model: `first_pass` (a count) and `first_pass_pct`, `null` under five PRs with a known signal.
+**Saved output.** `projects.delivery` is null with git off; otherwise it contains:
 
-**What cannot be known, said plainly:**
+- `source: "opened"`, `label: "opened date proxy"`, `window: {from, to}` (ISO instants),
+  `coverage`, `deliveries`, `models`, `project_models`, and `daily`.
+- `deliveries`: `{root, members, project, completed_day, lead_model, lead_api_value_usd,
+  lead_share_pct, implementation_api_value_usd, review_api_value_usd, api_value_usd,
+  cost_floor, cost_reasons, link_reasons, provenance, first_pass: {state, source, reason, complete}}`.
+  `members` retains every observed chain item's canonical key. Completion uses the first merged
+  member's UTC day, even if its root was closed unmerged. Only canonical deliveries whose completion
+  instant is in the current rolling seven days appear; older observed chains can therefore remove
+  an in-window physical superseder from delivery counts. Raw `git.merged_prs`, project `merged_prs`
+  and their delivery 1 ratios remain physical counts and are never deduplicated.
+- `models`: metric rows by model; `project_models`: by project/model; `daily`: by UTC completion
+  day/project/model, distinct from usage day. Every metric row has `prs_led`, `api_value_usd`,
+  `usd_per_pr_led`, `cost_floor`, `first_pass`, `not_first_pass`, `unknown`, `not_measured`,
+  `eligible`, `first_pass_pct`, `first_pass_reason`. USD retains pricing precision. Cost is all linked
+  implementation plus review USD of canonical deliveries led by this model / `prs_led`, null at zero.
+  `cost_floor` is a boolean with `cost_reasons` naming incomplete machine/usage/link/window evidence; it never implies an exact total.
+  Rates exclude unknown/not-measured, require five known eligible deliveries, and otherwise show
+  counts, null percentage and `insufficient_sample`.
+- `coverage` is present globally and on every model/project-model/day metric row. It contains
+  raw `merged_prs`, `canonical_deliveries`, `linked_prs`, `linked_deliveries`, `ambiguous_prs`,
+  `signal_known_prs`, `eligible`, `unknown`, `not_measured`, `superseded_prs`, `unresolved_chains`,
+  `implementation` and `review` usage counters `{rows, output_tokens, api_value_usd}`, and
+  `unlinked` counters of the same shape plus `by_reason`. Reasons explicitly include
+  `omp_no_branch`, `dsh_tui_no_branch`, `missing_branch`, `ambiguous_branch` and `review_unverified`.
+  `forges` records each host's answered/reason and metadata/commits/parents/diffs
+  `{complete, reasons}`. Scope counters retain physical PRs separately from canonical deliveries;
+  a `model: null` bucket retains every no-lead delivery (including daily rows) and unlinked usage
+  so missing model attribution remains visible. Unlinked usage is scoped by its observed model,
+  project if available, and UTC usage day; delivery counters use UTC completion day. Global and
+  project/day null-model buckets include unassignable physical PRs. No sum of model physical counts
+  is implied when a delivery has multiple member models; canonical counts remain additive.
+  Observation is limited to authored merged items observed in the last 14 days plus recursively
+  resolved predecessors; unseen future superseders and unseen successors outside that window cannot
+  be inferred. `cost_floor` is boolean and its separate `cost_reasons` list is always preserved.
 
-- Who wrote a commit. A person typing on a squad's branch counts for its model.
-- The review. Verdicts (SHIP, FIX-FIRST) stay in the squads' terminals; the forge does not have them.
-- A Codex session that changed branch. Codex logs the branch once, at session start, so later work is
-  counted for the first branch and may link to the wrong PR. worthit cannot detect it.
-- Work on a machine that was not read, and sessions on the default branch or a detached commit
-  (reviewers). Their PRs stay unlinked.
-- Whether a model is better. Models get different tasks. The signal says what happened on the PRs a
-  model led, with the count beside every rate.
-- When a commit was pushed. A commit carries an author date and a commit date; neither is the push
-  time, and a rebase changes the second. The delivery issue fixes the forge data used and whether a
-  merge of the base branch counts, against the forge's documentation.
+Lookup: `worthit projects` / `worthit get projects.delivery.daily` reads the last saved result with
+no network. No persistent project-history table and no `days --by project` until delivery 3.
+Repository identifiers remain excluded from all agent and share paths, including this new block.
 
-**Coverage** is printed with the numbers: `merged_prs`, `linked_prs`, `ambiguous_prs`,
-`signal_known_prs` and the forges that answered. Rates are over known PRs only. Delivery 2 starts with
-GitHub; GitLab and Gitea PRs count as unlinked until they follow. A partial week is never compared with
-another.
+**Four first-pass states.** `first_try`, `not_first_try`, `unknown`, `not_measured`.
+The LOCAL existing `WORTHIT_HOME/settings.json` key `projects.first_pass_exclude` is an array of
+canonical repository ids (example `github.com/acme/app-api`). It takes precedence over automatic
+classification and chains. It is private configuration, never tracked. Missing data, timestamps,
+ancestry or complete file lists mean unknown, not false. A later material implementation committer
+timestamp strictly after opening means not-first-try; no later material change on complete lineage
+means first-try as a date proxy only. Known rewritten/rebased or unprovable merge history is unknown.
 
-Alternatives: commit trailers (not written by every tool, absent from this repository's PRs); a share
-of each PR per model (0.33 of a PR is hard to read); request timestamps kept in the scan to split a
-reused branch (a bigger scan format, for a rare case).
+Traverse implementation first parents, stopping at a proven ancestor of the forge's target snapshot
+before merge. For GitHub ordinary two-parent merge results, parent 1 is that target snapshot only
+when parent 2 equals the PR head; squash/rebase/other shapes cannot supply that proof. GitLab also validates the normal merge result second parent against the MR head and uses its first parent as the pre-merge target snapshot; historical `diff_refs` must be available. A two-parent integration into
+the implementation is harmless only when its first parent continues implementation and its second
+parent is proven in that pre-merge base ancestry; ignore commits solely in that second-parent
+history. Never use current target membership or subjects as proof. Other merge roles are unknown.
+Compare files with the relevant first parent, considering BOTH old/new paths for renames/deletions.
+Only `docs/` paths, root `README`, `README.md`, `LICENSE`, `LICENSE.md`, `CHANGELOG.md`, and
+extensions `.md`, `.mdx`, `.rst`, `.txt`, `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`, `.ico`
+are nonmaterial; everything else and mixed changes are material. Empty complete diffs are harmless.
+A docs prefix cannot override code. Missing patches for material files need not hide materiality,
+but missing/truncated file inventories cannot prove absence. GitHub PR commit cap 250, commit files
+cap 3000 (compare file lists capped at 300 are never used for changed-file proof), and GitLab collapsed/too_large/overflow/compare timeout are explicit
+unknown reasons, never short-page proof of completeness. GitLab commit `/diff` can silently stop at
+an instance file cap: a short diff page alone is NOT proof. Changed files there are obtained by
+comparing complete paginated recursive repository-tree inventories of the relevant parent and
+commit (path, mode, type and object id, including deletions/old paths), rather than trusting `/diff`.
+Any incomplete tree inventory is unknown. Bounded request limits also yield unknown.
+
+**Supersede chains.** An entire title `Supersedes #41` on GitHub or `Supersedes !41` on GitLab
+(case insensitive, surrounding whitespace allowed) references a predecessor in the same repository.
+Resolve recursively, including closed unmerged roots; a chain is one logical delivery rooted at the
+original. A valid observed superseder means not-first-try; opt-out still wins. Combine each member's
+linked costs once; the earliest merged member supplies completion day. Later merged members update
+this delivery, never add another. Cycles, self-links, forks/multiple successors, wrong typed or
+cross-repository references and unavailable targets stay unresolved, have unknown signal and no
+lead; one unresolved connected component occupies at most one canonical delivery to avoid inflation.
+Preserve members and reasons. No claim about unobserved superseders is possible.
+
+**Forge scope.** GitHub via `gh`, GitLab including self-managed via `glab` are included. An older or
+unsupported host/response yields unknown with reason. Gitea stays unknown/unlinked; its new physical
+keys use the hostname from its item URL, never the synthetic `gitea/` prefix. An old hostless
+`gitea/path#n` row overlapping a qualified path/number/exact merge time is retained in `pr_kind`
+but excluded from that run's physical counts: the `gitea legacy identities` source is incomplete,
+and the audit names ambiguous legacy evidence, even with one observed host. No host is inferred.
+Unmatched hostless history/counts remain intact in delivery 1's `no_host_in_key`. No account/auth settings change.
+
+Tree inventory requests are read-only GitLab `GET /projects/:id/repository/tree?ref=:sha&recursive=true`; every page is audited.
+
+API contracts: [GitHub PRs](https://docs.github.com/en/rest/pulls/pulls),
+[GitHub commits](https://docs.github.com/en/rest/commits/commits),
+[GitLab MRs](https://docs.gitlab.com/api/merge_requests/),
+[GitLab commits](https://docs.gitlab.com/api/commits/).
 
 ### 4. What leaves the machine
 
@@ -269,16 +350,14 @@ reused branch (a bigger scan format, for a rare case).
   log. Each machine's scan reads the `.git` file, `commondir` and `config` of the folders its sessions
   ran in (audit `read` lines). The ssh scan now brings back repository ids with the usage, to the
   person's own machine.
-- **Delivery 2: one new kind of request.** For each merged PR in the scan window: its head branch, when
-  it was opened and its commits (and its reviews, if question 6 is yes), from GitHub through `gh`. Each
-  request is an audit `net` line and a line in the README's list. `--git no` turns it off.
+- **Delivery 2: read-only per-item forge metadata.** GitHub through `gh`: `repos/:owner/:repo/pulls/:number`, `/commits`, `repos/:owner/:repo/commits/:sha` (parents, committer time, paginated changed files), `repos/:owner/:repo/compare/:sha...:base` (ancestry). GitLab including self-managed through `glab`: `projects/:id/merge_requests/:iid`, `/commits`, `projects/:id/repository/commits/:sha`, `/repository/compare`, and paginated `/repository/tree?ref=:sha&recursive=true` inventories at parent/commit refs, including file mode. Supersede predecessors and base ancestry add bounded requests of those same families. Every request/page is an audit `net` line. Immutable requests are cached within a run. Limits: 1200 requests, 30 pages per inventory, 300 items, 40 predecessor depth, 250 lineage/base-graph nodes; hitting a limit is explicit unknown. See the [GitLab repositories API](https://docs.gitlab.com/api/repositories/). `--git no` disables all these requests. No review-event, separate raw-source, publication or forge-mutation requests. GitHub commit JSON can return file patch text; it is ignored and never persisted in saved results.
 
 ### 5. Privacy
 
 - Repository names are the person's own data. They appear in local output only: `worthit projects`,
   `--json`, `last.json`, `worthit get projects` and the audit log.
 - They are not drawn into the dashboard, the PNG, the `.md` or any share card.
-- They do not reach the AI agent (question 3) by any path: the summary prompt, the question bar's
+- Repository ids, implementation/review branches, commit ids and known short PR/MR references (`#N`/`!N`) do not reach the AI agent (question 3) by any path: the summary prompt, the question bar's
   lookups, or a custom share topic. A fixture covers each path.
 - A token inside a remote URL, read from `config` or from a Codex log, is removed on the machine that
   read it, before anything is cached, stored or sent back.
@@ -318,7 +397,7 @@ Fixture cases for delivery 1:
 ## Owner decisions, 2026-11-16
 
 Accepted answers, exactly: 1 `command`; 2 `enough`; 3 `no`; 4 `bucket`;
-5 `opened`; 7 `lead`. Question 6 remains unanswered and affects delivery 2 only.
+5 `opened`; 7 `lead`. Question 6 is not required: delivery 2 uses the accepted opened date proxy, never review verdicts.
 Delivery 1 is #115 and #117; delivery 2 and project history are out of scope.
 The status becomes In delivery with this first delivery merge; delivery 2 remains open.
 

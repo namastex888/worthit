@@ -547,7 +547,17 @@ whole day 2026-11-18:
   the local day it merged. `usd_per_pr_led` follows RFC 0004 delivery 2's definition.
 - The rows and `no_repository` add up to the day's totals: here 8 merged PRs and $384.
 - Before RFC 0004 delivery 2 merges, `prs_led` and every `first_pass` field are `null`.
-- The `first_pass` field names are RFC 0004's. `first_pass_source` says which signal they hold.
+- Section 6's consumer names map explicitly to RFC 0004 delivery 2's saved result.
+  `rows[].first_pass_known` means known eligible canonical deliveries for the project:
+  sum the corresponding `projects.delivery.project_models[].eligible`, including the
+  null-model bucket. `rows[].models[].first_pass_known` maps to the matching project/model
+  aggregate's `eligible`; RFC 0004 also exposes `models[].eligible` across projects and
+  `daily[].eligible` by UTC completion day/project/model. The matching period and day basis
+  must be respected; this mapping does not convert UTC completion days into local-day rows.
+  None maps to `coverage.signal_known_prs`, which counts physical items. Section 6's
+  `first_pass_source` maps to `projects.delivery.source`; an individual delivery's source
+  is `projects.delivery.deliveries[].first_pass.source`. All are `opened` for this proxy.
+  This is a documented mapping for the future consumer, not a field rename or implementation.
 
 **Rules.**
 

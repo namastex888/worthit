@@ -73,7 +73,13 @@ sourceCase(folder, ({ expected, tmp, home, bin, env, root, trace }) => {
     }
     return { store, data: r.status === 0 ? JSON.parse(r.stdout) : null };
   };
-  const complete = scan('complete'); // Fails before the production repair: missing audit_log/file.
+  const complete = scan('complete');
+  assert.equal(complete.data.projects.delivery.coverage.forges.find(f => f.host === 'github.com').metadata.complete, false, 'unavailable delivery metadata stays explicitly incomplete');
+  assert.ok(complete.data.projects.delivery.deliveries.every(d => d.first_pass.state === 'unknown'));
+  const offStart = trace().length;
+  const off = invoke(['--json', '--git', 'no', '--no-files', '--hosts', 'none'], path.join(tmp, 'git-off-store'), tmp);
+  assert.equal(off.status, 0, off.stderr); assert.equal(JSON.parse(off.stdout).projects.delivery, null);
+  assert.ok(!trace().slice(offStart).some(c => ['gh', 'glab', 'tea', 'usagemeter'].includes(c.command)), '--git no makes no forge metadata or meter requests'); // Fails before the production repair: missing audit_log/file.
   scan('no-files', { noFiles: true });
   scan('post-scan-failure', { failAfterScan: true });
   scan('post-scan-failure-no-files', { failAfterScan: true, noFiles: true });

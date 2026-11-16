@@ -37,7 +37,8 @@ if (command === 'usagemeter') {
         for (let i = 0; i < count; i++) console.log(`https://api.github.com/repos/example/delivery\t${Number(date.slice(-2)) * 1000 + (prefix === 'feat' ? 0 : 100) + i}\t${date}T15:00:00Z\t${prefix}: synthetic delivery`);
       }
     }
-  } else unexpected();
+  } else if (args[0] === 'api' && /^repos\/[^/]+\/[^/]+\/pulls\/\d+$/.test(args[1] || '')) fail();
+  else unexpected();
 } else if (command === 'glab') {
   if (args.join(' ') === 'auth status') {
     if (authEnv.GLAB_CHECK_UPDATE !== 'false' || authEnv.GLAB_SHOW_WHATS_NEW !== 'false') unexpected();
@@ -57,6 +58,7 @@ if (command === 'usagemeter') {
   } else if (args[0] === 'api' && args[1] === '--hostname') {
     // glab 1.123.0 validates --hostname before constructing any client/request.
     if (args[2].includes(':') || args[2].includes('/')) { console.error('Error parsing --hostname: invalid hostname.'); fail(); }
+    if (/^projects\/[^/]+\/merge_requests\/\d+$/.test(args[3] || '')) fail();
     if (!['forge-a.test', 'forge-b.test', '10.0.0.5', 'gitlab.k8s', 'gitlab', 'ERROR'].includes(args[2]) || !args[3].startsWith('merge_requests?scope=created_by_me&state=merged&updated_after=')) unexpected();
     if (mode === 'glab-host' && args[2] === 'forge-b.test') fail();
     const rows = JSON.parse(fs.readFileSync(new URL('glab-merge-requests.json', import.meta.url), 'utf8'));
