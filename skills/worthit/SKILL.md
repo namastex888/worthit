@@ -32,7 +32,7 @@ Parts of the last run. Dots walk into objects and arrays (`plans.0.usd_per_full_
 | `months` | Per month and plan: API value used, times the monthly plan price, days tracked |
 | `model_mix` | `weeks`, `series` (per model: `share_pct` per week, `change_pts`), `open`, `closed` (share, tokens, dollars, dollars per million output) |
 | `git` | Merged PRs, commits, repos, cost per merged PR, per-day series, `sources` (GitHub, the usagemeter store, Gitea when `tea` is logged in, and every GitLab host `glab` is logged in to) |
-| `delivery` | What the merged PRs were, read from each title prefix (`feat:`, `fix:`, `docs:` ...): `kinds` ranked for this week with last week beside it, `features`, `usd_per_feature`, `fix_share_pct`, and `days` (14), `weeks` (12) and `months` with features, fixes, cost and cost per feature. A null cost means that period was not fully scanned. Compare a person with their own earlier weeks, not with other people |
+| `delivery` | What the merged PRs were, read from each title prefix (`feat:`, `fix:`, `docs:` ...): `kinds` ranked for this week with last week beside it, `features`, `usd_per_feature`, `fix_share_pct`, and `days` (14), `weeks` (12) and `months` with features, fixes, cost and cost per feature. Null costs mean usage was withheld or insufficient priced days/features were available; see the coverage rules below. Compare a person with their own earlier weeks, not with other people |
 | `waste` | One row per plan: limit, share used, dollars unused, dollars still open (`at_risk_usd`), and why. Several accounts on one plan are summed into one row (`accounts`, `account_weeks`), named like `ChatGPT Pro 200 (×4)` |
 | `events` | Provider events in the window: resets, limit changes, launches, with source links |
 | `game` | Level, XP, streak, personal bests |
@@ -42,6 +42,33 @@ Parts of the last run. Dots walk into objects and arrays (`plans.0.usd_per_full_
 | `machines_retained` | Older scans kept for machines that answered with less data. Each row names `machine` (SSH alias or `this machine`), `days_kept` (distinct local days) and `units` (`day`, `provider`). Each machine/local-day/provider keeps the whole scan unit with higher API-list USD at this run's prices, then total tokens; fresh wins a full tie. Mention the named machines and days kept. Any retained unit intersecting this week makes every plan a floor and `change_vs_last_week_pct` null: later lost hours remain unknown |
 
 When `machines_retained` has a unit inside this week, that week's totals are a lower bound too.
+
+Usage comparisons use the same machine condition as plan proof, independently of
+whether any plan has a meter reading. Missing answers (including saved fallbacks),
+left-out machines, retained units overlapping the rolling week, and a week starting
+before a retirement make usage a floor. `totals.output_tokens_change_pct`,
+`totals.api_value_change_pct`, `git.usd_per_pr_change_pct` and
+`delivery.usd_per_feature_change_pct` are null if either compared week is a floor.
+An overlapping retained local day counts even when it straddles the week's start.
+Complete Git counts can still be compared when usage is a floor.
+
+When current usage is a floor, `git.usd_per_merged_pr`, every entry of
+`git.usd_per_pr_per_day`, and `delivery.usd_per_feature` are null. With
+`git.merged_prs > 0`, an explicit null `git.usd_per_merged_pr` means **cost withheld
+because usage is a floor**, not no PR data. With zero PRs, null means there is no
+denominator; a numeric zero cost remains a valid value. The shared
+`usageCostWithheld` helper interprets this invariant for the dashboard, card and
+share consumers. Say **n/a, partial usage; not compared**, never `$0` or **at least**
+for a withheld ratio. Delivery sharing keeps its delivery topic when at least five
+features exist but usage withholds their cost; absent delivery or insufficient
+features retain the weekly allowance fallback.
+
+Each `delivery.weeks` row with a known machine blocker has null `usd` and
+`usd_per_feature`. Daily/monthly cost series are conservatively withheld in full
+if either current or previous usage week is incomplete, including months extending
+outside those two weeks; their `usd` and `usd_per_feature` are null. This is not
+proof of historical daily/monthly coverage. Counts and `days_with_cost` remain
+observed data, not coverage certificates. No machine proof is added to the store.
 
 `git.coverage` reports `prs` and `commits` booleans and `sources`, an array of
 `{source, answered, metrics}`. Sources are `usagemeter`, `git log`, `gh:<account>`,
@@ -60,7 +87,7 @@ and `delivery.kinds[].prs` are floors: say **at least**. `git.merged_prs_change_
 `delivery.usd_per_feature_change_pct` and `delivery.kinds[].change_pct` are numbers
 or null; all are null without PR coverage. Do not compare floors with earlier
 weeks or award PR-derived personal bests. `git.usd_per_merged_pr` and
-`delivery.usd_per_feature` retain their observed ratios: label them **partial PR
+`delivery.usd_per_feature` retain their observed ratios when usage is complete: label them **partial PR
 count** / **partial feature count**, never lower bounds, and do not compare them.
 Shares describe observed PRs. Dashboard, report and share text/cards use these
 same rules. False `git.coverage.commits` independently means **at least** for

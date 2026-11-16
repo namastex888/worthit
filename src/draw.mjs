@@ -71,7 +71,7 @@ export const blocks = {
     const t = [{ title: 'TOKENS OUT', color: C.pink, v: fmtTok(D.totals.output_tokens), dl: usageDelta(D.totals.output_tokens_change_pct), sp: spark(D.totals.tokens_per_day, C.pink) },
                { title: 'VALUE USED', color: C.gold, v: usd(D.totals.api_value_usd), dl: usageDelta(D.totals.api_value_change_pct), sp: spark(D.totals.value_per_day, C.gold) }];
     if (D.git) t.push({ title: 'SHIPPED', color: C.cx, v: (D.git.coverage?.prs ? '' : 'at least ') + D.git.merged_prs + ' PRs', dl: D.git.coverage?.prs ? delta(D.git.merged_prs_change_pct) + d(' vs prev 7 d') : d('floor · not compared'), sp: spark(D.git.prs_per_day, C.cx), note: (D.git.coverage?.commits ? '' : 'at least ') + fmtTok(D.git.commits) + ' commits' },
-                      { title: 'COST PER PR', color: C.cl, v: D.git.usd_per_merged_pr == null ? 'n/a' : '$' + D.git.usd_per_merged_pr.toFixed(2), dl: withheld ? d('not compared') : D.git.coverage?.prs ? usageDelta(D.git.usd_per_pr_change_pct, false) : d('partial PR count'), sp: spark(D.git.usd_per_pr_per_day, C.cl), note: withheld ? 'partial usage' : '' });
+                      { title: 'COST PER PR', color: C.cl, v: D.git.usd_per_merged_pr == null ? 'n/a' : '$' + D.git.usd_per_merged_pr.toFixed(2), dl: withheld ? d('not compared') : D.git.coverage?.prs ? usageDelta(D.git.usd_per_pr_change_pct, false) : d('partial PR count'), sp: withheld ? d('n/a') : spark(D.git.usd_per_pr_per_day, C.cl), note: withheld ? 'partial usage' : '' });
     const wd = t.length === 4 ? 24 : 48;
     return row(t.map((x, i) => ({ title: x.title, color: x.color, w: i === t.length - 1 ? W - (wd + 1) * (t.length - 1) : wd, lines: [bold(w(x.v)), x.dl, x.sp, d(x.note || '7 days')] })));
   },
@@ -158,7 +158,7 @@ export const blocks = {
     cols('features / week', x => x.features, mf, C.cx); vals(x => x.features, String);
     cols('$ per feature', x => x.usd_per_feature, mc, C.gold); vals(x => x.usd_per_feature, kk);
     const today = Date.parse(D.week.to + 'T00:00:00Z'); let ax = pad(d('week ending'), 18); for (let a = N - 1; a >= 0; a--) ax += d(pad(new Date(today - a * 7 * 864e5).toISOString().slice(5, 10), SL)); l.push(ax, '');
-    l.push(pad(m('last 14 days'), 18) + spark(v.days.map(x => x.features), C.cx) + d(' features  ') + spark(v.days.map(x => x.usd_per_feature || 0), C.gold) + d(' $ per feature  ') + spark(v.days.map(x => x.fixes), C.red) + d(' fixes'));
+    l.push(pad(m('last 14 days'), 18) + spark(v.days.map(x => x.features), C.cx) + d(' features  ') + (v.days.some(x => x.usd_per_feature != null) ? spark(v.days.map(x => x.usd_per_feature || 0), C.gold) : d('n/a')) + d(' $ per feature  ') + spark(v.days.map(x => x.fixes), C.red) + d(' fixes'));
     const MO = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ');
     l.push(pad(m('by month'), 18) + v.months.slice(-3).map(x => w(MO[+x.month.slice(5) - 1]) + ' ' + fg(C.cx, x.features + ' feat') + (x.usd_per_feature == null ? '' : d(' · ') + fg(C.gold, '$' + x.usd_per_feature))).join(d('     ')));
     return box('DELIVERY', l, W, C.cx, `what your merged PRs were, from their title prefix · ${v.typed_pct ?? 0}% carry one`);

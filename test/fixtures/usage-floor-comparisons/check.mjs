@@ -5,14 +5,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { isolatedEnvironment } from '../../support/environment.mjs';
-import { blocks, strip } from '../../../src/draw.mjs';
+import { blocks, strip, usageCostWithheld } from '../../../src/draw.mjs';
 import { cardSpec, cardHtml, deliveryText } from '../../../src/card.mjs';
 
 const folder = path.dirname(fileURLToPath(import.meta.url)), root = path.resolve(folder, '../../..');
 const isolated = isolatedEnvironment(), failures = [];
 const check = (name, fn) => { try { fn(); } catch (error) { failures.push(`${name}: ${error.message}`); } };
 const modes = ['complete', 'retained-outside', 'retained-prior', 'partial-pr',
-  'missing', 'saved-answer', 'left-out', 'retained-current', 'retained-boundary', 'no-plan-missing', 'missing-partial-pr'];
+  'missing', 'saved-answer', 'left-out', 'retained-current', 'retained-boundary', 'no-plan-missing', 'missing-partial-pr',
+  'no-delivery', 'zero-feature-missing', 'few-features-missing', 'zero-prs', 'zero-usage'];
 try {
   for (const mode of modes) {
     const store = path.join(isolated.tmp, mode);
@@ -24,6 +25,27 @@ try {
       return JSON.parse(result.stdout);
     };
     const data = run([path.join(folder, 'collect.mjs'), mode]);
+    if (['no-delivery', 'zero-feature-missing', 'few-features-missing', 'zero-prs', 'zero-usage'].includes(mode)) {
+      check(`${mode} real buildData invariant and fallback control`, () => {
+        assert.equal(usageCostWithheld(data), mode.includes('missing'));
+        if (mode === 'zero-usage') {
+          assert.equal(data.git.merged_prs, 8);
+          assert.equal(data.git.usd_per_merged_pr, 0);
+          assert.equal(data.delivery.usd_per_feature, 0);
+        } else if (mode === 'no-delivery') assert.equal(data.delivery, undefined);
+        else {
+          assert.equal(data.git.usd_per_merged_pr, null);
+          assert.equal(data.delivery.features, mode === 'few-features-missing' ? 2 : 0);
+          assert.deepEqual(cardSpec('delivery', data), cardSpec('allowance', data));
+        }
+        const shared = run([path.join(root, 'bin/worthit.mjs'), 'share', 'features', '--no-files', '--ai', 'no']);
+        assert.equal(shared.topic, mode === 'zero-usage' ? 'delivery' : 'allowance');
+        if (mode === 'zero-usage') assert.match(shared.text, /\$0 each/);
+        else assert.ok(shared.warnings.some(warning => /weekly allowance post instead/.test(warning)));
+        assert.deepEqual(JSON.parse(fs.readFileSync(path.join(store, 'last.json'), 'utf8')), data);
+      });
+      continue;
+    }
     const floor = !['complete', 'retained-outside', 'retained-prior', 'partial-pr'].includes(mode);
     const priorFloor = mode === 'retained-prior' || mode === 'retained-boundary';
     const covered = !mode.includes('partial-pr');
@@ -55,6 +77,7 @@ try {
     check(`${mode} usage-derived changes`, () => assert.deepEqual(changes,
       floor || priorFloor ? [null, null, null, null] : [100, 100, covered ? 50 : null, covered ? 67 : null]));
     check(`${mode} current costs`, () => {
+      assert.equal(usageCostWithheld(data), floor, 'the shared signal follows real buildData, independently of plan availability');
       assert.equal(data.git.usd_per_merged_pr, floor ? null : 37.5);
       assert.equal(data.delivery.usd_per_feature, floor ? null : 50);
       const current = data.delivery.weeks.find(row => row.weeks_ago === 0);
@@ -72,13 +95,23 @@ try {
       const prior = data.delivery.weeks.find(row => row.weeks_ago === 1);
       assert.equal(prior.usd, null);
       assert.equal(prior.usd_per_feature, null);
+      assert.ok(data.delivery.days.every(row => row.usd == null && row.usd_per_feature == null));
+      assert.ok(data.delivery.months.every(row => row.usd == null && row.usd_per_feature == null));
     });
     check(`${mode} dashboard cost proof`, () => {
+      if (floor || priorFloor) {
+        // Check usage cells only; complete Git count arrows must remain visible.
+        for (const column of [1, 3, 7]) {
+          const cell = tiles.split('\n').map(line => line.split('│')[column] || '').join('\n');
+          assert.match(cell, /not compared/);
+          assert.doesNotMatch(cell, /no earlier week|[▲▼]|vs prev 7 d/);
+        }
+        assert.doesNotMatch(costLine, /[▲▼]|vs prev 7 d/);
+      }
       if (floor) {
-        assert.match(tiles, /floor.*not compared/);
-        assert.doesNotMatch(tiles, /no earlier week/);
         assert.match(costLine, /n\/a.*partial usage.*not compared/);
       }
+      if (covered) assert.match(tiles, /▲ 33% vs prev 7 d/, 'complete PR comparison remains independent');
       if (mode === 'partial-pr') {
         assert.match(tiles, /partial PR count/);
         assert.match(costLine, /\$50.*partial feature count.*not compared/);
@@ -104,13 +137,15 @@ try {
     });
     check(`${mode} real share consumer`, () => {
       const shared = run([path.join(root, 'bin/worthit.mjs'), 'share', 'delivery', '--no-files', '--ai', 'no']);
+      assert.equal(shared.topic, 'delivery', 'usage withholding must not select the allowance fallback');
       assert.equal(shared.text, text, 'the CLI must keep the delivery topic when usage withholds its cost');
     });
     if (isolated.env.WORTHIT_FIXTURE_ARTIFACTS) {
-      fs.mkdirSync(isolated.env.WORTHIT_FIXTURE_ARTIFACTS, { recursive: true });
+      const artifacts = path.join(isolated.env.WORTHIT_FIXTURE_ARTIFACTS, 'usage-floor-comparisons');
+      fs.mkdirSync(artifacts, { recursive: true });
       for (const [suffix, content] of [['.json', JSON.stringify(data, null, 2)], ['-dashboard.txt', tiles + '\n' + delivery],
         ['-card.html', html], ['-share.txt', text]])
-        fs.writeFileSync(path.join(isolated.env.WORTHIT_FIXTURE_ARTIFACTS, mode + suffix), content);
+        fs.writeFileSync(path.join(artifacts, mode + suffix), content);
     }
   }
 } finally { isolated.cleanup(); }
