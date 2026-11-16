@@ -257,7 +257,7 @@ function writeFiles(spec) {
     '## How it is measured', '', 'Every request in your local logs is priced at the provider\'s API list rate (input, cached input, cache writes, output with thinking). A plan\'s number is the priced usage inside one stretch of its weekly meter, scaled to 100% of the week. "Floor" means use of the same account on machines not scanned is missing, so the real value can only be higher. Unused allowance counts as waste only when the week closed without hitting the cap.', '',
     '```', ...dash.map(strip), '```', ''].join('\n');
   const f1 = `${STAMP}-worthit.md`; fs.writeFileSync(f1, md); audit('write', './' + f1); out.push(f1);
-  const chrome = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(c => fs.existsSync(c));
+  const chrome = process.env.WORTHIT_TEST_CHROME || ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(c => fs.existsSync(c));
   if (chrome) { const all = [...head, ...dash], scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'worthit-dashboard-')), hp = path.join(scratch, 'dashboard.html'), f2 = `${STAMP}-worthit.png`;
     try {
       fs.writeFileSync(hp, ansiHtml(all));
