@@ -30,24 +30,48 @@ childProcess.spawn = (command, args, options) => {
 };
 globalThis.setTimeout = (callback, delay, ...args) => {
   if (delay !== 60000 || !render) return setTimer(callback, delay, ...args);
-  const timer = setTimer(callback, delay, ...args);
+  let watcher = null, poll = null, stopped = false;
+  const closeWatcher = () => {
+    const current = watcher; watcher = null;
+    current?.close();
+  };
+  const stop = () => {
+    stopped = true; closeWatcher();
+    if (poll !== null) clearTimer(poll);
+    poll = null;
+  };
+  const timer = setTimer(() => {
+    if (stopped) return;
+    stop(); callback(...args);
+  }, delay);
+  timers.set(timer, stop);
   record({ event: 'timer', delay });
-  let watcher = null, fired = false;
   if (render.mode === 'timeout') {
     const fire = () => {
-      if (fired || !fs.existsSync(path.join(path.dirname(render.png), 'ready'))) return;
-      fired = true; clearTimer(timer); watcher.close();
+      if (stopped || !fs.existsSync(path.join(path.dirname(render.png), 'ready'))) return;
+      stop(); clearTimer(timer);
       record({ event: 'timeout' }); callback(...args);
     };
-    watcher = fs.watch(path.dirname(render.png), fire);
+    const pollReady = () => {
+      poll = null; fire();
+      // Use the real timer; stop() bounds polling by readiness, settle or deadline.
+      if (!stopped) poll = setTimer(pollReady, 10);
+    };
+    const fallback = () => {
+      closeWatcher();
+      if (!stopped && poll === null) poll = setTimer(pollReady, 10);
+    };
+    try {
+      watcher = fs.watch(path.dirname(render.png), fire);
+      watcher.on('error', fallback);
+    } catch { fallback(); }
     fire();
   }
-  timers.set(timer, watcher);
   return timer;
 };
 globalThis.clearTimeout = timer => {
   if (timers.has(timer)) {
-    timers.get(timer)?.close(); timers.delete(timer);
+    timers.get(timer)(); timers.delete(timer);
     record({ event: 'clear' });
   }
   return clearTimer(timer);

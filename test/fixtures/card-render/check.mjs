@@ -13,8 +13,9 @@ sourceCase(folder, ({ tmp, bin, env, root, query, trace }) => {
   const destination = path.join(tmp, '2026-11-14-worthit-share-allowance.png');
   const canonical = p => fs.realpathSync(p);
   const invoke = (command, mode, options = {}) => {
-    const store = `${command}-${mode}${options.unsafe ? '-unsafe' : ''}${options.partial ? '-partial' : ''}`;
+    const store = `${command}-${mode}${options.unsafe ? '-unsafe' : ''}${options.partial ? '-partial' : ''}${options.watchFailure ? '-watch-' + options.watchFailure : ''}`;
     const processTrace = path.join(tmp, store + '-process.jsonl');
+    const watchTrace = path.join(tmp, store + '-watch.jsonl');
     const storePath = path.join(tmp, store); fs.mkdirSync(storePath, { recursive: true });
     fs.writeFileSync(path.join(storePath, 'last.json'), JSON.stringify(demoData()));
     const stale = fixturePng(); fs.writeFileSync(destination, stale); fs.utimesSync(destination, 1, 1);
@@ -22,7 +23,12 @@ sourceCase(folder, ({ tmp, bin, env, root, query, trace }) => {
       ...(command === 'share' ? ['allowance', '--ai', 'no'] : []), ...(options.partial ? ['--allow-partial'] : [])], {
       cwd: tmp, env: { ...env, WORTHIT_HOME: storePath, WORTHIT_TEST_CHROME: options.executable || chrome,
         FIXTURE_CHROME_MODE: mode, FIXTURE_CHROME_TRACE: chromeTrace, FIXTURE_OFFLINE: options.unsafe ? '1' : '0',
-        ...(options.instrument ? { NODE_OPTIONS: env.NODE_OPTIONS + ` --import=${path.join(root, 'test/support/card-process.mjs')}`, FIXTURE_PROCESS_TRACE: processTrace } : {}) },
+        ...(options.instrument ? {
+          NODE_OPTIONS: env.NODE_OPTIONS
+            + (options.watchFailure ? ` --import=${path.join(root, 'test/support/card-watch-failure.mjs')}` : '')
+            + ` --import=${path.join(root, 'test/support/card-process.mjs')}`,
+          FIXTURE_PROCESS_TRACE: processTrace, FIXTURE_WATCH_FAILURE: options.watchFailure || '', FIXTURE_WATCH_TRACE: watchTrace,
+        } : {}) },
       encoding: 'utf8', timeout: mode === 'error-no-close' ? 5000 : 30000, maxBuffer: 16 << 20,
     });
     assert.ifError(r.error);
@@ -59,7 +65,15 @@ sourceCase(folder, ({ tmp, bin, env, root, query, trace }) => {
         ? [{ event: 'timer', delay: 60000 }, { event: 'error', code: 'EMFILE' }, { event: 'clear' }]
         : [{ event: 'timer', delay: 60000 }, { event: 'timeout' }, { event: 'clear' }], 'process settles and clears its deadline exactly once');
     }
-    console.log(`${command}/${mode}${options.unsafe ? '/unsafe' : ''}: exit ${r.status}, ${success ? 'image accepted' : 'no image'}`);
+    if (options.watchFailure) {
+      const events = fs.readFileSync(watchTrace, 'utf8').trim().split('\n').map(JSON.parse);
+      // Readiness can win the race with the queued error; closure is still once.
+      assert.equal(events.filter(e => e.event === 'close').length, options.watchFailure === 'async' ? 1 : 0);
+      assert.deepEqual(events.filter(e => e.event !== 'close'), options.watchFailure === 'async'
+        ? [{ event: 'watch', mode: 'async' }, { event: 'error', code: 'EMFILE' }]
+        : [{ event: 'watch', mode: 'sync' }], 'watcher failure is injected and any created watcher is closed once');
+    }
+    console.log(`${command}/${mode}${options.watchFailure ? '/watch-' + options.watchFailure : ''}${options.unsafe ? '/unsafe' : ''}: exit ${r.status}, ${success ? 'image accepted' : 'no image'}`);
   };
   // Two commands at the real CLI -> renderer -> executable boundary, serialized.
   for (const mode of ['exit0', 'exit2', 'none', 'invalid', 'wrong-size', 'truncated']) {
@@ -86,6 +100,12 @@ sourceCase(folder, ({ tmp, bin, env, root, query, trace }) => {
   for (const mode of ['error-no-close', 'timeout']) for (const command of ['share', 'weekly']) {
     try { invoke(command, mode, { instrument: true, cause: /Chrome could not start \(EMFILE\)/ }); }
     catch (error) { failures.push(`${command}/${mode}: ${error.message}`); }
+  }
+  // Exercise the real timeout preload even when a watcher cannot be created or
+  // emits an asynchronous error. Keep all timeout/PNG/deadline assertions above.
+  for (const watchFailure of ['async', 'sync']) for (const command of ['share', 'weekly']) {
+    try { invoke(command, 'timeout', { instrument: true, watchFailure }); }
+    catch (error) { failures.push(`${command}/timeout/watch-${watchFailure}: ${error.message}`); }
   }
   assert.deepEqual(failures, [], 'process fault cases must all settle with their exact cause');
   const calls = fs.readFileSync(chromeTrace, 'utf8').trim().split('\n').map(JSON.parse);
