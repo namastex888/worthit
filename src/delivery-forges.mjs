@@ -172,18 +172,5 @@ export async function collectDeliveryEvidence(physical, { run, audit, enabled = 
     r.reasons = [...new Set(r.reasons)];
   };
   for (const p of physical) await readItem(p.key, p.merged_ms);
-  for (const r of records.values()) {
-    const id = deliveryIdentity(r.key);
-    if (!id || id.forge === 'unsupported') continue;
-    const ref = supersedes(r.title, id);
-    if (ref?.reason) r.chain_reason = ref.reason;
-    if (ref?.key) {
-      r.predecessor = ref.key;
-      if (!records.has(ref.key)) {
-        if (records.size >= maxItems) records.set(ref.key, { key: ref.key, ...deliveryIdentity(ref.key), reasons: ['chain_budget'], completeness: {} });
-        else await readItem(ref.key, null);
-      }
-    }
-  }
   return [...records.values()];
 }

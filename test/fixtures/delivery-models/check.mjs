@@ -57,6 +57,7 @@ test('invalid ambiguous review and review-only no lead', () => {
 });
 test('reused implementation branch tie missing old branch and incomplete machine', () => {
   assert.equal(build([record(1)], [row(1), row(1, 20, { model: 'model-b' })]).deliveries[0].lead_model, null);
+  assert.equal(build([record(1)], [row(1, 0.1), row(1, 0.2), row(1, 0.3, { model: 'model-b' })]).deliveries[0].lead_model, null, 'floating point accumulation cannot break a tied lead');
   const p = build([record(1), record(2, { branch: 'feat/item-1' })], [row(1)]);
   assert.equal(p.coverage.ambiguous_prs, 2); assert.equal(p.coverage.unlinked.by_reason.ambiguous_branch.rows, 1); assert.ok(p.deliveries.every(d => d.lead_model === null));
   assert.equal(build([record(1)], [row(1), row(1, 0, { branch: null })]).deliveries[0].lead_model, null);
@@ -93,7 +94,7 @@ test('transitive cross-day chains costs once and closed unmerged root', () => {
   const rs = [record(1), record(2, { title: 'Supersedes #1', merged_ms: Date.parse('2026-11-14T01:00:00Z') }), record(3, { title: 'Supersedes #2', merged_ms: Date.parse('2026-11-14T02:00:00Z') })];
   let p = build(rs); assert.equal(p.deliveries.length, 1); assert.equal(p.coverage.merged_prs, 3); assert.equal(p.coverage.canonical_deliveries, 1); assert.equal(p.deliveries[0].api_value_usd, 60); assert.equal(p.deliveries[0].first_pass.state, 'not_first_try'); assert.equal(p.deliveries[0].completed_day, '2026-11-13'); assert.equal(p.deliveries[0].root, `${project}#1`);
   p = build([{ ...rs[0], merged_ms: null }, rs[1]], [row(1), row(2)]); assert.equal(p.deliveries[0].completed_day, '2026-11-14'); assert.equal(p.deliveries[0].api_value_usd, 40);
-  p = build([{ ...rs[0], merged_ms: start - 1 }, rs[1]]); assert.equal(p.deliveries.length, 0); assert.equal(p.coverage.merged_prs, 1); assert.equal(p.models.find(r => r.model === null).coverage.merged_prs, 1);
+  p = build([{ ...rs[0], merged_ms: start - 1 }, rs[1]]); assert.equal(p.deliveries.length, 0); assert.equal(p.coverage.merged_prs, 1); assert.equal(p.coverage.linked_prs, 1); assert.equal(p.models.find(r => r.model === null).coverage.merged_prs, 1);
 });
 test('cycle self fork missing cross-repo and wrong typed chains stay unknown', () => {
   for (const rs of [[record(1, { title: 'Supersedes #1' })], [record(1, { title: 'Supersedes #2' }), record(2, { title: 'Supersedes #1' })], [record(1), record(2, { title: 'Supersedes #1' }), record(3, { title: 'Supersedes #1' })], [record(1, { title: 'Supersedes #99' })], [record(1, { title: 'Supersedes acme/other#2' })], [record(1, { title: 'Supersedes !2' })]]) {

@@ -36,7 +36,7 @@ const newCoverage = () => ({ merged_prs: 0, canonical_deliveries: 0, linked_prs:
   signal_known_prs: 0, eligible: 0, unknown: 0, not_measured: 0, superseded_prs: 0, unresolved_chains: 0,
   implementation: usage(), review: usage(), unlinked: { ...usage(), by_reason: {} }, forges: [] });
 const metric = keys => ({ ...keys, prs_led: 0, api_value_usd: 0, usd_per_pr_led: null, cost_floor: false, cost_reasons: [],
-  first_pass: 0, not_first_pass: 0, unknown: 0, not_measured: 0, eligible: 0, first_pass_pct: null, first_pass_reason: 'insufficient_sample', coverage: newCoverage() });
+  first_pass: 0, not_first_pass: 0, unknown: 0, not_measured: 0, eligible: 0, first_pass_pct: null, first_pass_reason: 'insufficient_sample', coverage: newCoverage(), _evidence: new Set() });
 const scopeRows = () => ({ models: new Map(), project_models: new Map(), daily: new Map() });
 function scopes(tables, project, model, day) {
   const get = (map, keys) => { const k = JSON.stringify(keys); if (!map.has(k)) map.set(k, metric(keys)); return map.get(k); };
@@ -112,6 +112,7 @@ export function buildDelivery(activity, g, { machines, projectFloor, start, end,
     if (!a.project) { miss(a, 'no_repository'); continue; }
     if (!a.branch) { miss(a, 'missing_branch', [...records.values()].filter(r => r.project === a.project)); continue; }
     const review = /^review\/pr-(\d+)-([0-9a-f]{8})$/i.exec(a.branch);
+    if (a.branch.startsWith('review/pr-') && !review) { miss(a, 'review_unverified'); continue; }
     let matches;
     if (review) {
       matches = [...records.values()].filter(r => r.project === a.project && r.number === +review[1] && r.completeness?.commits && r.commits?.filter(c => c.sha.startsWith(review[2].toLowerCase())).length === 1);
@@ -130,7 +131,7 @@ export function buildDelivery(activity, g, { machines, projectFloor, start, end,
     if (!review) d._models.set(a.model, (d._models.get(a.model) || 0) + (a.usd || 0));
   }
   const inWindow = items.filter(d => d.completed_ms >= start && d.completed_ms < end);
-  for (const d of inWindow) {
+  for (const d of items) {
     const members = d._members;
     if (!machines) d.cost_reasons.push('machines_incomplete');
     if (projectFloor) d.cost_reasons.push('project_usage_incomplete');
@@ -141,11 +142,12 @@ export function buildDelivery(activity, g, { machines, projectFloor, start, end,
     if (d._errors.length) d.cost_reasons.push('unresolved_chain');
     if (!d._implementation.rows) { d.link_reasons.push('no_implementation_usage'); d.cost_reasons.push('no_implementation_usage'); }
     const ranking = [...d._models].sort((a, b) => b[1] - a[1]);
+    const tie = ranking.length > 1 && Math.abs(ranking[0][1] - ranking[1][1]) <= Math.max(Math.abs(ranking[0][1]), Math.abs(ranking[1][1])) * 1e-12;
     // Missing project/machine/branch or price evidence can hide a different largest model.
     const leadBlocked = !machines || projectFloor || !g.coverage?.prs || members.some(r => !r.completeness?.metadata || !r.completeness?.commits) || d._errors.length || d.link_reasons.some(x => x !== 'review_unverified') || d._implementationIncomplete || d.cost_reasons.includes('scan_window');
-    if (!leadBlocked && ranking[0]?.[0] && ranking[0][0] !== '?' && ranking[0][1] > 0 && (ranking.length < 2 || ranking[0][1] !== ranking[1][1])) {
+    if (!leadBlocked && ranking[0]?.[0] && ranking[0][0] !== '?' && ranking[0][1] > 0 && !tie) {
       d.lead_model = ranking[0][0]; d.lead_api_value_usd = ranking[0][1]; d.lead_share_pct = 100 * ranking[0][1] / d._implementation.api_value_usd;
-    } else if (!d.lead_model) d.link_reasons.push(ranking.length > 1 && ranking[0][1] === ranking[1][1] ? 'lead_tie' : 'lead_unavailable');
+    } else if (!d.lead_model) d.link_reasons.push(tie ? 'lead_tie' : 'lead_unavailable');
     d.implementation_api_value_usd = d._implementation.api_value_usd; d.review_api_value_usd = d._review.api_value_usd;
     d.api_value_usd = d.implementation_api_value_usd + d.review_api_value_usd;
     d.cost_reasons = [...new Set(d.cost_reasons)]; d.cost_floor = !!d.cost_reasons.length;
@@ -153,17 +155,16 @@ export function buildDelivery(activity, g, { machines, projectFloor, start, end,
     d.first_pass = exclude.includes(d.project) ? signal('not_measured', 'repository_opt_out') : d._errors.length ? signal('unknown', d._errors.join(',')) : members.length > 1 ? signal('not_first_try', 'superseded', true) : openedSignal(members[0]);
     d.provenance = members.map(r => ({ key: r.key, branch: r.branch || null, head_sha: r.head_sha || null, merged_at: Number.isFinite(r.merged_ms) ? new Date(r.merged_ms).toISOString() : null,
       completeness: Object.fromEntries(proofKeys.map(k => [k, !!r.completeness?.[k]])), reasons: r.reasons || [] }));
+    if (!inWindow.includes(d)) continue;
     const rows = scopes(tables, d.project, d.lead_model, d.completed_day), known = ['first_try', 'not_first_try'].includes(d.first_pass.state);
-    const physicalMembers = physical.filter(p => d.members.includes(p.key));
     for (const c of [coverage, ...rows.map(r => r.coverage)]) {
-      c.canonical_deliveries++; c.linked_prs += physicalMembers.filter(p => d._linked.has(p.key)).length; c.linked_deliveries += d._linked.size ? 1 : 0;
-      c.ambiguous_prs += physicalMembers.filter(p => d._ambiguous.has(p.key)).length;
-      c.signal_known_prs += known ? physicalMembers.length : 0; c.eligible += known ? 1 : 0;
+      c.canonical_deliveries++; c.linked_deliveries += d._linked.size ? 1 : 0; c.eligible += known ? 1 : 0;
       c.unknown += d.first_pass.state === 'unknown' ? 1 : 0; c.not_measured += d.first_pass.state === 'not_measured' ? 1 : 0;
       c.superseded_prs += Math.max(0, members.length - 1); c.unresolved_chains += d._errors.length ? 1 : 0;
       addCounters(c.implementation, d._implementation); addCounters(c.review, d._review);
     }
     for (const row of rows) {
+      for (const r of members) row._evidence.add(r);
       if (d.lead_model !== null) { row.prs_led++; row.api_value_usd += d.api_value_usd; }
       row.cost_floor ||= d.cost_floor; row.cost_reasons.push(...d.cost_reasons);
       row.first_pass += d.first_pass.state === 'first_try' ? 1 : 0; row.not_first_pass += d.first_pass.state === 'not_first_try' ? 1 : 0;
@@ -174,11 +175,18 @@ export function buildDelivery(activity, g, { machines, projectFloor, start, end,
   for (const p of physical) {
     const d = memberDelivery.get(p.key), id = deliveryIdentity(p.key);
     const model = inWindow.includes(d) ? d.lead_model : null;
-    for (const c of [coverage, ...scopes(tables, id?.project || null, model, utcDay(p.merged_ms)).map(r => r.coverage)]) c.merged_prs++;
+    const rows = scopes(tables, id?.project || null, model, utcDay(p.merged_ms));
+    for (const row of rows) for (const r of d?._members || [records.get(p.key)]) if (r) row._evidence.add(r);
+    for (const c of [coverage, ...rows.map(r => r.coverage)]) {
+      c.merged_prs++; c.linked_prs += d?._linked.has(p.key) ? 1 : 0; c.ambiguous_prs += d?._ambiguous.has(p.key) ? 1 : 0;
+      c.signal_known_prs += ['first_try', 'not_first_try'].includes(d?.first_pass?.state) ? 1 : 0;
+    }
   }
   for (const { a, reason } of unlinked) {
     const at = time(a.hour + ':00:00Z'); if (!(at >= start && at < end)) continue;
-    for (const c of [coverage, ...scopes(tables, a.project || null, a.model || null, utcDay(at)).map(r => r.coverage)]) {
+    const rows = scopes(tables, a.project || null, a.model || null, utcDay(at));
+    for (const row of rows) for (const r of records.values()) if (a.project && r.project === a.project) row._evidence.add(r);
+    for (const c of [coverage, ...rows.map(r => r.coverage)]) {
       addUsage(c.unlinked, a); if (!c.unlinked.by_reason[reason]) c.unlinked.by_reason[reason] = usage(); addUsage(c.unlinked.by_reason[reason], a);
     }
   }
@@ -187,7 +195,8 @@ export function buildDelivery(activity, g, { machines, projectFloor, start, end,
     r.eligible = r.first_pass + r.not_first_pass; r.usd_per_pr_led = r.prs_led ? r.api_value_usd / r.prs_led : null;
     r.first_pass_pct = r.eligible >= 5 ? 100 * r.first_pass / r.eligible : null; r.first_pass_reason = r.eligible >= 5 ? null : 'insufficient_sample';
     r.cost_reasons = [...new Set(r.cost_reasons)];
-    const scoped = [...records.values()].filter(x => (!('project' in r) || x.project === r.project) && (!('day' in r) || x.merged_ms && utcDay(x.merged_ms) === r.day));
+    const scoped = [...r._evidence];
+    delete r._evidence;
     r.coverage.forges = forgeProof(scoped);
     return r;
   }).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
