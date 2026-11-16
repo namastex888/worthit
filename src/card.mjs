@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { screenshotArgs } from './screenshot.mjs';
 
 // A private headless profile never touches the person's browser session. Render
 // to scratch first: a stale destination image must not count as a successful run.
@@ -16,10 +17,8 @@ export async function renderCardImage(spec, destination) {
     const html = path.join(scratch, 'card.html'), png = path.join(scratch, 'card.png');
     fs.writeFileSync(html, cardHtml(spec));
     const ok = await new Promise(resolve => {
-      const child = spawn(chrome, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=1',
-        '--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-component-update',
-        '--disable-sync', '--disable-default-apps', '--metrics-recording-only', '--host-resolver-rules=MAP * ~NOTFOUND',
-        '--user-data-dir=' + path.join(scratch, 'profile'), '--window-size=1600,900', '--screenshot=' + png, 'file://' + html], { stdio: 'ignore' });
+      const child = spawn(chrome, [...screenshotArgs(path.join(scratch, 'profile')), '--force-device-scale-factor=1',
+        '--window-size=1600,900', '--screenshot=' + png, 'file://' + html], { stdio: 'ignore' });
       const timer = setTimeout(() => child.kill(), 60000);
       child.on('error', () => { clearTimeout(timer); resolve(false); });
       child.on('close', code => { clearTimeout(timer); resolve(code === 0); });
