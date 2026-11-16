@@ -1,4 +1,5 @@
 // Observe access from startup imports onward; fail even when application code catches it.
+import '../../../src/quiet.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { syncBuiltinESMExports, createRequire } from 'node:module';
