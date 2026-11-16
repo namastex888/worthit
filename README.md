@@ -56,6 +56,8 @@ It draws a card like this from your last run, writes the post, copies the image 
 
 Topics: `allowance` (did your weekly limits move), `delivery` (what a shipped feature costs, week by week), `open` (open vs closed models), `models`, `value`, `ranking`, `waste`, or anything in quotes: `npx worthit share "what each merged PR cost me"`.
 
+With no allowance plans in the saved run, `allowance`, `value`, `ranking` and fallbacks to `allowance` print `worthit share: no allowance data for this week` to stderr and exit 1 with no JSON. Topics with usable plan-independent data still work, including delivery with at least five features whose cost is withheld: `n/a, partial usage; not compared`.
+
 ## For agents
 
 Install the skill (the full guide) into whatever agent you use. `npx worthit` also asks "Install the worthit skill?" on its first run and does this for you:
