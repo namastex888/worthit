@@ -25,7 +25,9 @@ const save = (name, text) => {
 const sum = (rows, key) => rows.reduce((n, r) => n + r[key], 0);
 const pct = (a, b) => b ? Math.round(100 * (a - b) / b) : null;
 try {
-  const D = JSON.parse(run(['bin/worthit.mjs', '--demo', '--json'])), failures = [];
+  const stdout = run(['bin/worthit.mjs', '--demo', '--json']);
+  assert.ok(Buffer.byteLength(stdout) > 65536, 'large saved delivery JSON exercises pipe-buffer flush');
+  const D = JSON.parse(stdout), failures = [];
   for (const key of ['machines_missing', 'machines_left_out', 'machines_retained', 'machines_retired'])
     if (!Array.isArray(D[key])) failures.push(`${key}: required array missing from actual --demo --json`);
   if (!D.delivery?.kinds?.length || !D.delivery.features || D.delivery.usd_per_feature == null)

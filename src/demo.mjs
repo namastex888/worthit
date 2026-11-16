@@ -1,6 +1,7 @@
 // worthit --demo: the whole run on bundled sample data. Nothing on this machine is read, no model is called, no file is written.
 import fs from 'node:fs'; import path from 'node:path';
 import { ROOT } from './collect.mjs';
+import { demoDelivery } from './demo-delivery.mjs';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const hex = n => Array.from({ length: n }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
@@ -37,6 +38,7 @@ export function demoData({ git = true } = {}) {
   // Bundled git totals are a complete synthetic control using the existing coverage contract.
   if (D.git) D.git.coverage = { prs: true, commits: true, sources: [{ source: 'usagemeter', answered: true, metrics: ['prs', 'commits'] }, { source: 'git log', answered: true, metrics: ['commits'] }, { source: 'gh:demo-coder', answered: true, metrics: ['prs'] }] };
   D.generated_at = now.toISOString(); D.week = { from: new Date(now - 7 * 864e5).toISOString().slice(0, 10), to: now.toISOString().slice(0, 10) };
+  D.projects.delivery = git ? demoDelivery(D, now) : null;
   if (!git) {
     delete D.git; delete D.delivery;
     D.projects.coverage.prs_sources = D.projects.coverage.prs_attributed = null;

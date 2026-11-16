@@ -1,4 +1,5 @@
 // RFC 0004 delivery 1: local project usage, never dashboard or share content.
+import { buildDelivery } from './delivery-models.mjs';
 export const PROJECT_REASONS = ['outside_a_repository', 'no_origin', 'origin_not_supported', 'folder_gone', 'no_folder_read', 'saved_before_projects'];
 const unresolved = new Set(PROJECT_REASONS.slice(2));
 
@@ -13,7 +14,7 @@ export function projectFromKey(key) {
   } catch { return null; }
 }
 
-export function buildProjects(activity, g, machines, start, end) {
+export function buildProjects(activity, g, machines, start, end, options = {}) {
   const rows = new Map(), no = { api_value_usd: 0, output_tokens: 0, requests: 0, why_usd: Object.fromEntries(PROJECT_REASONS.map(k => [k, 0])) };
   const rowFor = id => { if (!rows.has(id)) rows.set(id, { project: id, name: id.split('/').at(-1), api_value_usd: 0, output_tokens: 0, requests: 0, merged_prs: g ? 0 : null, usd_per_merged_pr: null, models: new Map() }); return rows.get(id); };
   const add = (row, a) => { row.api_value_usd += a.usd || 0; row.output_tokens += a.output || 0; row.requests += a.requests || 0; };
@@ -52,6 +53,7 @@ export function buildProjects(activity, g, machines, start, end) {
   return { floor: !machines || unresolvedRows !== 0,
     coverage: { machines, unresolved_rows: unresolvedRows, unresolved_usd: Math.round(unresolvedUsd), attributed_pct: total ? Math.round(100 * attributedUsd / total) : null,
       prs_sources: g ? !!g.coverage?.prs : null, prs_attributed: g ? unattributed === 0 : null },
+    delivery: buildDelivery(activity, g, { machines, projectFloor: !machines || unresolvedRows !== 0, start, end, ...options }),
     rows: [...rows.values()].sort((a, b) => b.api_value_usd - a.api_value_usd || a.project.localeCompare(b.project)), no_repository: no,
     prs_without_project: g ? { merged_prs: unattributed, why: { no_host_in_key: unattributed } } : null };
 }
@@ -73,6 +75,9 @@ export function projectsText(data) {
     `No repository | ${usage(p.no_repository)}`,
     ...Object.entries(p.no_repository.why_usd).map(([why, usd]) => `  ${why}: ${floor}$${usd}`),
     ...(p.prs_without_project ? [`PRs without project: ${prFloor}${p.prs_without_project.merged_prs} (no_host_in_key)`] : ['PR data is off. Run `worthit --json` to fill PR counts and costs.']),
+    ...(p.delivery ? [`Delivery · opened date proxy · ${p.delivery.coverage.canonical_deliveries} canonical deliveries (${p.delivery.coverage.merged_prs} physical merged PRs)`,
+      ...p.delivery.project_models.map(r => `${r.project || 'No repository'} / ${r.model || 'No inferred lead'} | ${r.prs_led} PRs led | ${r.usd_per_pr_led == null ? 'cost n/a' : (r.cost_floor ? 'at least ' : '') + '$' + r.usd_per_pr_led + '/delivery'} | first try ${r.first_pass}/${r.eligible} eligible | ${r.first_pass_pct == null ? 'insufficient sample (minimum 5)' : r.first_pass_pct + '%'} | unknown ${r.unknown} | not measured ${r.not_measured}`),
+      `Unlinked usage: ${JSON.stringify(p.delivery.coverage.unlinked.by_reason)}; daily: worthit get projects.delivery.daily`] : ['Delivery data unavailable. Run `worthit --json` with git on.']),
     ...['machines_missing', 'machines_left_out', 'machines_retained', 'machines_retired'].map(k => `${k}: ${JSON.stringify(p[k])}`)];
   return lines.join('\n');
 }

@@ -36,5 +36,8 @@ if (command === 'ssh') {
     if (!range || !JSON.parse(env.FIXTURE_ACCOUNTS).includes(author)) die('unexpected fixture code-host query');
     const rows = JSON.parse(fs.readFileSync(path.join(env.FIXTURE_SOURCES, 'pull-requests.json'), 'utf8'));
     for (const r of rows) if (r.author === author && r.merged_at >= range[1] && r.merged_at <= range[2]) console.log(`https://api.github.com/repos/example-lab/${r.repo}\t${r.number}\t${r.merged_at}\t${r.title}`);
+  } else if (args[0] === 'api' && /^repos\/[^/]+\/[^/]+\/pulls\/\d+$/.test(args[1] || '')) {
+    // These usage/count fixtures deliberately lack delivery metadata. Named unknown, no live request.
+    process.exit(1);
   } else die('unexpected fixture gh command');
 } else die('unexpected fixture command: ' + command);
