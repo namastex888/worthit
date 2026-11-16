@@ -1,0 +1,7 @@
+localhost:3000
+  ✓ Logged in to localhost:3000 as coder-a (keyring)
+  ✓ Git operations for localhost:3000 configured to use ssh protocol.
+  ✓ API calls for localhost:3000 are made over http protocol.
+  ✓ REST API Endpoint: http://localhost:3000/api/v4/
+  ✓ GraphQL Endpoint: http://localhost:3000/api/graphql/
+  ✓ Token found in operating system keyring: **************************

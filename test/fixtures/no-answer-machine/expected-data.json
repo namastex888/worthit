@@ -124,7 +124,7 @@
         "key": "claude",
         "proof": "measured",
         "usd_per_full_week": 9,
-        "change_allowed": true
+        "change_allowed": false
       }
     ],
     "stored_weeks": [
