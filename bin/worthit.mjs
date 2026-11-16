@@ -26,7 +26,7 @@ import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'
 import { blocks, C, W, bar, fg, bold, d, m, w, pad, lpad, len, strip, grad, fmtTok, usd, machineNotes } from '../src/draw.mjs';
 import { scan, analyse, git, buildData, audit, writeAudit, has, tilde, ROOT, HOME, sshHosts, savedHosts, saveHosts } from '../src/collect.mjs';
 import { activeHosts, readHosts, hostsCommand } from '../src/hosts.mjs';
-import { query, runForAgent, QUERY_COMMANDS } from '../src/query.mjs';
+import { query, runForAgent, QUERY_COMMANDS, normalizeDemoArgs } from '../src/query.mjs';
 import { projectsResult, projectsText } from '../src/projects.mjs';
 import { dataForAgent, redactProjects } from '../src/project-privacy.mjs';
 import { deliveryText, cardSpec, customSpec, renderCardImage, barCells } from '../src/card.mjs';
@@ -36,8 +36,11 @@ import { startPet, petLines, petSummary, PET_W } from '../src/pet.mjs';
 import { demoHosts, demoScan, demoGit, demoPricing, demoData, demoSpec, demoAnswer, demoPet } from '../src/demo.mjs';
 
 const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
-const h = React.createElement, argv = process.argv.slice(2);
-if (argv.some(a => a.startsWith('--demo='))) { console.error('worthit: --demo takes no value: use `--demo`.'); process.exit(2); }
+const h = React.createElement;
+let demoArgs;
+try { demoArgs = normalizeDemoArgs(process.argv.slice(2)); }
+catch (e) { console.error('worthit: ' + e.message); process.exit(2); }
+const argv = [...demoArgs.args, ...(demoArgs.demo ? ['--demo'] : [])];
 const flag = k => argv.includes(k), arg = (k, dflt) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : dflt; };
 // Fail closed before any command touches the store; demo remains completely isolated.
 let hostState = { selected: [], retired: [] };

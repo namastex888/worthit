@@ -98,6 +98,12 @@ worthit install-skill            # install the skill into your coding agents
 worthit --demo                   # the whole run on sample data
 ```
 
+`worthit get <section> --demo` reads the same bundled sample as `worthit --json --demo`,
+including dotted fields; `worthit get --demo` lists its sections. The standalone
+`--demo` flag may also precede the lookup command. `days --demo` and `sql ... --demo`
+exit 2 with a one-line error: the sample has no historical query tables. These demo
+lookups never read or write your store, even when it is missing or unreadable.
+
 Stored usage never decreases on rescan because tools prune their logs. Each usage
 field in `day_provider`, `day_model` and `history.json` keeps its maximum on every
 day. Later price cuts or dedupe fixes cannot lower days already stored; higher

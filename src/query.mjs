@@ -1,4 +1,4 @@
-// worthit query commands: instant answers from what earlier runs stored (no scan, no model, no network).
+// worthit query commands: instant answers from earlier runs or the bundled --demo sample (no scan, no model, no network).
 //   worthit get [section[.field…]]      a part of the last run's data (plans, months, model_mix, tools, waste, git, events, game, totals…)
 //   worthit days [--since D] [--until D] [--group day|week|month] [--by total|tool|model] [--tool X] [--model X]
 //   worthit sql "SELECT …"              read-only SQL over the local store
@@ -72,26 +72,36 @@ export const SCHEMA = {
 };
 
 export const QUERY_COMMANDS = ['get', 'days', 'sql', 'schema'];
+// Match standalone CLI flags only; SQL text containing "--demo" remains one statement.
+const withoutDemo = argv => argv.filter(arg => arg !== '--demo' && !arg.startsWith('--demo='));
+export function normalizeDemoArgs(argv) {
+  if (argv.some(arg => arg.startsWith('--demo='))) fail('--demo takes no value: use `--demo`.');
+  return { demo: argv.includes('--demo'), args: withoutDemo(argv) };
+}
 // CLI entry: prints the answer as JSON; false when argv is not a query command
 export async function query(argv) {
   if (argv.includes('--skill')) { console.log(fs.readFileSync(path.join(ROOT, 'skills', 'worthit', 'SKILL.md'), 'utf8')); return true; }
-  if (!QUERY_COMMANDS.includes(argv[0])) return false;
+  if (!QUERY_COMMANDS.includes(withoutDemo(argv)[0])) return false;
   try { out(run(argv, note => console.error(note))); } catch (e) { console.error('worthit: ' + e.message); process.exit(2); }
   return true;
 }
 // The same commands as a function: returns the value, with an optional day-basis note for the caller.
 export function run(argv, note = () => {}) {
+  const { demo, args } = normalizeDemoArgs(argv);
+  argv = args;
   const cmd = argv[0], arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
+  if (demo && ['days', 'sql'].includes(cmd)) fail(`--demo is not supported for ${cmd}: the bundled sample has no query tables. Use \`worthit get <section> --demo\`.`);
   if (cmd === 'schema') return SCHEMA;
   if (cmd === 'get') {
+    let data;
+    if (demo) data = demoData();
+    else {
+      if (!fs.existsSync(LAST)) fail('no saved run yet. Run `worthit --json` once.');
+      data = JSON.parse(fs.readFileSync(LAST, 'utf8'));
+    }
     const p = argv[1] && !argv[1].startsWith('--') ? argv[1] : '';
-    // Keep the newly added project lookup isolated before the general demo-query
-    // delivery lands. No existence check or parse of last.json on this path.
-    const sampleProject = argv.includes('--demo') && (p === 'projects' || p.startsWith('projects.'));
-    if (!sampleProject && !fs.existsSync(LAST)) fail('no saved run yet. Run `worthit --json` once.');
-    const data = sampleProject ? demoData() : JSON.parse(fs.readFileSync(LAST, 'utf8'));
     if (!p) return { generated_at: data.generated_at, sections: Object.keys(data), hint: 'worthit get <section>, e.g. worthit get plans, worthit get model_mix.series, worthit get plans.0.usd_per_full_week' };
-    let v = data; for (const k of p.split('.')) { if (v == null || !(k in Object(v))) fail(`no "${p}" in the last run. Sections: ${Object.keys(data).join(', ')}`); v = v[k]; }
+    let v = data; for (const k of p.split('.')) { if (v == null || !(k in Object(v))) fail(`no "${p}" in the ${demo ? 'sample' : 'last'} run. Sections: ${Object.keys(data).join(', ')}`); v = v[k]; }
     return p.includes('.') ? v : { generated_at: data.generated_at, [p]: v };
   }
   if (cmd === 'days') {
@@ -118,7 +128,11 @@ export function run(argv, note = () => {}) {
 // pr_kind, meta, weekly JSON, attached files or another saved identity surface.
 const AGENT_TABLES = ['day_provider', 'day_model', 'day', 'plan_value', 'month'];
 export function runForAgent(argv, data, note = () => {}) {
+  const { demo, args } = normalizeDemoArgs(argv);
+  argv = args;
   const cmd = argv[0];
+  if (demo && ['days', 'sql'].includes(cmd)) return run([...argv, '--demo'], note);
+  if (demo) data = demoData();
   if (cmd === 'get') {
     const section = (argv[1] || '').split('.')[0];
     if (section === 'projects' || section === 'project_activity') throw new Error('repository details are local only');
