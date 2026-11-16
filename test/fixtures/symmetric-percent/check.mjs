@@ -15,7 +15,7 @@ const { C, blocks, strip, fg } = await import('../../../src/draw.mjs');
 const { SCHEMA } = await import('../../../src/query.mjs');
 const cases = JSON.parse(fs.readFileSync(path.join(folder, 'cases.json'), 'utf8'));
 for (const contract of [SCHEMA['weekly.result'].fields.plans, SCHEMA['weekly.result'].fields.moved,
-  SCHEMA['plans.weeks'].about, fs.readFileSync(path.join(folder, '../../../skills/worthit/SKILL.md'), 'utf8')]) {
+  SCHEMA['plans.change_vs_last_week_pct'].fields.value, fs.readFileSync(path.join(folder, '../../../skills/worthit/SKILL.md'), 'utf8')]) {
   assert.match(contract, /whole-number percent/); assert.match(contract, /halves away from zero/);
 }
 fs.mkdirSync(path.join(HOME, 'weeks'), { recursive: true });

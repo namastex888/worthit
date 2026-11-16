@@ -37,7 +37,7 @@ function box(title, lines, width, color, right = '', h = 0) {
 export const hstack = (boxes, gap = 1) => boxes[0].map((_, i) => boxes.map(b => b[i]).join(' '.repeat(gap)));
 const row = (defs, gap = 1) => { const h = Math.max(...defs.map(x => x.lines.length)); return hstack(defs.map(x => box(x.title, x.lines, x.w, x.color, x.right, h)), gap); };
 export const usd = n => '$' + Math.round(n).toLocaleString('en-US');
-const delta = (pct, goodWhenUp = true) => { if (pct == null) return d('no earlier week'); const up = pct >= 0, good = up === goodWhenUp; return fg(good ? C.cx : C.red, (up ? '▲ ' : '▼ ') + Math.abs(pct) + '%'); };
+const delta = (pct, goodWhenUp = true) => { if (pct == null) return d('no earlier week'); if (pct === 0) return d('0%'); const up = pct > 0, good = up === goodWhenUp; return fg(good ? C.cx : C.red, (up ? '▲ ' : '▼ ') + Math.abs(pct) + '%'); };
 // buildData sets cost = allMachines && merged_prs ? usage / merged_prs : null.
 // With observed PRs, null therefore means usage was withheld as a floor, not no PR data.
 export const usageCostWithheld = D => D.git?.merged_prs > 0 && D.git.usd_per_merged_pr === null;
@@ -89,7 +89,7 @@ export const blocks = {
   PlanRanking(D) {
     const ps = [...D.plans].sort((a, b) => b.usd_per_full_week - a.usd_per_full_week), mx = ps[0]?.usd_per_full_week;
     const l = ps.length ? ps.map((p, i) => bold(w(String(i + 1))) + ' ' + pad(fg(p.color, p.plan), 16) + lpad(bold(w(usd(p.usd_per_full_week))), 7) + ' ' + bar(p.usd_per_full_week, mx, 13, dark(p.color), p.color, false) + lpad(w(p.times_plan_price + '×'), 4) + ' ' + d(p.proof))
-      : [m('No finished weekly limit in your logs yet.'), d('A plan is ranked once its weekly meter runs to the cap,'), d('or closes, inside the scanned days.')];
+      : [m('No finished weekly limit in your logs yet.'), ...wrap('A plan is ranked once its weekly meter runs to the cap, or closes, inside the scanned days.', 52).map(d)];
     l.push(...machineNotes(D).flatMap(t => wrap(t, 50).map((line, i) => (i ? '  ' : fg(C.gold, '! ')) + m(line))));
     while (l.length < (ps.length ? 7 : 9)) l.push('');
     if (ps.length) l.push(d('measured  meter + every machine on the account'), d('floor     use elsewhere not counted: value ≥ shown'));
@@ -121,7 +121,7 @@ export const blocks = {
     const p = D.plans.find(x => (x.history || []).length > 1) || D.plans[0], cv = p.history, mx = Math.max(...cv), l = [];
     for (let r = 4; r >= 0; r--) l.push(d(r === 4 ? lpad(usd(mx), 6) + ' ' : r === 0 ? '    $0 ' : '       ') + cv.map((v, i) => fg(i === cv.length - 1 ? p.color : mix(C.track, p.color, .6), ' ▁▂▃▄▅▆▇█'[Math.round(Math.max(0, Math.min(1, v / mx * 5 - r)) * 8)].repeat(3))).join(' '));
     l.push('');
-    for (const q of D.plans) l.push(pad(fg(q.color, q.plan.replace(' AI', '')), 13) + bold(w(usd(q.usd_per_full_week))) + '  ' + (q.proof !== 'measured' ? d('floor: not compared') : q.change_vs_last_week_pct != null ? (q.change_vs_last_week_pct === 0 ? d('0%') : delta(q.change_vs_last_week_pct)) + d(' vs last') : d('no baseline')));
+    for (const q of D.plans) l.push(pad(fg(q.color, q.plan.replace(' AI', '')), 13) + bold(w(usd(q.usd_per_full_week))) + '  ' + (q.proof !== 'measured' ? d('floor') : q.change_vs_last_week_pct != null ? (q.change_vs_last_week_pct === 0 ? d('0%') : delta(q.change_vs_last_week_pct)) + d(' vs last') : d('no baseline')));
     return box('DID THE LIMIT MOVE', l, 39, C.cx, cv.length + ' weeks');
   },
 
@@ -150,7 +150,7 @@ export const blocks = {
     const mxk = Math.max(1, ...v.kinds.map(x => x.prs));
     for (const x of v.kinds.slice(0, 6)) l.push(pad(fg(kc(x.kind), x.label), 14) + bar(x.prs, mxk, 26, kc(x.kind), kc(x.kind)) + lpad(bold(w((covered ? '' : 'at least ') + x.prs)), covered ? 6 : 15) + lpad(m(x.share_pct + '%'), 6) + '   ' + (covered ? delta(x.change_pct, x.kind !== 'fix') + d(' vs prev 7 d') : d('not compared')));
     const rest = v.kinds.slice(6).filter(x => x.prs); if (rest.length) l.push(d('+ ' + rest.map(x => `${x.label} ${covered ? '' : 'at least '}${x.prs}`).join(' · ')));
-    l.push('', pad(m('cost per feature'), 18) + bold(w(v.usd_per_feature == null ? 'n/a' : '$' + v.usd_per_feature)) + '  ' + (withheld ? d('partial usage · not compared') : covered ? usageDelta(v.usd_per_feature_change_pct, false) : d('partial feature count · not compared')) + '      ' + m('fixes ') + w((v.fix_share_pct ?? 0) + '%') + m(' of PRs') + (!covered || v.fix_share_last_week_pct == null ? '' : d(` (${v.fix_share_last_week_pct}% the week before)`)), '');
+    l.push('', pad(m('cost per feature'), 18) + bold(w(v.usd_per_feature == null ? 'n/a' : '$' + v.usd_per_feature)) + '  ' + (withheld ? d('partial usage · not compared') : covered ? usageDelta(v.usd_per_feature_change_pct, false) : d('partial feature count · not compared')) + '      ' + m('fixes ') + w((v.fix_share_pct ?? 0) + '%') + m(' of PRs') + (withheld || !covered || v.fix_share_last_week_pct == null ? '' : d(` (${v.fix_share_last_week_pct}% the week before)`)), '');
     if (!covered) return box('DELIVERY', l, W, C.cx, 'title prefixes · shares of observed PRs');
     const at = {}; for (const x of v.weeks) at[x.weeks_ago] = x; const mf = Math.max(1, ...v.weeks.map(x => x.features)), mc = Math.max(1, ...v.weeks.map(x => x.usd_per_feature || 0));
     const cols = (name, get, mx, color) => { for (let r = 1; r >= 0; r--) { let row = pad(r === 1 ? m(name) : '', 18); for (let a = N - 1; a >= 0; a--) { const val = at[a] ? get(at[a]) : null; row += val == null ? (r === 0 ? d(' ·    ') : '      ') : fg(a === 0 ? color : mix(C.track, color, .6), ' ▁▂▃▄▅▆▇█'[Math.max(r === 0 ? 1 : 0, Math.round(Math.max(0, Math.min(1, val / mx * 2 - r)) * 8))].repeat(4)) + '  '; } l.push(row); } };
