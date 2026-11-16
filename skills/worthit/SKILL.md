@@ -321,6 +321,8 @@ worthit share "what each merged PR cost me"     # anything else: the person's ag
 
 Piped (as you run it), it prints JSON: `{topic, written_by, text, characters, image, url, data_generated_at, warnings}`.
 
+With no allowance plans in the saved run, `allowance`, `value`, `ranking` and fallbacks to `allowance` print `worthit share: no allowance data for this week` to stderr and exit 1 with no JSON. Topics with usable plan-independent data still work, including delivery with at least five features whose cost is withheld: `n/a, partial usage; not compared`.
+
 - `text` is the suggested post. `image` is the card (`./<date>-worthit-share-<topic>.png`). `url` opens X with the text filled in.
 - X's link cannot carry an image: tell the person to attach or paste the card.
 - Free text is written by the person's own agent; if any number in it is not in the data, worthit falls back to the built-in `allowance` post and says so in `warnings`.

@@ -622,7 +622,11 @@ if (WEEKLY) {
     }
   }
   finally { db?.close(); }
-} else if (SHARE) { await share(); process.exit(0); }
+} else if (SHARE) {
+  try { await share(); }
+  catch (e) { console.error('worthit share: ' + e.message); process.exit(1); }
+  process.exit(0);
+}
 else {
 console.log('\n' + LOGO.join('\n') + '\n ' + m('what your AI coding subscription is really worth') + d(`  ·  v${VERSION}  ·  ` + (DEMO ? 'demo · sample data' : 'reads your local logs')));
 const fake = () => { const s = new PassThrough(); s.isTTY = true; s.setRawMode = () => s; s.ref = () => s; s.unref = () => s; return s; };   // no keyboard (pipes, tests): a stand-in input

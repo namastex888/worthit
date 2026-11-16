@@ -1,0 +1,22 @@
+{
+  "generated_at": "2026-11-14T12:00:00Z",
+  "week": { "from": "2026-11-08", "to": "2026-11-14" },
+  "machines": 1,
+  "machines_missing": [],
+  "machines_left_out": [],
+  "machines_retained": [],
+  "machines_retired": [],
+  "plans": [],
+  "totals": { "output_tokens": 100000, "api_value_usd": 20 },
+  "git": null,
+  "waste": [{ "account": "Sample plan", "used_pct": 80, "unused_usd": 20 }],
+  "model_mix": {
+    "weeks": ["Nov 14"],
+    "open": { "share_pct": [25], "change_pts": null, "usd_per_m_output": 5 },
+    "closed": { "share_pct": [75], "usd_per_m_output": 20 },
+    "series": [
+      { "model": "sample-closed", "open": false, "share_pct": [75] },
+      { "model": "sample-open", "open": true, "share_pct": [25] }
+    ]
+  }
+}
