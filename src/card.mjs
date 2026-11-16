@@ -99,7 +99,7 @@ export const CARD_TOPICS = {
     if (!v || (v.usd_per_feature == null && !(v.features >= 5 && withheld))) return cardSpec('allowance', D);
     const covered = !!D.git?.coverage?.prs;
     const ws = v.weeks.filter(x => x.usd_per_feature != null && (covered || x.weeks_ago === 0)).slice(-4), mx = Math.max(1, ...ws.map(x => x.usd_per_feature)), ch = covered && !withheld ? v.usd_per_feature_change_pct : null, md = iso => { const t = new Date(iso + 'T00:00:00Z'); return `${t.getUTCDate()} ${MONTHS[t.getUTCMonth()]}`; };
-    return { eyebrow: 'What a shipped feature costs me in AI', hero: withheld ? 'n/a' : '$' + v.usd_per_feature, color: C.gold, cap: `of API-priced AI usage per feature merged this week`, sub: !covered ? `at least ${v.features} features · partial count` : ch == null ? `${v.features} features this week` : `${ch >= 0 ? '▲' : '▼'} ${Math.abs(ch)}% vs last week`, subColor: ch == null ? C.ink3 : ch > 0 ? C.red : C.cx,
+    return { eyebrow: 'What a shipped feature costs me in AI', hero: withheld ? 'n/a' : '$' + v.usd_per_feature, color: C.gold, cap: `of API-priced AI usage per feature merged this week`, sub: !covered ? `at least ${v.features} features · partial count` : ch == null ? `${v.features} features this week` : `${ch === 0 ? '' : ch > 0 ? '▲ ' : '▼ '}${Math.abs(ch)}% vs last week`, subColor: ch == null || ch === 0 ? C.ink3 : ch > 0 ? C.red : C.cx,
       rows: withheld ? [{ label: 'features merged', pct: null, color: C.cx, value: `${covered ? '' : 'at least '}${v.features}`, note: '' }] : ws.map(x => ({ label: 'week to ' + md(x.to), pct: x.usd_per_feature / mx, color: x.weeks_ago === 0 ? C.gold : C.ink2, value: '$' + x.usd_per_feature, note: `${covered ? '' : 'at least '}${x.features} features` })),
       foot: (withheld ? 'partial usage; not compared · ' : '') + (covered ? '' : 'cost uses a partial feature count; not compared · ') + 'a feature = a merged PR titled feat:' }; },
   waste(D) { const un = D.waste.reduce((a, x) => a + (x.unused_usd || 0), 0), risk = D.waste.reduce((a, x) => a + (x.at_risk_usd || 0), 0), color = name => (D.plans.find(p => name.startsWith(p.plan.split(' ')[0])) || {}).color || C.ink2;
@@ -110,7 +110,7 @@ export const CARD_TOPICS = {
 
 export function deliveryText(D) {
   const v = D.delivery, covered = !!D.git?.coverage?.prs, withheld = usageCostWithheld(D), ch = covered && !withheld ? v.usd_per_feature_change_pct : null;
-  return `what does a shipped feature cost you in ai? mine this week: ${withheld ? 'n/a (partial usage; not compared)' : '$' + v.usd_per_feature + ' each'}${ch == null ? '' : ` (${ch >= 0 ? '▲' : '▼'}${Math.abs(ch)}% vs last week)`}.. ${covered ? '' : 'at least '}${v.features} features merged, ${v.fix_share_pct}% of my ${covered ? '' : 'observed '}prs were fixes.${covered ? '' : ' cost uses a partial feature count; not compared.'} priced at api rates from my local logs + git: npx worthit`;
+  return `what does a shipped feature cost you in ai? mine this week: ${withheld ? 'n/a (partial usage; not compared)' : '$' + v.usd_per_feature + ' each'}${ch == null ? '' : ` (${ch === 0 ? '' : ch > 0 ? '▲' : '▼'}${Math.abs(ch)}% vs last week)`}.. ${covered ? '' : 'at least '}${v.features} features merged, ${v.fix_share_pct}% of my ${covered ? '' : 'observed '}prs were fixes.${covered ? '' : ' cost uses a partial feature count; not compared.'} priced at api rates from my local logs + git: npx worthit`;
 }
 
 export const cardSpec = (key, D) => {
