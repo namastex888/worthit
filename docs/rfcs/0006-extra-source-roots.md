@@ -57,6 +57,9 @@ input or conflicting state, 1 a store I/O failure. No command prints raw paths o
 
 No delete command is proposed. Manual deletion of a setting leaves a tombstone and retained data on the
 next scan: it is left out until explicitly restored or retired. Absence cannot declare retirement.
+In 1a, `retire` accepts only a root that has never answered, using the empty attested snapshot in
+section 7; update/unretire and retirement of an answered root wait for 1b. A root that answered is
+therefore one-way in 1a: it cannot be replaced or retired yet, and deselection leaves a floor.
 `boundary` records the operator check described in section 2; it cannot make permissions more liberal
 and refuses retired roots. A preflight-only failed scan can establish the reader hash without admitting
 content; listing shows that hash so the operator can bind the proof to it.
@@ -259,9 +262,10 @@ on an identity race. Outside targets need an explicit binding before reading. Ph
 uses machine plus filesystem device/inode (and generation/birth identity where provided), independently
 of the path spelling; hardlinks share identity. Canonical paths remain evidence of containment, not a
 second discriminator that splits identical inodes. Across scans, inode reuse or uncertain filesystem
-identity cannot prove equality/disjointness. Realpath is a fallback for same-path/symlink dedup only;
-without reliable inode identity, distinct paths are not proven independent hardlinks. Withhold
-completeness (`identity_unknown`) where that ambiguity affects counting or snapshot assembly.
+identity alone cannot prove cross-scan disjointness. Also record each file realpath as a salted
+`path-v1` hash alongside its path-independent `file-v1` hash. Snapshot assembly uses both conservatively
+per machine/local-day/provider unit (step 3); missing/conflicting identity keeps a floor. Without
+reliable inode identity, distinct paths are not proven independent hardlinks.
 
 Apply the same rule to `meter.db` and `claude-limits.jsonl`; read one physical database/file once, then
 use the existing row/event identity rules. Do not sum the same event from native logs and meter: keep
@@ -284,11 +288,14 @@ limit is the shipped reported-host identity: hostname collisions, renamed/reinst
 logs across genuinely distinct machines are not solved here. When identity is ambiguous, report
 `identity_unknown`, keep saved evidence, and claim no complete/comparable population.
 
-**Aggregation order (delivery 1b adds steps 3-4).** Ownership is by canonical physical source, not by the
-alias/root label under which it was discovered. Each usage row and its source manifest retain that id.
+**Aggregation order (delivery 1b adds nonempty root snapshots to step 3).** Ownership is by canonical
+physical source, not the alias/root label under which it was discovered. Each row's manifest retains it.
 From 1a, new scan `source_ownership` is an array of `{collection,row,source_ids}`: `collection` is one of
 `buckets`, `meters`, `events`, `meter_readings`, `meter_usage`, `sessions`; `row` is the zero-based index
-in that collection; `source_ids` is its sorted distinct physical-file hash array (`[null]` if unknown).
+in that collection; `source_ids` is a sorted distinct array of `{file_id,path_id}` pairs: `file-v1`
+physical identity and `path-v1` per-file realpath identity, each hash or null if unknown. A proven
+hardlink may have several path pairs but one file hash and one usage owner. The same paired manifest
+shape applies to source coverage and active/frozen root records; null identity is never an empty set.
 Keep native buckets separated by owning file until whole-unit selection, so each usage contribution
 has one owner and can be projected without splitting an unattributed aggregate. A session can list
 several files but is not itself an additive usage total. This sidecar preserves existing meter row
@@ -307,15 +314,21 @@ rows in a root-enabled scan need the same provenance; old absent ownership is un
    floors remains a floor. There is no model key; `day_model` stays UTC, derived from the merged rows.
    Preserve the existing partial-oldest-day cut and history's no-lowering rule. Neither a missing root
    nor this RFC authorizes lowering saved history or rewriting immutable judged/checkpoint rows.
-3. **Retired roots:** assemble their frozen rows against the **chosen machine candidate**, including
-   its saved winner, not merely against the live read inventory. Never host-match a root snapshot.
-   With proven identities, if none of a snapshot's file ids is represented in the chosen candidate,
-   add it once as disjoint physical-source usage. If all are already represented, it is redundant
-   (`overlap`) and adds nothing, whether those rows came from fresh defaults, another root/alias or
-   the chosen saved machine unit. A file merely read live but discarded by step 2 is not represented.
+3. **Retired roots:** assemble frozen rows **per machine + collector-local day + provider unit** against
+   that unit's **chosen candidate**, including its saved winner, not merely the live inventory. Use
+   owning pairs for rows in that unit, not root-wide inventories. Never host-match a root snapshot.
+   A source is represented if either its nonnull `file_id` **or** any of its
+   nonnull `path_id` hashes matches that unit's accumulated ownership. Add a snapshot unit only when
+   every source has complete unambiguous pairs matching **neither** identity; if all are represented,
+   add nothing (`overlap`). Thus same path with a new inode/device adds nothing; a reused inode at a
+   different path also adds nothing and makes the machine `identity_unknown`/floor. Any conflicting
+   pair or suspected reuse/retargeting stays a floor, even when a match suppresses addition; proven
+   same-scan hardlink aliases remain one file, not a conflict merely for different paths.
+   These tests include fresh defaults, other roots/aliases and saved winners. A file merely read live
+   but discarded by step 2 is not represented in the chosen unit.
    Partial overlap or unknown identity is `identity_unknown`: retain the chosen candidate, keep the
    frozen snapshot as uncombined evidence, add no ambiguous rows and make the machine a floor.
-   Process retired snapshots against the accumulated represented-id set, so two snapshots cannot
+   Process retired snapshots against the accumulated paired manifest for that unit, so two snapshots cannot
    add the same file twice. The disjoint retired-root/live-default case counts both usages once.
 4. **Retired machines:** apply RFC 0002's whole-machine snapshot merge last, using its host matching
    and whole-unit rule; these snapshots already contain their roots. Do not also add their root
@@ -388,7 +401,7 @@ Each entry has these fields (all lists present, nullable fields explicit):
 | `attempted_at`, `last_scan_at`, `retired_at` | ISO UTC instants or null |
 | `window` | `{from,to,complete}`: UTC scan interval and boolean; a partial boundary day is not complete |
 | `boundary` | `verified`, `unverified` or `failed` from section 2 |
-| `sources` | per binding `{id,kind,status,reasons,canonical_ids,account,model,mapping}`; ids are salted hashes; canonical_ids are deduplicated physical-file hashes, null where identity is unproven |
+| `sources` | per binding `{id,kind,status,reasons,source_ids,account,model,mapping}`; ids are salted hashes; source_ids is the same `{file_id,path_id}` paired manifest as source_ownership, each hash nullable where unproven |
 | `account`, `model` in each source | `{status,rows_unknown}` using section 3 states; nonapplicable metadata is `disabled`; counts are nonnegative integers |
 | `mapping` in each source | `{status,reasons}`: `disabled`, `read`, `missing`, `unreadable`, `partial`; status describes project resolution, not usage |
 | `attribution` | `{account_complete,model_complete,unattributed_rows,unattributed_output_tokens,unattributed_api_value_usd,model_unknown_rows,unpriced_rows}`; booleans then nonnegative counters/value for the requested window |
@@ -432,20 +445,25 @@ in the reader before transport. Root paths never enter prompts, cards or reports
 
 ## 7. Retirement, basis at both ends, and offline reads
 
-Delivery 1b's `retire` freezes the root's last provably owned rows from the selected machine scan at
+For a root that answered, delivery 1b's `retire` freezes its last provably owned rows from the selected
+machine scan at
 `WORTHIT_HOME/run-keep/roots/retired/<root-id>.json`. A version-1 frozen envelope holds `source_roots`,
 its hashed identity/basis, `generated_at`, `since`, `registered_at`, `last_scan_at`, `no_saved_scan`
-(boolean), a `source_ids` array of physical-file hashes and the existing usage collections for that
+(boolean), the paired `source_ids` manifest from section 4 and the existing usage collections for that
 root only. `run-keep/roots/<root-id>.json` is a version-1 **coverage/provenance-only** record with those
 identity/time fields and source ids, but no usage collections. The machine scan owns the active usage;
 this record is never merged for usage. Frozen rows follow section 4's assembly, not machine-host merge.
 No record contains raw paths and no scan writes a frozen snapshot.
 
-A never-answered root **can be retired**. Freeze an empty envelope with `no_saved_scan: true`,
+A never-answered root **can be retired from 1a**. Freeze an empty envelope with `no_saved_scan: true`,
 `last_scan_at: null`, `since: registered_at`, and empty source ids/usage collections; absence of an
 answer is not proof of historical zero usage. Every view relying on it discloses "retired with no saved
 scan, as stated by you". Distinguish this from a missing/corrupt snapshot of a root that did answer:
 do not silently replace lost evidence with an empty envelope. Valid previously owned usage is kept.
+This 1a exception adds no usage rows and needs no step-3 row assembly; it does not bypass 1a's
+root-presence comparison guard. Answered roots remain one-way until 1b, as section 1 discloses.
+Here never-answered means no saved `read`/`partial` usage answer and no previously owned usage;
+missing/unreadable preflight is not an answer, while lost/corrupt previous evidence is not this case.
 
 `--since` is the RFC 0002 UTC date assertion, not before `last_scan_at` for a root that answered, or
 `registered_at` for a never-answered root, and never in the future. Absent it, retirement is now.
@@ -471,10 +489,11 @@ machine plus realpath; root plus binding; vendor plus account/organization; root
 root plus metadata policy/content hashes and known/unknown attribution; and the full population below.
 `file-v1` is a separate domain for machine plus proven physical-file identity: device/inode and a
 generation discriminator when available, **without realpath**, so hardlink aliases hash equally.
-`canonical-v1` remains the root-path hash. A realpath-only fallback may deduplicate equal paths/links
-but cannot produce a proven physical-file id for distinct-path/snapshot disjointness; use null and
-`identity_unknown` for that claim. All of `sources[].canonical_ids` and snapshot `source_ids` mean
-these `file-v1` physical-file hashes, despite the former field's name.
+`canonical-v1` remains the root-path hash. Separate `path-v1` hashes `[physical_machine, file_realpath]`
+with the same collector-local HMAC key/encoding, never an unsalted path digest. Every paired manifest
+in `source_ownership`, `sources[].source_ids` and active/frozen root `source_ids` uses these two domains.
+A realpath-only fallback can suppress a same-path duplicate but cannot prove physical disjointness:
+its pair has null `file_id`, so step 3 withholds addition and keeps `identity_unknown`/floor.
 No unsalted path hash. Missing/unresolved inputs yield null, never a hash of an invented empty value.
 An explicitly never-answered retirement records a known attested lifecycle with unknown physical
 identity, not an empty observed source: its declared registration/retirement can enter the population
@@ -494,7 +513,7 @@ belongs only to collector-side basis. No key export or second account-tag scheme
 **Delivery 1a's conservative guard:** persist `source_roots` with each endpoint already used by the
 plain plan path and weekly checkpoint (and its `compared_with`). Add nullable JSON-text
 `plan_value.source_roots` for that observation's exact array; old rows are null/unknown, never `[]`.
-Whenever either endpoint has **any registered root**, including deselected/tombstoned roots, or its
+Whenever either endpoint has **any registered root**, including retired/deselected/tombstoned roots, or its
 old coverage is unknown and may have roots, withhold plan and weekly comparisons with
 `plans[].not_compared: ["roots_changed"]`. Also suppress existing usage/value/model-share/delivery-cost
 comparison and improvement claims affected by those roots; physical PR counts retain their separate
@@ -502,6 +521,10 @@ PR-source checks. With unknown historical root coverage, do not infer the old de
 This is conservative even for a currently complete root. It requires coverage persistence and null
 comparisons, **no population-basis hashing or RFC 0005 implementation**. Empty-root endpoint arrays
 must be explicit before the guard can allow default-only comparisons under the existing rules.
+Consequently default-only stores also lose comparisons while eligible old baselines have unknown
+root coverage (normally until new explicit-empty observations supply the baseline). This deliberate
+1a limit uses `roots_changed`, including unknown-root baselines; `basis_unknown` applies to 1b's
+unknown basis instead. Empty retirement may unblock post-retirement measurement, never 1a comparison.
 
 Extend RFC 0005 `basis` with `source_roots: {version: 1, id: [...], mappings: [...], attribution: [...]}`.
 Each array contains sorted distinct hashes from contributing days; `[null]` denotes unknown. `id` hashes
@@ -535,14 +558,18 @@ retired/unretired, retargeted, remapped or reattributed. Equal root counts do no
 several bases is not comparable even if the other period has the same set. Physical PR counts retain
 their independent PR-source basis; roots cannot manufacture improvement in delivery costs or proxies.
 
-`change.not_compared` adds `roots_changed`, `mappings_changed`, `attribution_changed`; unknown old
-coverage uses `basis_unknown`, incomplete usage `floor`, and rule changes `rules_changed`. Emit every
+`change.not_compared` adds `roots_changed`, `mappings_changed`, `attribution_changed`; in 1b an unknown
+basis uses `basis_unknown`, while 1a's unknown-root coverage guard uses `roots_changed` as above.
+Incomplete usage uses `floor`, and rule changes `rules_changed`. Emit every
 applicable reason (RFC 0005 `machines_changed` may accompany `roots_changed`). From delivery 1a,
 `plans[].not_compared` is a sorted unique array of reason codes beside `change_vs_last_week_pct`, in
 both run JSON and weekly plans (including saved baseline plans); `[]` means no reason withheld the
 comparison. The root-relevant codes are `roots_changed`, `mappings_changed`, `attribution_changed`,
 `basis_unknown`, `floor`, `rules_changed`; existing non-root withholding uses `no_baseline` or
-`invalid_baseline` when appropriate. A withheld change is null. `moved` remains an array and omits the
+`invalid_baseline` when appropriate: `no_baseline` means no eligible dated plan/checkpoint row exists;
+`invalid_baseline` means the dated row exists but its matching plan/value/proof is unusable (including
+a nonpositive denominator). Unknown root coverage uses the stage-specific guard above, not either
+baseline code. A withheld change is null. `moved` remains an array and omits the
 plan, explained by that plan's `not_compared`; there is no null moved entry.
 
 From delivery 1a, an active root not `read` (including failed, left-out or saved), or a retained unit
@@ -583,7 +610,7 @@ feature; default-home scanning remains usable on its own.
 
 | # | Independently usable outcome | State |
 |---|---|---|
-| 1a | Fixture first, then useful read-only Claude/Codex/meter root usage: add/list/select and boundary commands/settings, canonical native AND meter dedup, coverage/audit, saved-machine winner/floor, plan-incompleteness disclosure and the conservative comparison guard. No RFC 0005 implementation dependency. | open |
+| 1a | Fixture first, then read-only Claude/Codex/meter usage: add/list/select/boundary and never-answered empty retire; source_ownership sidecar, collector-memory sanitizer, framed stdin bootstrap, native/meter dedup, coverage/audit, saved-machine winner/floor and plan-incompleteness disclosure. Root-presence comparison guard still applies after retirement; default-only unknown baselines also blank comparisons. Answered roots cannot be replaced/retired until 1b. No RFC 0005 implementation dependency. | open |
 | 1b | Manage changed/finished roots: update/retire/unretire, provenance-aware frozen root assembly and root-basis persistence at both ends; lift 1a's comparison guard only with equal known basis and complete proof. | open |
 | 2 | Optional derived account/model files and explicit Antigravity usage bindings, with distinct attribution failures and unknown pricing. Existing root usage remains useful when optional metadata is disabled. | open |
 | 3 | Container-to-mount mapping and read-only git metadata, token-URL refusal and partitioned optional project cache; projects resolve safely or remain unresolved without losing usage. | open |
@@ -596,7 +623,9 @@ Stage 1b adds that independently useful lifecycle outcome after 1a; it does not 
 unrelated periods/game/price basis. Each stage is one scoped issue/PR, with its own fixture receipts.
 
 Stages 1a/1b reject not-yet-supported `antigravity`, `account`, `model` and nonempty `mappings` settings
-with a clear unsupported-feature error; 1a also rejects update/retire/unretire until 1b. Never silently
+with a clear unsupported-feature error; 1a rejects update/unretire and retire of an answered root until
+1b, allowing only the never-answered empty-retire exception above. Adding a root in 1a is otherwise a
+one-way choice until 1b; turning it off does not remove the floor or the comparison guard. Never silently
 ignore them. All final syntax is reserved here. From 1a an unmapped container cwd cannot use a host
 folder or path-keyed cache; only a validated, token-free logged origin can resolve its project, otherwise
 it stays unresolved. Host cap/login fallback cannot attribute unknown root usage. These safeguards and
@@ -616,6 +645,10 @@ Fixture plan (synthetic identities, isolated HOME/WORTHIT_HOME/config/cache; no 
   consistency. A failed root makes the machine a floor; the unchanged score rule selects the winner
   (including a higher-scoring fresh floor), never sums versions or lowers protected history. Every
   root-bearing or unknown endpoint suppresses comparisons; offline commands perform zero root/SSH reads.
+  A never-answered root can retire in 1a with registration/date bounds and empty attested disclosure;
+  a wholly post-retirement complete machine can regain measured proof but still has `roots_changed`
+  comparison suppression. An answered root's retire/update/unretire is rejected until 1b. Default-only
+  old unknown baselines also get `roots_changed`, until eligible explicit-empty baselines exist.
 - Delivery 1a: OS reader can read allowed synthetic usage and is denied existing sentinel credentials
   **and raw configs**, including raw Gemini/Antigravity settings and link aliases. Absence is unverified,
   not denial; the operator's readable-raw-config finding rejects the boundary without reading its
@@ -629,7 +662,10 @@ Fixture plan (synthetic identities, isolated HOME/WORTHIT_HOME/config/cache; no 
   default usage on one day/provider must count both once; a higher-scoring **saved machine** unit that
   already contains the retired root must not receive it again. Cover none/all/partial overlap against
   the chosen candidate and two snapshots sharing a physical file; unknown ownership retains the
-  unsplit winner/floor and does not add ambiguous rows. Both plan comparison paths and existing
+  unsplit winner/floor and does not add ambiguous rows. For the same unit, same realpath/new inode or
+  device must not add; reused inode/different realpath must not add and must floor. Test paired
+  manifests in source coverage, saved winners and snapshots, with hardlinks sharing one file hash.
+  Both plan comparison paths and existing
   RFC 0005 consumers refuse floors, old basis and changed population; explicitly empty-root bases
   compare only when equal.
 - Delivery 2: valid/missing/denied/malformed/oversize/extra-key/duplicate-key account and model files;
@@ -663,9 +699,12 @@ Status remains Queued until the owner schedules and answers the blocking decisio
    proof or usage comparison. `scoped`: deliver only root-level observations until a separate plan
    partition/proof contract can establish which aggregate is complete; delivery 1a waits for it.
 3. **Declaration and retirement.** `commands` (recommended): section 1 commands and RFC 0002 frozen
-   snapshots/proof, with private settings: declaration/boundary in 1a, lifecycle in 1b. `settings`:
-   edit the same validated local file only; define an equivalent explicit snapshot transition before
-   shipping 1b's retirement. No deletion-as-retirement.
+   snapshots/proof, with private settings: declaration/boundary and never-answered empty retirement in
+   1a, full lifecycle in 1b. Answered roots stay one-way until 1b. The 1a comparison guard survives even
+   empty retirement; default-only stores also blank comparisons with `roots_changed` while eligible
+   old baselines have unknown root coverage. `settings`:
+   edit the same validated local file only; define equivalent explicit transitions before 1a's empty
+   retirement and 1b's full lifecycle. No deletion-as-retirement.
 4. **Coverage location.** `roots` (recommended): new `source_roots`, preserving machine fields.
    `machines`: design a versioned combined machine/root schema first; delivery 1a waits for it.
 5. **Account attribution.** `derived` (recommended): producer exposes account/organization ids, plan,
