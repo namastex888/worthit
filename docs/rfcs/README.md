@@ -37,3 +37,4 @@ cuts a release, so a version number says nothing about what a person gets.
 | [0003](0003-weekly-checkpoint.md) | The weekly allowance checkpoint | Delivered, 2026-11-15 (#56: `worthit weekly`, the `weekly` table, exit codes, fixture cases) |
 | [0004](0004-project-stats.md) | Per-project and per-model delivery | In delivery, 2026-11-16 (#115, #117; delivery 2 open; history not scheduled) |
 | [0005](0005-day-week-month.md) | Day, week and month: views and the game | Queued |
+| [0006](0006-extra-source-roots.md) | Extra source roots | Queued |
