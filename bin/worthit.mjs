@@ -64,7 +64,7 @@ if (await query(argv)) process.exit(0);        // get / days / sql / schema / --
 // from here on a scan would start: never from inside another worthit run (lookups above stay allowed)
 if (process.env.WORTHIT_RUNNING) { console.error('worthit: started from inside another worthit run; stopping.'); process.exit(2); }
 process.env.WORTHIT_RUNNING = '1';        // inherited by every program this run starts
-if (flag('--help') || flag('-h')) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 11).map(l => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
+if (flag('--help') || flag('-h')) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 12).map(l => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
 const WEEKLY = argv[0] === 'weekly';
 const JSON_MODE = WEEKLY || flag('--json'), ASK = arg('--ask'), F_GIT = arg('--git'), F_AI = arg('--ai'), DAYS = +arg('--days', 21), F_HOSTS = arg('--hosts', WEEKLY ? 'all' : undefined), DEMO = flag('--demo'), NO_FILES = flag('--no-files') || DEMO, FRESH = flag('--fresh');
 // the agent skill (skills/worthit/SKILL.md in this package and in the repo): installed into the person's coding agents with the skills CLI

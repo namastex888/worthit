@@ -8,6 +8,7 @@ import './quiet.mjs';
 import fs from 'node:fs'; import path from 'node:path';
 import { createRequire } from 'node:module';
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');   // loaded here, after quiet.mjs, so its 'experimental' warning stays silent
+import { demoData } from './demo.mjs';
 import { dataForAgent, redactProjectValues } from './project-privacy.mjs';
 import { HOME, ROOT } from './collect.mjs';
 
@@ -83,8 +84,12 @@ export function run(argv, note = () => {}) {
   const cmd = argv[0], arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
   if (cmd === 'schema') return SCHEMA;
   if (cmd === 'get') {
-    if (!fs.existsSync(LAST)) fail('no saved run yet. Run `worthit --json` once.');
-    const data = JSON.parse(fs.readFileSync(LAST, 'utf8')), p = argv[1] && !argv[1].startsWith('--') ? argv[1] : '';
+    const p = argv[1] && !argv[1].startsWith('--') ? argv[1] : '';
+    // Keep the newly added project lookup isolated before the general demo-query
+    // delivery lands. No existence check or parse of last.json on this path.
+    const sampleProject = argv.includes('--demo') && (p === 'projects' || p.startsWith('projects.'));
+    if (!sampleProject && !fs.existsSync(LAST)) fail('no saved run yet. Run `worthit --json` once.');
+    const data = sampleProject ? demoData() : JSON.parse(fs.readFileSync(LAST, 'utf8'));
     if (!p) return { generated_at: data.generated_at, sections: Object.keys(data), hint: 'worthit get <section>, e.g. worthit get plans, worthit get model_mix.series, worthit get plans.0.usd_per_full_week' };
     let v = data; for (const k of p.split('.')) { if (v == null || !(k in Object(v))) fail(`no "${p}" in the last run. Sections: ${Object.keys(data).join(', ')}`); v = v[k]; }
     return p.includes('.') ? v : { generated_at: data.generated_at, [p]: v };

@@ -127,7 +127,12 @@ c=sqlite3.connect(sys.argv[1]);c.execute('update folder_project set ver=0 where 
   const saved = JSON.parse(cli(['projects']).stdout); assert.deepEqual(saved.rows, D.projects.rows);
   assert.equal(saved.generated_at, D.generated_at); assert.deepEqual(saved.machines_retained, D.machines_retained);
   write(path.join(env.WORTHIT_HOME, 'last.json'), 'private-sentinel-not-json');
-  assert.ok(JSON.parse(cli(['projects', '--demo']).stdout).rows.some(r => r.project === 'github.com/acme/app-api'));
+  const sampleProjects = JSON.parse(cli(['projects', '--demo']).stdout);
+  assert.ok(sampleProjects.rows.some(r => r.project === 'github.com/acme/app-api'));
+  for (const k of ['week', 'generated_at', 'machines_missing', 'machines_left_out', 'machines_retained', 'machines_retired']) delete sampleProjects[k];
+  assert.deepEqual(JSON.parse(cli(['get', 'projects', '--demo']).stdout).projects, sampleProjects);
+  assert.equal(JSON.parse(cli(['get', 'projects.rows.0.project', '--demo']).stdout), 'github.com/acme/app-api');
+  assert.equal(fs.readFileSync(path.join(env.WORTHIT_HOME, 'last.json'), 'utf8'), 'private-sentinel-not-json');
   const valued = spawnSync(process.execPath, [path.join(root, 'bin/worthit.mjs'), 'projects', '--demo=true'], { env, encoding: 'utf8' });
   assert.equal(valued.status, 2); assert.ok(!valued.stderr.includes('private-sentinel'));
   const demo = JSON.parse(cli(['--demo', '--json']).stdout);

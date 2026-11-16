@@ -12,7 +12,7 @@ is read. The registered fixture covers:
 - Tokens/requests/value and project/unattributed/PR-only PR reconciliation.
 - Separate machine, unresolved-row and PR proof; $0 unresolved rows; git-off nulls.
 - Machine missing/left out, retained-unit overlap and pre-retirement week floors.
-- Saved read command and synthetic demo, including valued --demo rejection before store access.
+- Saved read command and synthetic demo, including get projects/nested demo lookups over a corrupt sentinel last.json and valued --demo rejection before store access.
 - Actual fake-agent captures for summary, question-bar get/SQL and custom share topic/DATA.
   Agent SQL runs in a usage-only in-memory database; public local PR SQL remains available.
 
