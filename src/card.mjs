@@ -7,6 +7,9 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { screenshotArgs } from './screenshot.mjs';
 
+// Relative value ratios can exceed 1; bound only the terminal drawing, including NaN/Infinity.
+export const barCells = (pct, w = 20) => Math.max(1, Math.round(Math.max(0, Math.min(1, pct || 0)) * w));
+
 // Bound the output check to Chrome's card contract, without imposing a decoder
 // or color format. Walk chunk lengths so a truncated body cannot masquerade as
 // a complete PNG merely by containing the signature or the text "IEND".
