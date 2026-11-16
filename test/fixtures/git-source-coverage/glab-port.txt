@@ -1,0 +1,7 @@
+gitlab:3000
+  ✓ Logged in to gitlab:3000 as coder-a (keyring)
+  ✓ Git operations for gitlab:3000 configured to use ssh protocol.
+  ✓ API calls for gitlab:3000 are made over http protocol.
+  ✓ REST API Endpoint: http://gitlab:3000/api/v4/
+  ✓ GraphQL Endpoint: http://gitlab:3000/api/graphql/
+  ✓ Token found in operating system keyring: **************************

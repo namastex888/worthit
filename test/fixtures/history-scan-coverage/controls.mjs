@@ -35,6 +35,6 @@ const after = JSON.parse(fs.readFileSync(path.join(HOME, 'history.json'))).days;
 const db = new DatabaseSync(path.join(HOME, 'worthit.db'), { readOnly: true });
 const providers = db.prepare('SELECT day, api_usd, output_tokens, requests FROM day_provider').all();
 const days = db.prepare('SELECT * FROM day').all(); db.close();
-// Usage and delivery follow their separate coverage rules in both stores.
+// Usage always keeps MAX; delivery still follows independent coverage in both stores.
 assert.equal(providers.length, 1);
 console.log(JSON.stringify({ middle, middleProviders, after, providers, days }));
