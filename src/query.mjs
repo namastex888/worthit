@@ -60,7 +60,7 @@ export const SCHEMA = {
 
 export const QUERY_COMMANDS = ['get', 'days', 'sql', 'schema'];
 // Match standalone CLI flags only; SQL text containing "--demo" remains one statement.
-const withoutDemo = argv => argv.filter(arg => arg !== '--demo');
+const withoutDemo = argv => argv.filter(arg => arg !== '--demo' && !arg.startsWith('--demo='));
 // CLI entry: prints the answer as JSON; false when argv is not a query command
 export async function query(argv) {
   if (argv.includes('--skill')) { console.log(fs.readFileSync(path.join(ROOT, 'skills', 'worthit', 'SKILL.md'), 'utf8')); return true; }
@@ -71,6 +71,7 @@ export async function query(argv) {
 // The same commands as a function: returns the value, with an optional day-basis note for the caller.
 export function run(argv, note = () => {}) {
   const demo = argv.includes('--demo');
+  if (argv.some(arg => arg.startsWith('--demo='))) fail('--demo takes no value: use `--demo`.');
   argv = withoutDemo(argv);
   const cmd = argv[0], arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
   if (demo && ['days', 'sql'].includes(cmd)) fail(`--demo is not supported for ${cmd}: the bundled sample has no query tables. Use \`worthit get <section> --demo\`.`);

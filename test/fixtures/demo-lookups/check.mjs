@@ -68,7 +68,11 @@ try {
   };
   // Unguarded present-store runs expose the original privacy symptom for all three commands.
   const before = snapshot(present);
-  for (const test of [cases[0], cases[5], cases[8]]) check('privacy ' + test.args.join(' '), () => verify(invoke(test.args, present), test));
+  for (const test of [cases[0], cases[5], cases[8],
+    ...[['get', 'plans', '--demo=1'], ['get', '--demo=true', 'plans.0.usd_per_full_week'],
+      ['sql', 'SELECT value FROM secret', '--demo=1']]
+      .map(args => ({ args, error: /--demo takes no value: use `--demo`\./ })),
+  ]) check('privacy ' + test.args.join(' '), () => verify(invoke(test.args, present), test));
   assert.deepEqual(snapshot(present), before, 'lookup must not modify stored bytes, modes or mtimes');
 
   const empty = path.join(tmp, 'empty'), corrupt = path.join(tmp, 'corrupt'), unreadable = path.join(tmp, 'unreadable');
