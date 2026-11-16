@@ -56,6 +56,11 @@ export function sourceRootsHarness(label) {
   const json = (executable, args, options) => JSON.parse(ok(executable, args, options));
   const helper = path.join(support, 'source-root-fixture.py');
   const manifest = json(python, [helper, 'materialize', base], { env: { ...env, SOURCE_ROOT_ACTOR: 'setup' } });
+  // Capture exact physical identities once, before any deny-read ACL is added.
+  const sentinelIdentities = new Set(manifest.sentinels.map(({ path: file }) => {
+    const { dev, ino } = fs.statSync(file, { bigint: true });
+    return `${dev}:${ino}`;
+  }));
   const acl = [];
   const chmod = (args) => {
     const result = run('/bin/chmod', args);
@@ -67,10 +72,15 @@ export function sourceRootsHarness(label) {
     acl.push({ file, mode: traversal ? 0o700 : 0o600 });
   };
   const restore = () => {
-    for (const { file, mode } of acl.splice(0).reverse()) {
-      if (process.platform === 'darwin') chmod(['-N', file]);
-      fs.chmodSync(file, mode);
+    const errors = [];
+    while (acl.length) {
+      const { file, mode } = acl.pop();
+      if (process.platform === 'darwin') {
+        try { chmod(['-N', file]); } catch (error) { errors.push(error); }
+      }
+      try { fs.chmodSync(file, mode); } catch (error) { errors.push(error); }
     }
+    if (errors.length) throw new AggregateError(errors, 'private ACL/mode restoration failed');
   };
   const rows = () => fs.existsSync(trace) ? fs.readFileSync(trace, 'utf8').split('\n').filter(Boolean).map(JSON.parse) : [];
   const clearTrace = () => fs.writeFileSync(trace, '');
@@ -137,13 +147,24 @@ export function sourceRootsHarness(label) {
     return collect(hosts);
   };
   const protectedPaths = () => manifest.sentinels.flatMap(row => [row.path, ...row.aliases]);
-  const forbidden = records => records.filter(row => row.actor === 'scanner' && protectedPaths().some(file => row.path === file || row.path === 'file:' + file + '?mode=ro'));
+  const forbidden = records => records.filter(row => {
+    if (!['scanner', 'collector'].includes(row.actor)) return false;
+    if (sentinelIdentities.has(`${row.dev}:${row.ino}`)) return true;
+    if (protectedPaths().some(file => row.path === file || row.path === 'file:' + file + '?mode=ro')) return true;
+    const file = path.resolve(base, row.path.startsWith('file:') ? row.path.slice(5).split('?')[0] : row.path);
+    const within = directory => file === directory || file.startsWith(directory + path.sep);
+    if (!within(base) || within(home)) return false;
+    return ['.claude.json', '.credentials.json', 'auth.json'].includes(path.basename(file)) ||
+      path.basename(file) === 'settings.json' && file.split(path.sep).includes('.gemini');
+  });
   return { base, home, bin, store, python, env, helper, manifest, trace, run, ok, json, cli, evaluate, scanner, collect, build,
     spec, seed, admit, rootCoverage, rows, clearTrace, deny, restore, secureBoundary, protectedPaths, forbidden,
     cleanup() {
-      restore();
-      // An explicit evidence destination retains synthetic inputs and traces for inspection.
-      if (!process.env.SOURCE_ROOT_KEEP) fs.rmSync(base, { recursive: true, force: true });
+      try { restore(); }
+      finally {
+        // An explicit evidence destination retains synthetic inputs and traces for inspection.
+        if (!process.env.SOURCE_ROOT_KEEP) fs.rmSync(base, { recursive: true, force: true });
+      }
     },
   };
 }

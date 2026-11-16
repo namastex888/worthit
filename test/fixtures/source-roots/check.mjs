@@ -14,6 +14,8 @@ const selected = option ? future.filter(row => !focused || row.id === focused) :
 if (option) assert.ok(selected.length, 'unknown future scenario id');
 assert.equal(new Set(future.map(row => row.id)).size, future.length, 'scenario ids are unique');
 assert.ok([...activated].every(id => future.some(row => row.id === id)), 'activation cannot name an absent assertion');
+assert.deepEqual(Object.fromEntries(['#144 part B', '#145 part C'].map(owner => [owner, future.filter(row => row.owner === owner).length])),
+  { '#144 part B': 20, '#145 part C': 64 }, 'future inventory changes only with an explicit pin edit');
 let active = 0, failed = 0;
 
 async function scenario(id, run) {
@@ -71,6 +73,31 @@ if (option) {
     h.ok(h.python, [h.helper, 'forbidden', h.protectedPaths()[0]]);
     assert.ok(h.forbidden(h.rows()).some(row => row.op === 'open'), 'deliberately forbidden synthetic read must trip trace checker');
     assert.ok(h.forbidden(h.rows()).some(row => /^errno:(1|13)$/.test(row.outcome)), 'OS denied the poisoned read');
+
+    // Benign name inside the permitted default home: neither path-list nor
+    // prohibited-name/root-prefix detection can explain this caught attempt.
+    const alias = path.join(h.home, 'fresh-unlisted-usage.jsonl');
+    assert.ok(!h.protectedPaths().includes(alias)); fs.symlinkSync(h.protectedPaths()[0], alias);
+    h.clearTrace(); h.ok(h.python, [h.helper, 'forbidden', alias]);
+    const aliasRows = h.rows().filter(row => row.path === alias);
+    const identity = fs.statSync(h.protectedPaths()[0], { bigint: true });
+    assert.ok(aliasRows.some(row => row.dev === String(identity.dev) && row.ino === String(identity.ino)), 'unlisted-link trace captures the denied sentinel inode');
+    assert.ok(h.forbidden(aliasRows).some(row => row.op === 'open' && /^errno:(1|13)$/.test(row.outcome)), 'physical identity alone catches the fresh unlisted-link open');
+
+    const missing = path.join(h.base, 'absent-probe', 'auth.json'), permitted = path.join(h.home, 'absent-auth', 'auth.json');
+    h.clearTrace();
+    h.ok(h.python, ['-c', 'import os,sys\nfor name in sys.argv[1:]:\n try: os.stat(name)\n except FileNotFoundError: pass', missing, permitted]);
+    const missingRows = h.rows().filter(row => row.path === missing);
+    assert.ok(missingRows.some(row => row.outcome === 'errno:2' && row.dev === null && row.ino === null));
+    assert.ok(h.forbidden(missingRows).some(row => row.op === 'stat'), 'prohibited-name checks catch actual ENOENT probes without an inode');
+    assert.equal(h.forbidden(h.rows().filter(row => row.path === permitted)).length, 0, 'default-home names remain outside the extra-root class restriction');
+    h.clearTrace();
+    const probe = h.evaluate(`import fs from 'node:fs';
+      try { fs.statSync(process.env.SOURCE_ROOT_BASE + '/absent-probe/.gemini/settings.json'); }
+      catch (error) { console.log(JSON.stringify({code:error.code})); }`);
+    assert.equal(probe.code, 'ENOENT');
+    assert.ok(h.forbidden(h.rows()).some(row => row.actor === 'collector' && row.op === 'statSync'), 'collector prohibited-name probes are caught too');
+    console.log('source-roots: poison proofs PASS (unlisted-link physical identity; missing scanner/collector prohibited names; default-home exemption)');
   });
   await scenario('physical-link-controls', h => {
     assert.equal(h.manifest.links.length, 32, 'two symlinks and two hardlinks for every live/archive native file and both DB/limits pairs');

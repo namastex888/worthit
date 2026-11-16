@@ -241,6 +241,7 @@ add('unknown-account-cap-match-host', C, '§3/8 single-login cap_match_host', 'r
   assert.ok(root.attribution.unattributed_output_tokens >= 1000020);
 });
 add('unmapped-host-cwd-and-poison-cache', C, '§5/8 matching host cwd and folder_project cache', 'unmapped container cwd never probes the host path or consumes its cache', h => {
+  delete h.env.WORTHIT_NO_CACHE;
   const result = h.admit(declared(h)), scan = scanOf(result);
   const rooted = scan.buckets.filter(row => row.session !== 'default-native');
   assert.ok(rooted.length); assert.ok(rooted.every(row => row.project === null));
@@ -372,10 +373,12 @@ for (const args of [['get', 'source_roots'], ['projects']]) add('offline-' + arg
   assert.equal(built.status, 0);
   h.clearTrace(); const before = fs.existsSync(path.join(h.base, 'transport.jsonl')) ? fs.readFileSync(path.join(h.base, 'transport.jsonl'), 'utf8') : '';
   fs.renameSync(h.manifest.root, h.manifest.root + '-offline');
-  const result = h.cli(args); assert.equal(result.status, 0);
-  assert.equal(h.rows().filter(row => ['scanner', 'collector'].includes(row.actor) && row.path.startsWith(h.manifest.root)).length, 0);
-  assert.equal(fs.existsSync(path.join(h.base, 'transport.jsonl')) ? fs.readFileSync(path.join(h.base, 'transport.jsonl'), 'utf8') : '', before);
-  assert.ok(result.stdout.includes('source_roots') || Array.isArray(JSON.parse(result.stdout)));
+  try {
+    const result = h.cli(args); assert.equal(result.status, 0);
+    assert.equal(h.rows().filter(row => ['scanner', 'collector'].includes(row.actor) && row.path.startsWith(h.manifest.root)).length, 0);
+    assert.equal(fs.existsSync(path.join(h.base, 'transport.jsonl')) ? fs.readFileSync(path.join(h.base, 'transport.jsonl'), 'utf8') : '', before);
+    assert.ok(result.stdout.includes('source_roots') || Array.isArray(JSON.parse(result.stdout)));
+  } finally { fs.renameSync(h.manifest.root + '-offline', h.manifest.root); }
 });
 
 add('root-sentinel-policy', C, '§2/8 existing credential/raw-config sentinels and trace', 'allowed usage is read; no scanner/collector opens or probes prohibited raw names, aliases or sibling secrets', h => {

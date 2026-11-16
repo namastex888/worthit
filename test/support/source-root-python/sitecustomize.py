@@ -15,6 +15,7 @@ import sys
 import time
 
 _open = builtins.open
+_stat = os.stat
 _trace = os.environ.get('SOURCE_ROOT_TRACE')
 _busy = False
 
@@ -24,10 +25,17 @@ def record(operation, name, outcome='attempt'):
         return
     _busy = True
     try:
+        path = os.fsdecode(name)
+        try:
+            identity = _stat(path[5:].split('?')[0] if path.startswith('file:') else name)
+            dev, ino = str(identity.st_dev), str(identity.st_ino)
+        except OSError:
+            dev = ino = None
         with _open(_trace, 'a') as out:
             out.write(json.dumps({'actor': os.environ.get('SOURCE_ROOT_ACTOR', 'scanner'),
                                   'machine': os.environ.get('FIXTURE_MACHINE', 'fixture-reader'),
-                                  'op': operation, 'path': os.fsdecode(name), 'outcome': outcome}) + '\n')
+                                  'op': operation, 'path': path, 'outcome': outcome,
+                                  'dev': dev, 'ino': ino}) + '\n')
     finally:
         _busy = False
 

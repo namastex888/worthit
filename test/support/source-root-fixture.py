@@ -85,7 +85,7 @@ def materialize(base):
                 target.parent.mkdir(exist_ok=True)
                 os.link(root / source / name, target)
     sentinels = []
-    for relative in ('.claude.json', 'agents/alpha/.claude/.claude.json',
+    for relative in ('.claude.json', 'agents/alpha/.claude.json', 'agents/alpha/.claude/.claude.json',
                      'agents/alpha/.claude/.credentials.json', 'agents/beta/.codex/auth.json',
                      '.gemini/settings.json', '.gemini/antigravity/settings.json',
                      '.gemini/antigravity-cli/settings.json'):
