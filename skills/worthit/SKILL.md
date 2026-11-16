@@ -371,10 +371,11 @@ Markdown or share cards. AI lookups expose only usage data, not project/PR ident
   no_folder_read, saved_before_projects. The last four are unresolved, even at $0.
 - `prs_without_project`: `{merged_prs, why: {no_host_in_key}}`. PR keys with no host
   never match by repository name. Project counts plus this count equal git.merged_prs.
-  When either PR coverage check is false, counts are “at least” and costs use a
-  “partial PR count”, NEVER a lower bound. With full PR proof and usage floor=true,
-  costs are “at least”. Git off sets this block, both checks and every row's
-  merged_prs/usd_per_merged_pr to null; suggest `worthit --json`.
+  When either PR coverage check is false, counts are “at least” and numeric costs use
+  “partial PR count”, NEVER a lower bound. Per-PR costs follow the single rule below:
+  machine floors override to null; with machines complete and full PR proof, usage-only
+  floors retain numeric “at least” costs. Git off sets this block, both checks and every
+  row's merged_prs/usd_per_merged_pr to null; suggest `worthit --json`.
 
 Scan buckets gain `project` (canonical origin id or null) and `project_why` (null with
 project, else one of six reasons). Claude resolves per request; Codex per session.
@@ -406,6 +407,16 @@ or nondefault clone ports and forge keys, stay separate without guessing.
 
 ### Delivery 2: saved branch-cost association and opened date proxy
 
+One per-PR cost floor rule (RFC 0004 section 3): a machine floor withholds null every
+per-PR ratio in git.usd_per_merged_pr, projects.rows[].usd_per_merged_pr and every
+projects.delivery models/project_models/daily usd_per_pr_led. A usage-only floor retains
+linked implementation lead/prs_led and numeric costs as at least, with projects.floor and
+D2 cost_floor:true plus reasons; omp/dsh/Antigravity rows remain unlinked. A floor at either
+comparison endpoint withholds cost comparisons (including git.usd_per_pr_change_pct),
+while independent physical PR/commit count comparisons remain available. Under a machine floor, raw linked USD
+is still visible as a floor while per-PR ratios are withheld. Terminal USD has two decimal places and percentages whole
+numbers; JSON precision is unchanged.
+
 `projects.delivery` is null with git off. `worthit get projects.delivery.daily` reads saved
 UTC completion-day project/model rows without network; token-spend day is separate. The block
 contains `source: opened`, `label: opened date proxy`, ISO `window {from,to}`, `coverage`,
@@ -417,7 +428,7 @@ implementation_api_value_usd,review_api_value_usd,api_value_usd,cost_floor,cost_
 link_reasons,first_pass,provenance`. Provenance records member `key,branch,head_sha,merged_at,
 completeness,reasons`. No-lead deliveries remain visible under `model:null`. The lead is the
 unique positive largest linked implementation USD by model (tools combined), never review USD;
-ties, absent or incomplete implementation/machine/project/link/window evidence produce no lead.
+ties, absent or incomplete implementation/machine/link/window evidence produce no lead.
 This association is not authorship or a model-quality ranking. Exact project/head branch and
 merge-hour cutoff link usage; reused branch names are ambiguous. Scan buckets carry logged
 `branch` (Claude per request, Codex per session start), null for old/unknown sources.

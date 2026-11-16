@@ -62,7 +62,7 @@ async function scenario(forge, options = {}) {
   if (!gh) assert.ok(calls.every(c => c.args[1] === '--hostname' && c.args[2] === 'forge.example'), 'self-managed hostname preserved');
   return { records, calls, audits, first: records[0] };
 }
-const test = async (name, fn) => { try { await fn(); console.log('case ' + name + ': PASS'); } catch (e) { e.message = name + ': ' + e.message; throw e; } };
+const test = async (name, fn) => { try { await fn(); console.log('case ' + name + ': PASS'); } catch (e) { console.error('case ' + name + ': FAIL'); e.message = name + ': ' + e.message; throw e; } };
 for (const forge of ['github', 'gitlab']) {
   await test(`${forge} committer dates pagination and parent proof`, async () => {
     const x = await scenario(forge); assert.equal(openedSignal(x.first).state, 'first_try');

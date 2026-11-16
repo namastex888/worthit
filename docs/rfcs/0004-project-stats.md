@@ -199,7 +199,8 @@ names, whether or not that project had usage this week.
   authored; rows kept from earlier runs and usagemeter rows count as stored.
 - Two checks, kept apart. `coverage.prs_sources` is `git.coverage.prs`: every source answered.
   `coverage.prs_attributed` is true when `prs_without_project.merged_prs` is 0.
-- When either is false, `merged_prs` is "at least" and `usd_per_merged_pr` is labelled "partial PR
+- Per-PR costs follow the single rule in section 3: a machine floor takes precedence and
+  withholds the ratio as null. With machines complete, when either PR check is false, `merged_prs` is "at least" and `usd_per_merged_pr` is labelled "partial PR
   count", never a lower bound: the rule the skill already has for `git.usd_per_merged_pr`. When both
   are true and `floor` is true, `usd_per_merged_pr` is "at least".
 - With git off (`--git no`, `worthit weekly`), `merged_prs`, `usd_per_merged_pr`, both PR checks and
@@ -236,8 +237,19 @@ stay unlinked. Review USD joins delivery cost but never lead selection, even for
 
 The lead is the unique model with largest positive linked implementation API-list value, combining
 tools with the same model id. Ties, absent implementation, unpriced implementation, incomplete
-machine/project/link evidence yield no lead. `lead_model`, `lead_api_value_usd` and
+machine/link evidence yield no lead. A usage-only project floor retains the observed linked implementation lead; unlinked omp/dsh/Antigravity rows remain explicitly covered. `lead_model`, `lead_api_value_usd` and
 `lead_share_pct` retain the winning model's own implementation value/share separately from cost.
+
+**One per-PR cost floor rule.** A machine floor withholds (null) every per-PR cost across
+`git.usd_per_merged_pr`, `projects.rows[].usd_per_merged_pr` and every
+`projects.delivery.{models,project_models,daily}[].usd_per_pr_led`. A usage-only floor
+(unresolved omp/dsh/Antigravity or other project rows) retains linked leads, `prs_led` and
+numeric costs as "at least", with `projects.floor` and delivery `cost_floor: true` and named
+reasons. A floor at either comparison endpoint withholds cost comparisons, including
+`git.usd_per_pr_change_pct`; independent physical PR/commit counts remain available. Under a machine floor, raw
+linked implementation/review USD remains visible as a floor while per-PR ratios are withheld. No floor
+is compared. Terminal USD uses two decimal places and percentages whole numbers; JSON
+keeps its existing precision.
 
 **Saved output.** `projects.delivery` is null with git off; otherwise it contains:
 

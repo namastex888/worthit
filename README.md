@@ -166,8 +166,8 @@ overlaps the week, the week starts on/after each retirement, and there are **zer
 rows**, even rows worth $0. Otherwise usage values, tokens and requests say “at least”; log
 usage is never called measured. `coverage.prs_sources` separately checks git sources;
 `coverage.prs_attributed` checks that no PR lacks a project. If either fails, PRs say “at least”
-and cost says “partial PR count”, never a lower bound. With full PR proof and usage floor,
-cost also says “at least”. With git off, all PR counts/costs, PR checks and `prs_without_project`
+and cost says “partial PR count”, never a lower bound. With full PR proof, a usage-only floor says “at least”; a machine floor withholds the cost as null.
+All per-PR costs follow the single [RFC 0004 section 3 rule](docs/rfcs/0004-project-stats.md#3-delivery-2-which-model-delivered): machine floors withhold costs, usage-only floors retain linked leads and numeric lower bounds, and floors are never compared. With git off, all PR counts/costs, PR checks and `prs_without_project`
 are null; run `worthit --json` to fill them. There is no project comparison or persistent project history.
 
 RFC 0004 delivery 2 adds `projects.delivery`: model and project/model aggregates, `daily`

@@ -46,7 +46,7 @@ export function buildProjects(activity, g, machines, start, end, options = {}) {
     r.models = [...r.models.values()].sort((a, b) => b.api_value_usd - a.api_value_usd || a.model.localeCompare(b.model));
     for (const m of r.models) { m.share_pct = r.api_value_usd ? Math.round(100 * m.api_value_usd / r.api_value_usd) : null; m.api_value_usd = Math.round(m.api_value_usd); }
     r.api_value_usd = Math.round(r.api_value_usd);
-    r.usd_per_merged_pr = r.merged_prs ? r.api_value_usd / r.merged_prs : null;
+    r.usd_per_merged_pr = machines && r.merged_prs ? r.api_value_usd / r.merged_prs : null;
   }
   no.api_value_usd = Math.round(no.api_value_usd);
   for (const k of PROJECT_REASONS) no.why_usd[k] = Math.round(no.why_usd[k]);
@@ -67,16 +67,17 @@ export function projectsResult(data) {
 export function projectsText(data) {
   const p = projectsResult(data), partial = p.coverage.prs_sources === false || p.coverage.prs_attributed === false;
   const floor = p.floor ? 'at least ' : '', prFloor = partial ? 'at least ' : '';
-  const usage = r => `${floor}$${r.api_value_usd} | ${floor}${r.output_tokens} output tokens | ${floor}${r.requests} requests`;
+  const usd = value => Number(value).toFixed(2), percent = value => value == null ? 'n/a' : Math.round(value);
+  const usage = r => `${floor}$${usd(r.api_value_usd)} | ${floor}${r.output_tokens} output tokens | ${floor}${r.requests} ${r.requests === 1 ? 'request' : 'requests'}`;
   const lines = [`Projects · ${p.week.from} to ${p.week.to} · saved ${p.generated_at}`,
-    `Machine coverage: ${p.coverage.machines ? 'complete' : 'incomplete'}; unresolved: ${p.coverage.unresolved_rows} rows / $${p.coverage.unresolved_usd}; attributed: ${p.coverage.attributed_pct ?? 'n/a'}%`,
-    ...p.rows.flatMap(r => [`${r.name} (${r.project}) | ${usage(r)} | ${r.merged_prs == null ? 'PRs unavailable' : prFloor + r.merged_prs + ' merged PRs'} | ${r.usd_per_merged_pr == null ? 'cost n/a' : (partial ? '' : floor) + '$' + r.usd_per_merged_pr + '/PR' + (partial ? ' (partial PR count)' : '')}`,
-      ...r.models.map(m => `  ${m.model} / ${m.tool} | ${usage(m)} | ${m.share_pct ?? 'n/a'}% value`)]),
+    `Machine coverage: ${p.coverage.machines ? 'complete' : 'incomplete'}; unresolved: ${p.coverage.unresolved_rows} rows / $${usd(p.coverage.unresolved_usd)}; attributed: ${percent(p.coverage.attributed_pct)}%`,
+    ...p.rows.flatMap(r => [`${r.name} (${r.project}) | ${usage(r)} | ${r.merged_prs == null ? 'PRs unavailable' : prFloor + r.merged_prs + (r.merged_prs === 1 ? ' merged PR' : ' merged PRs')} | ${r.usd_per_merged_pr == null ? 'cost n/a' : (partial ? '' : floor) + '$' + usd(r.usd_per_merged_pr) + '/PR' + (partial ? ' (partial PR count)' : '')}`,
+      ...r.models.map(m => `  ${m.model} / ${m.tool} | ${usage(m)} | ${percent(m.share_pct)}% value`)]),
     `No repository | ${usage(p.no_repository)}`,
-    ...Object.entries(p.no_repository.why_usd).map(([why, usd]) => `  ${why}: ${floor}$${usd}`),
+    ...Object.entries(p.no_repository.why_usd).map(([why, value]) => `  ${why}: ${floor}$${usd(value)}`),
     ...(p.prs_without_project ? [`PRs without project: ${prFloor}${p.prs_without_project.merged_prs} (no_host_in_key)`] : ['PR data is off. Run `worthit --json` to fill PR counts and costs.']),
     ...(p.delivery ? [`Delivery · opened date proxy · ${p.delivery.coverage.canonical_deliveries} canonical deliveries (${p.delivery.coverage.merged_prs} physical merged PRs)`,
-      ...p.delivery.project_models.map(r => `${r.project || 'No repository'} / ${r.model || 'No inferred lead'} | ${r.prs_led} PRs led | ${r.usd_per_pr_led == null ? 'cost n/a' : (r.cost_floor ? 'at least ' : '') + '$' + r.usd_per_pr_led + '/delivery'} | first try ${r.first_pass}/${r.eligible} eligible | ${r.first_pass_pct == null ? 'insufficient sample (minimum 5)' : r.first_pass_pct + '%'} | unknown ${r.unknown} | not measured ${r.not_measured}`),
+      ...p.delivery.project_models.map(r => `${r.project || 'No repository'} / ${r.model || 'No inferred lead'} | ${r.prs_led} PRs led | ${r.usd_per_pr_led == null ? 'cost n/a' : (r.cost_floor ? 'at least ' : '') + '$' + usd(r.usd_per_pr_led) + '/delivery'} | first try ${r.first_pass}/${r.eligible} eligible | ${r.first_pass_pct == null ? 'insufficient sample (minimum 5)' : percent(r.first_pass_pct) + '%'} | unknown ${r.unknown} | not measured ${r.not_measured}`),
       `Unlinked usage: ${JSON.stringify(p.delivery.coverage.unlinked.by_reason)}; daily: worthit get projects.delivery.daily`] : ['Delivery data unavailable. Run `worthit --json` with git on.']),
     ...['machines_missing', 'machines_left_out', 'machines_retained', 'machines_retired'].map(k => `${k}: ${JSON.stringify(p[k])}`)];
   return lines.join('\n');

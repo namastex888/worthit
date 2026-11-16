@@ -143,8 +143,8 @@ export function buildDelivery(activity, g, { machines, projectFloor, start, end,
     if (!d._implementation.rows) { d.link_reasons.push('no_implementation_usage'); d.cost_reasons.push('no_implementation_usage'); }
     const ranking = [...d._models].sort((a, b) => b[1] - a[1]);
     const tie = ranking.length > 1 && Math.abs(ranking[0][1] - ranking[1][1]) <= Math.max(Math.abs(ranking[0][1]), Math.abs(ranking[1][1])) * 1e-12;
-    // Missing project/machine/branch or price evidence can hide a different largest model.
-    const leadBlocked = !machines || projectFloor || !g.coverage?.prs || members.some(r => !r.completeness?.metadata || !r.completeness?.commits) || d._errors.length || d.link_reasons.some(x => x !== 'review_unverified') || d._implementationIncomplete || d.cost_reasons.includes('scan_window');
+    // A usage-only project floor marks cost partial without erasing linked implementation.
+    const leadBlocked = !machines || !g.coverage?.prs || members.some(r => !r.completeness?.metadata || !r.completeness?.commits) || d._errors.length || d.link_reasons.some(x => x !== 'review_unverified') || d._implementationIncomplete || d.cost_reasons.includes('scan_window');
     if (!leadBlocked && ranking[0]?.[0] && ranking[0][0] !== '?' && ranking[0][1] > 0 && !tie) {
       d.lead_model = ranking[0][0]; d.lead_api_value_usd = ranking[0][1]; d.lead_share_pct = 100 * ranking[0][1] / d._implementation.api_value_usd;
     } else if (!d.lead_model) d.link_reasons.push(tie ? 'lead_tie' : 'lead_unavailable');
@@ -192,7 +192,7 @@ export function buildDelivery(activity, g, { machines, projectFloor, start, end,
   }
   coverage.forges = forgeProof([...records.values()]);
   const finish = map => [...map.values()].map(r => {
-    r.eligible = r.first_pass + r.not_first_pass; r.usd_per_pr_led = r.prs_led ? r.api_value_usd / r.prs_led : null;
+    r.eligible = r.first_pass + r.not_first_pass; r.usd_per_pr_led = machines && r.prs_led ? r.api_value_usd / r.prs_led : null;
     r.first_pass_pct = r.eligible >= 5 ? 100 * r.first_pass / r.eligible : null; r.first_pass_reason = r.eligible >= 5 ? null : 'insufficient_sample';
     r.cost_reasons = [...new Set(r.cost_reasons)];
     const scoped = [...r._evidence];

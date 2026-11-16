@@ -504,6 +504,9 @@ export function buildData(report, g, cfg, scanInfo) {
   catch (e) { if (e.code !== 'ENOENT') throw new Error('cannot read local project settings: ' + e.message); }
   if (projectSettings.first_pass_exclude !== undefined && (!Array.isArray(projectSettings.first_pass_exclude) || projectSettings.first_pass_exclude.some(x => typeof x !== 'string' || /[#!]/.test(x) || projectFromKey(x) !== x))) throw new Error('projects.first_pass_exclude must be an array of canonical repository ids');
   D.projects = buildProjects(report.project_activity || [], g, allMachines, w1, now, { exclude: projectSettings.first_pass_exclude || [], scanStart: Date.parse(report.history_since) });
+  // The one per-PR floor policy also excludes usage-only floors at either endpoint.
+  const priorProjectUsage = (report.project_activity || []).filter(a => Date.parse(a.hour + ':00:00Z') < w1);
+  if (D.git && (D.projects.floor || buildProjects(priorProjectUsage, null, true, w0, w1).floor)) D.git.usd_per_pr_change_pct = null;
 
   // player history: one small row per day, kept forever; XP, level, streak and bests are computed from it
   const hf = path.join(HOME, 'history.json'); let hist = { days: {} }; try { hist = JSON.parse(fs.readFileSync(hf, 'utf8')); } catch { /* first run */ }

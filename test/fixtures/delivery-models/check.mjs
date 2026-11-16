@@ -19,7 +19,7 @@ const record = (n, extra = {}) => ({ key: `${project}#${n}`, project, host: 'git
   lineage: [{ sha: sha(n), parents: [sha(999)], committed_at: '2026-11-08T12:00:00Z', files_complete: true, files: [{ path: 'src/app.mjs', old_path: 'src/app.mjs' }] }], ...extra });
 const row = (n, usd = 20, extra = {}) => ({ hour: '2026-11-12T12', project, branch: `feat/item-${n}`, model: 'model-a', provider: 'codex', usd, output: 100, requests: 1, cost_complete: true, ...extra });
 const build = (rs, rows = rs.map(r => row(r.number)), opts = {}) => buildDelivery(rows, { coverage: { prs: true }, project_prs: rs.filter(r => Number.isFinite(r.merged_ms)).map(({ key, merged_ms }) => ({ key, merged_ms })), delivery_evidence: rs }, { machines: true, projectFloor: false, start, end, ...opts });
-const test = (name, fn) => { try { fn(); console.log('case ' + name + ': PASS'); } catch (e) { e.message = name + ': ' + e.message; throw e; } };
+const test = (name, fn) => { try { fn(); console.log('case ' + name + ': PASS'); } catch (e) { console.error('case ' + name + ': FAIL'); e.message = name + ': ' + e.message; throw e; } };
 const change = (path, extra = {}) => ({ sha: sha(2), parents: [sha(999)], committed_at: '2026-11-09T00:00:00Z', files_complete: true, files: path ? [{ path, old_path: path }] : [], ...extra });
 
 test('opened proxy strict committer boundary and misleading docs subject', () => {
@@ -63,6 +63,13 @@ test('reused implementation branch tie missing old branch and incomplete machine
   assert.equal(build([record(1)], [row(1), row(1, 0, { branch: null })]).deliveries[0].lead_model, null);
   assert.equal(build([record(1)], undefined, { machines: false }).deliveries[0].lead_model, null);
   assert.equal(build([record(1)], [row(1, 20, { cost_complete: false })]).deliveries[0].lead_model, null);
+});
+test('usage-only project floor preserves observed lead and marks cost partial', () => {
+  const p = build([record(1)], undefined, { projectFloor: true });
+  assert.equal(p.deliveries[0].lead_model, 'model-a'); assert.equal(p.deliveries[0].cost_floor, true);
+  assert.ok(p.deliveries[0].cost_reasons.includes('project_usage_incomplete'));
+  assert.equal(p.models.find(r => r.model === 'model-a').prs_led, 1);
+  assert.equal(p.models.find(r => r.model === 'model-a').usd_per_pr_led, 20);
 });
 test('omp dsh no git no folder and hourly cutoff coverage', () => {
   const p = build([record(1)], [row(1), row(1, 3, { provider: 'omp', branch: null, project: null }), row(1, 0, { provider: 'dsh', branch: null, project: null }), row(1, 2, { project: null }), row(1, 5, { hour: '2026-11-14T00' })]);
