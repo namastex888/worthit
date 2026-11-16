@@ -44,6 +44,7 @@ With no data yet the dialog shows one paragraph explaining what worthit does and
 - `toLocaleString("en-US")` does not add thousands separators in the mod runtime: format numbers by hand.
 - `herdr-app check` renders the empty state only, because the file is read asynchronously. Look at the dialog in the app with real data before calling it done.
 - A floor (`proof` other than `measured`) is "at least": never show a week-over-week change for it.
+- A null cost per PR is `n/a`, never `$0.00`; usage can be incomplete even when PR coverage is complete.
 - A first `Measure` on a machine with months of logs can take several minutes; later ones are cached and take seconds. It uses whatever scan settings worthit saved last (other machines, git).
 - worthit needs Node 22.5+ and Python 3 on the machine.
 - The dialog shows this computer's file only; it does not read a remote space's home.

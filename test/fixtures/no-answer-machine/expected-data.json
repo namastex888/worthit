@@ -15,8 +15,8 @@
     "totals": {
       "output_tokens": 1500000,
       "api_value_usd": 18,
-      "output_tokens_change_pct": 0,
-      "api_value_change_pct": 0
+      "output_tokens_change_pct": null,
+      "api_value_change_pct": null
     },
     "tools": [
       {
@@ -158,8 +158,8 @@
     "totals": {
       "output_tokens": 4500000,
       "api_value_usd": 54,
-      "output_tokens_change_pct": 0,
-      "api_value_change_pct": 0
+      "output_tokens_change_pct": null,
+      "api_value_change_pct": null
     },
     "tools": [
       {
