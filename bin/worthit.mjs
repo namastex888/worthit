@@ -3,6 +3,7 @@
 //   npx worthit                 three questions, live scan, dashboard, then a question bar (ctrl+c exits)
 //   npx worthit --json          no UI: prints the week's data as JSON (for agents and scripts)
 //   worthit hosts · worthit hosts retire <machine> [--since YYYY-MM-DD] · worthit hosts unretire <machine>
+//   worthit projects              saved project/model usage and project PR costs; no scan or network
 //   worthit get [section] · worthit days [--since D --until D --group day|week|month --by total|tool|model] · worthit sql "SELECT …" · worthit schema · worthit --skill
 //   worthit share [allowance|open|models|value|ranking|waste|"anything"]   an X-ready post and card image from your last run
 //   worthit weekly [--hosts all|none|a,b] [--allow-partial] [--no-files]   fresh headless allowance checkpoint (exit 0 safe, 3 unsafe, 1 no result)
@@ -25,14 +26,22 @@ import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'
 import { blocks, C, W, bar, fg, bold, d, m, w, pad, lpad, len, strip, grad, fmtTok, usd, machineNotes, usageCostWithheld } from '../src/draw.mjs';
 import { scan, analyse, git, buildData, audit, writeAudit, has, tilde, ROOT, HOME, sshHosts, savedHosts, saveHosts } from '../src/collect.mjs';
 import { activeHosts, readHosts, hostsCommand } from '../src/hosts.mjs';
-import { query, run as runQuery, QUERY_COMMANDS } from '../src/query.mjs';
+import { query, runForAgent, QUERY_COMMANDS, normalizeDemoArgs } from '../src/query.mjs';
+import { projectsResult, projectsText } from '../src/projects.mjs';
+import { dataForAgent, redactProjects } from '../src/project-privacy.mjs';
 import { deliveryText, cardSpec, customSpec, renderCardImage, barCells } from '../src/card.mjs';
+import { screenshotArgs } from '../src/screenshot.mjs';
 import { allowanceText, openWeekly, weeklyBaseline, prepareWeekly, saveWeekly } from '../src/weekly.mjs';
 import { startPet, petLines, petSummary, PET_W } from '../src/pet.mjs';
 import { demoHosts, demoScan, demoGit, demoPricing, demoData, demoSpec, demoAnswer, demoPet } from '../src/demo.mjs';
 
 const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
-const h = React.createElement, argv = process.argv.slice(2);
+const h = React.createElement, rawArgv = process.argv.slice(2);
+let demoArgs;
+try { demoArgs = normalizeDemoArgs(rawArgv); }
+catch (e) { console.error('worthit: ' + e.message); process.exit(2); }
+const argv = QUERY_COMMANDS.includes(demoArgs.args[0]) || demoArgs.args[0] === 'projects'
+  ? [...demoArgs.args, ...(demoArgs.demo ? ['--demo'] : [])] : rawArgv;
 const flag = k => argv.includes(k), arg = (k, dflt) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : dflt; };
 // Fail closed before any command touches the store; demo remains completely isolated.
 let hostState = { selected: [], retired: [] };
@@ -40,7 +49,7 @@ if (!flag('--demo')) {
   try { hostState = readHosts(HOME); } catch (e) { console.error('worthit: ' + e.message); process.exit(2); }
 }
 if (flag('--version') || flag('-v')) { console.log(VERSION); process.exit(0); }
-if (argv[0] && !argv[0].startsWith('-') && !['get', 'days', 'sql', 'schema', 'install-skill', 'share', 'weekly', 'hosts'].includes(argv[0])) { console.error(`worthit: unknown command "${argv[0]}". Try: worthit --help`); process.exit(2); }
+if (argv[0] && !argv[0].startsWith('-') && !['get', 'days', 'sql', 'schema', 'install-skill', 'share', 'weekly', 'hosts', 'projects'].includes(argv[0])) { console.error(`worthit: unknown command "${argv[0]}". Try: worthit --help`); process.exit(2); }
 if (argv[0] === 'hosts') {
   try { const result = hostsCommand(HOME, sshHosts(), argv.slice(1));
     if (process.stdout.isTTY) console.log(Array.isArray(result) ? result.map(r => `${r.machine}: ${r.status}`).join('\n') || 'No saved SSH machines. Choose machines on your next run.' : `${result.machine}: ${result.status}`);
@@ -48,11 +57,18 @@ if (argv[0] === 'hosts') {
   } catch (e) { console.error('worthit hosts: ' + e.message); process.exit(2); }
   process.exit(0);
 }
+if (argv[0] === 'projects') {
+  try {
+    const D = flag('--demo') ? demoData() : JSON.parse(fs.readFileSync(path.join(HOME, 'last.json'), 'utf8'));
+    console.log(process.stdout.isTTY && !flag('--json') ? projectsText(D) : JSON.stringify(projectsResult(D), null, 1));
+  } catch (e) { console.error('worthit projects: ' + (e.code === 'ENOENT' ? 'no saved run yet. Run `worthit --json` first.' : e.message)); process.exit(2); }
+  process.exit(0);
+}
 if (await query(argv)) process.exit(0);        // get / days / sql / schema / --skill: answered from the local store, no scan
 // from here on a scan would start: never from inside another worthit run (lookups above stay allowed)
 if (process.env.WORTHIT_RUNNING) { console.error('worthit: started from inside another worthit run; stopping.'); process.exit(2); }
 process.env.WORTHIT_RUNNING = '1';        // inherited by every program this run starts
-if (flag('--help') || flag('-h')) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 11).map(l => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
+if (flag('--help') || flag('-h')) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 12).map(l => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
 const WEEKLY = argv[0] === 'weekly';
 const JSON_MODE = WEEKLY || flag('--json'), ASK = arg('--ask'), F_GIT = arg('--git'), F_AI = arg('--ai'), DAYS = +arg('--days', 21), F_HOSTS = arg('--hosts', WEEKLY ? 'all' : undefined), DEMO = flag('--demo'), NO_FILES = flag('--no-files') || DEMO, FRESH = flag('--fresh');
 // the agent skill (skills/worthit/SKILL.md in this package and in the repo): installed into the person's coding agents with the skills CLI
@@ -81,12 +97,12 @@ const reportKey = agent => { const D = DATA, t = D.totals || {}, g = D.git || {}
 const sameReport = (a, b) => !!a && !!a.nums && a.exact === b.exact && Object.keys({ ...a.nums, ...b.nums }).every(k => { const x = +a.nums[k] || 0, y = +b.nums[k] || 0; return Math.abs(x - y) <= Math.max(1, 0.02 * Math.abs(x)); });
 const readReport = () => { try { return JSON.parse(fs.readFileSync(REPORT_FILE, 'utf8')); } catch { return null; } };
 const saveReport = (key, agent, spec, n) => { try { fs.mkdirSync(HOME, { recursive: true }); fs.writeFileSync(REPORT_FILE, JSON.stringify({ key, at: new Date().toISOString(), agent: agent.model, n, spec })); audit('write', tilde(REPORT_FILE) + '  (this report, reused while the data stays the same)'); } catch { /* not fatal */ } };
-const forModel = () => { const { heat, ...rest } = DATA; return JSON.stringify({ ...rest, busiest: heat.note }); };   // the hourly grid is drawn by the harness
+const forModel = () => dataForAgent(DATA);   // the hourly grid is drawn by the harness
 
 // ---------------------------------------------------------------- headless: --json
 const SHARE = argv[0] === 'share' || flag('--share');
 if (JSON_MODE && !SHARE && !WEEKLY) {
-  if (DEMO) { console.log(JSON.stringify({ worthit: VERSION, ...demoData(), audit_log: null }, null, 1)); process.exit(0); }
+  if (DEMO) { console.log(JSON.stringify({ worthit: VERSION, ...demoData({ git: F_GIT !== 'no' }), audit_log: null }, null, 1)); process.exit(0); }
   const cfg = { days: DAYS, hosts: HOSTS, git: F_GIT !== 'no' };
   const auditFile = NO_FILES ? null : path.resolve(`${STAMP}-worthit-audit.log`);
   const tick = (label, p) => { if (process.stderr.isTTY) process.stderr.write(`\r\x1b[K${label} ${p.pct == null ? '' : Math.round(p.pct * 100) + '%'} ${String(p.detail || '').slice(0, 90)}`); };
@@ -270,11 +286,14 @@ function writeFiles(spec) {
     '## How it is measured', '', 'Every request in your local logs is priced at the provider\'s API list rate (input, cached input, cache writes, output with thinking). A plan\'s number is the priced usage inside one stretch of its weekly meter, scaled to 100% of the week. "Floor" means use of the same account on machines not scanned is missing, so the real value can only be higher. Unused allowance counts as waste only when the week closed without hitting the cap.', '',
     '```', ...dash.map(strip), '```', ''].join('\n');
   const f1 = `${STAMP}-worthit.md`; fs.writeFileSync(f1, md); audit('write', './' + f1); out.push(f1);
-  const chrome = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(c => fs.existsSync(c));
-  if (chrome) { const all = [...head, ...dash], hp = path.join(os.tmpdir(), `worthit-${process.pid}.html`), f2 = `${STAMP}-worthit.png`; fs.writeFileSync(hp, ansiHtml(all));
-    audit('run', 'headless Chrome screenshot of the dashboard (local file, no network)');
-    spawnSync(chrome, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=2', `--window-size=${Math.round(W * 9.05 + 64)},${Math.round(all.length * 18.6 + 60)}`, '--screenshot=' + path.resolve(f2), 'file://' + hp], { stdio: 'ignore', timeout: 60000 });
-    fs.rmSync(hp, { force: true }); if (fs.existsSync(f2)) { audit('write', './' + f2); out.push(f2); } }
+  const chrome = process.env.WORTHIT_TEST_CHROME || ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(c => fs.existsSync(c));
+  if (chrome) { const all = [...head, ...dash], scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'worthit-dashboard-')), hp = path.join(scratch, 'dashboard.html'), f2 = `${STAMP}-worthit.png`;
+    try {
+      fs.writeFileSync(hp, ansiHtml(all));
+      audit('run', 'headless Chrome screenshot of the dashboard (local file, no network)');
+      spawnSync(chrome, [...screenshotArgs(path.join(scratch, 'profile')), '--force-device-scale-factor=2', `--window-size=${Math.round(W * 9.05 + 64)},${Math.round(all.length * 18.6 + 60)}`, '--screenshot=' + path.resolve(f2), 'file://' + hp], { stdio: 'ignore', timeout: 60000 });
+    } finally { fs.rmSync(scratch, { recursive: true, force: true }); }
+    if (fs.existsSync(f2)) { audit('write', './' + f2); out.push(f2); } }
   const f3 = `${STAMP}-worthit-audit.log`; writeAudit('./' + f3, VERSION); out.push(f3);
   return out;
 }
@@ -375,7 +394,7 @@ function Main({ cfg }) {
   const openX = () => { const u = xUrl; setXUrl(null); if (!TEST_INPUT) spawnSync(process.platform === 'darwin' ? 'open' : 'xdg-open', [u], { stdio: 'ignore' }); audit('run', 'opened X with the post text filled in (asked for with enter)');
     setPast(p => [...p, { kind: 'panel', id: 'x' + p.length, q: 'open X', who: 'worthit', lines: [' ' + fg(C.cx, '✓') + m(' opened X with the text filled in. Paste the image (cmd+V), then press Post.')], done: { n: 1, secs: '0.0' } }]); };
   const talk = useRef([]);
-  const ask = q => { setXUrl(null); setCur({ ...blank(), q }); const t0 = Date.now(), turn = { q, a: null };
+  const ask = q => { q = redactProjects(q, DATA); setXUrl(null); setCur({ ...blank(), q }); const t0 = Date.now(), turn = { q, a: null };
     const earlier = [...(dash && dash.spec ? ['[the week summary you wrote] ' + answerText(dash.spec)] : []), ...talk.current.slice(-12).map(x => `Person: ${x.q}\nYou: ${x.a}`)];
     const base = 'DATA:\n' + forModel() + (earlier.length ? '\n\nEARLIER IN THIS SESSION (oldest first):\n' + earlier.join('\n') : '') + '\n\nQuestion: ' + q;
     const closeAsk = done => { setCur(x => { if (x && !turn.a) { turn.a = x.said || (done.err ? '(failed: ' + done.err + ')' : answerText(x.spec)); talk.current.push(turn); } setPast(p => [...p, { kind: 'panel', ...x, done: { ...done, secs: ((Date.now() - t0) / 1000).toFixed(1) }, id: 'a' + p.length }]); return null; }); if (!TTY) setTimeout(exit, 200); };
@@ -388,7 +407,7 @@ function Main({ cfg }) {
       const cmds = !done.n && !done.err && lookups < 2 ? [...String(done.raw || '').matchAll(/^\s*`?QUERY:\s*worthit\s+(.+?)`?\s*$/gm)].map(x => x[1].trim()).slice(0, 3) : [];
       if (!cmds.length) return closeAsk(done);
       const res = cmds.map(c => { const av = [...c.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)].map(x => x[1] ?? x[2] ?? x[3]); st(setCur)('looking up', 'worthit ' + c); audit('run', `worthit ${c}   (lookup in the local store, asked for by ${agent.cli})`);
-        let v; try { if (!QUERY_COMMANDS.includes(av[0])) throw new Error('only get, days, sql and schema can be looked up'); let note = ''; v = JSON.stringify(runQuery(av, label => { note = label + '\n'; })); v = note + v; } catch (e) { v = 'error: ' + e.message; }
+        let v; try { if (!QUERY_COMMANDS.includes(av[0])) throw new Error('only get, days, sql and schema can be looked up'); let note = ''; v = JSON.stringify(runForAgent(av, DATA, label => { note = label + '\n'; })); v = note + v; } catch (e) { v = 'error: ' + e.message; }
         return `$ worthit ${c}\n${v.length > 6000 ? v.slice(0, 6000) + ' … (truncated)' : v}`; });
       round(base + '\n\nLookup results from the local store:\n' + res.join('\n\n') + '\n\nNow answer by placing blocks. Do not ask for more lookups.', lookups + 1); });
     round(base, 0); };
@@ -403,7 +422,7 @@ function Main({ cfg }) {
       const scanSecs = ((Date.now() - t0) / 1000).toFixed(0); fin(0, t0, [m(scanned), ...hrows]);
       t0 = Date.now(); S(1, { state: 'run', t0, pct: null, detail: 'each request = its tokens × that model\'s API list price' }); const report = DEMO ? await demoPricing() : await analyse(info.runDir); const t1 = t0;
       const g = gP ? await gP : null;
-      DATA = DEMO ? demoData() : buildData(report, g, { days: DAYS, hosts: HOSTS }, info);
+      DATA = DEMO ? demoData({ git: cfg.git }) : buildData(report, g, { days: DAYS, hosts: HOSTS }, info);
       const hd = d(pad('  Tool', 17) + lpad('Sessions', 9) + lpad('Requests', 10) + lpad('Output', 9) + lpad('Cached in', 11) + lpad('Fresh in', 10) + lpad('API value', 11));
       const col = { claude: C.cl, codex: C.cx, antigravity: C.go, omp: C.pink, dsh: C.gold }, T = DATA.tools, tot = k => T.reduce((s, x) => s + x[k], 0);
       fin(0, 0, [m(scanned), hd, ...T.map(x => x.found ? fg(C.cx, '✓') + ' ' + pad(fg(col[x.key], x.tool), 15) + lpad(x.sessions ? w(x.sessions.toLocaleString('en-US')) : d('·'), 9) + lpad(w(x.requests.toLocaleString('en-US')), 10) + lpad(w(fmtTok(x.output)), 9) + lpad(w(fmtTok(x.cached)), 11) + lpad(w(fmtTok(x.fresh)), 10) + lpad(w(usd(x.usd)), 11) : d('– ' + pad(x.tool, 15) + 'no logs found')),
@@ -509,6 +528,7 @@ const numbersIn = s => (strip(String(s)).match(/\d[\d,]*(?:\.\d+)?/g) || []).map
 const knownNumbers = D => { const out = new Set(); (function walk(v) { if (typeof v === 'number') { for (const k of [String(v), v.toFixed(0), v.toFixed(1), v.toFixed(2)]) out.add(String(+k)); } else if (typeof v === 'string') numbersIn(v).forEach(x => out.add(x)); else if (v && typeof v === 'object') Object.values(v).forEach(walk); })(D); return out; };
 // one share = the blocks for the card, the post text, the card image and the X link. Used by `worthit share` and by the question bar.
 async function makeShare(D, ask, { agent = null, clipOk = false, files = true, say = () => {} } = {}) {
+  ask = redactProjects(ask, D);
   const warnings = [], keys = Object.keys(SHARE_TOPICS);
   const ageH = Math.round((Date.now() - Date.parse(D.generated_at)) / 36e5); if (ageH >= 24) warnings.push(`the numbers are from a run ${ageH} hours ago: run worthit again for this week's figures`);
   const floors = D.plans.filter(p => p.proof !== 'measured').map(p => p.plan); if (floors.length) warnings.push(`${floors.join(' and ')}: a floor ("at least this much"), not a full measurement; the card says so`);
@@ -569,7 +589,7 @@ if (WEEKLY) {
   try {
     const cfg = { days: DAYS, hosts: HOSTS, git: false, fresh: true };
     const info = DEMO ? null : await scan(cfg, () => {});
-    const D = DEMO ? demoData() : buildData(await analyse(info.runDir), null, cfg, info);
+    const D = DEMO ? demoData({ git: false }) : buildData(await analyse(info.runDir), null, cfg, info);
     if (!D.plans.length || !(D.totals.output_tokens || D.totals.api_value_usd)) throw new Error('no allowance data for this week');
     if (!DEMO) {
       db = openWeekly(HOME);

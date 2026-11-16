@@ -12,6 +12,7 @@ import sys, os, json, glob, time, socket, hashlib, re
 from collections import defaultdict, Counter
 
 import zlib
+from urllib.parse import urlsplit
 DAYS = int(sys.argv[1]) if len(sys.argv) > 1 else 45
 H = os.path.expanduser('~')
 NOW = time.time()
@@ -108,7 +109,8 @@ def walk(root, suffix):
 # ---------------- per-file cache: a log file that has not changed is not read again ----------------
 # The selected store's scan-cache.db keeps, per log file, only the few fields the scanner uses from each relevant line (no prompts, no code).
 # Unchanged file (same size and time) -> replayed from the cache. File that only grew -> only the new lines are read.
-CACHE_VER = 1
+CACHE_VER = 2
+PROJECT_VER = 1
 _cdb = None
 _cput = 0
 def cache_db():
@@ -121,6 +123,8 @@ def cache_db():
         d = os.environ.get('WORTHIT_HOME') or os.path.join(H, '.worthit'); os.makedirs(d, exist_ok=True)
         c = sqlite3.connect(os.path.join(d, 'scan-cache.db'), timeout=5)
         c.execute('CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, tool TEXT, ver INTEGER, size INTEGER, mtime REAL, tail BLOB, data BLOB)')
+        c.execute('CREATE TABLE IF NOT EXISTS folder_project (path TEXT PRIMARY KEY, project TEXT, resolved_at TEXT, ver INTEGER)')
+        c.execute('DELETE FROM files WHERE ver != ?', (CACHE_VER,))
         _cdb = c
     except Exception as e:
         errors.append('cache off: %s' % e)
@@ -131,7 +135,7 @@ def cache_put(f, tool, size, mtime, tail, objs):
     db = cache_db()
     if not db: return
     try:
-        db.execute('INSERT OR REPLACE INTO files VALUES (?,?,?,?,?,?,?)', (f, tool, CACHE_VER, size, mtime, tail, zlib.compress(json.dumps(objs, separators=(',', ':')).encode(), 3)))
+        db.execute('INSERT OR REPLACE INTO files VALUES (?,?,?,?,?,?,?)', (f, tool, CACHE_VER, size, mtime, hashlib.sha256(tail).digest(), zlib.compress(json.dumps(objs, separators=(',', ':')).encode(), 3)))
         _cput += 1
         if _cput % 200 == 0: db.commit()
     except Exception as e:
@@ -145,6 +149,84 @@ def cache_close():
         db.commit(); db.close()
     except Exception:
         pass
+
+def project_id(value):
+    """RFC 0004 origin URL -> credential-free id. No host alias or local path guesses."""
+    if not isinstance(value, str): return None
+    value = value.strip()
+    try:
+        if '://' not in value:
+            m = re.fullmatch(r'[^/@:]+@([^/:]+):(.+)', value)
+            if not m: return None
+            value = 'ssh://' + m[1] + '/' + m[2]
+        u = urlsplit(value)
+        if u.scheme not in ('http', 'https', 'ssh', 'git') or not u.hostname or '.' not in u.hostname: return None
+        host = u.hostname.lower(); port = u.port
+        if port and port != {'http': 80, 'https': 443, 'ssh': 22, 'git': 9418}[u.scheme]: host += ':' + str(port)
+        repo = u.path.strip('/').lower()
+        if repo.endswith('.git'): repo = repo[:-4]
+        if not repo or any(x in repo for x in ('@', '?', '#', '\\')) or any(x in ('', '.', '..') for x in repo.split('/')): return None
+        if u.query or u.fragment: return None
+        return host + '/' + repo
+    except ValueError: return None
+
+
+def metadata(file):
+    prog('repository', 0, 0, file)
+    with open(file, errors='replace') as fh: return fh.read()
+
+
+_project_live = {}
+def resolve_project(folder, logged_id=None):
+    if not folder: return None, 'no_folder_read'
+    if not os.path.isdir(folder):
+        if logged_id: return logged_id, None
+        db = cache_db()
+        if db:
+            try:
+                row = db.execute('SELECT project FROM folder_project WHERE path = ? AND ver = ?', (folder, PROJECT_VER)).fetchone()
+                if row and project_id('https://' + row[0]) == row[0]: return row[0], None
+            except Exception: pass
+        return None, 'folder_gone'
+    if folder in _project_live: return _project_live[folder]
+    current = os.path.abspath(folder); result = (None, 'outside_a_repository')
+    while True:
+        dot = os.path.join(current, '.git')
+        if os.path.lexists(dot):
+            try:
+                gd = dot
+                if not os.path.isdir(dot):
+                    line = metadata(dot).strip()
+                    if not line.startswith('gitdir:'): raise ValueError('invalid gitfile')
+                    gd = os.path.normpath(os.path.join(current, line[7:].strip()))
+                common = os.path.join(gd, 'commondir')
+                shared = os.path.normpath(os.path.join(gd, metadata(common).strip())) if os.path.exists(common) else gd
+                config = metadata(os.path.join(shared, 'config'))
+                remotes = False; origin = False; urls = []
+                for line in config.splitlines():
+                    line = line.strip()
+                    if not line or line.startswith(('#', ';')): continue
+                    if line.startswith('['):
+                        m = re.fullmatch(r'\[remote\s+"([^"\n]+)"\]\s*(?:[#;].*)?', line, re.I)
+                        origin = bool(m and m[1] == 'origin'); remotes |= bool(m)
+                    elif origin:
+                        m = re.match(r'url\s*=\s*(.*)', line, re.I)
+                        if m: urls.append(m[1].strip().strip('"'))
+                pid = project_id(urls[0]) if len(urls) == 1 else None
+                result = (pid, None) if pid else (None, 'origin_not_supported' if remotes else 'no_origin')
+            except (OSError, ValueError): result = (None, 'origin_not_supported')
+            break
+        parent = os.path.dirname(current)
+        if parent == current: break
+        current = parent
+    _project_live[folder] = result
+    if result[0]:
+        db = cache_db()
+        if db:
+            try: db.execute('INSERT OR REPLACE INTO folder_project VALUES (?,?,?,?)', (folder, result[0], time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(NOW)), PROJECT_VER))
+            except Exception: pass
+    return result
+
 
 def slim_claude(l):
     is_err = '"rate_limit' in l or '"apiError"' in l
@@ -181,7 +263,7 @@ def slim_codex(l):
     if t == 'session_meta':
         g = p.get('git') if isinstance(p.get('git'), dict) else {}
         return {'timestamp': ts, 'type': t, 'payload': {'creator_user_id': p.get('creator_user_id'), 'creator_account_id': p.get('creator_account_id'), 'session_id': p.get('session_id'),
-                                                        'id': p.get('id'), 'cwd': p.get('cwd'), 'git': {'branch': g.get('branch'), 'repository_url': g.get('repository_url')}}}
+                                                        'id': p.get('id'), 'cwd': p.get('cwd'), 'git': {'branch': g.get('branch'), 'repository_url': project_id(g.get('repository_url'))}}}
     if t == 'turn_context':
         cm = p.get('collaboration_mode') if isinstance(p.get('collaboration_mode'), dict) else {}
         st = cm.get('settings') if isinstance(cm.get('settings'), dict) else {}
@@ -207,7 +289,7 @@ def file_objs(tool, f):
         if not zst and st.st_size > row[1] > 0:
             with open(f, 'rb') as fh:
                 fh.seek(max(0, row[1] - 64)); tail = fh.read(min(64, row[1]))
-                if tail == row[3]:                       # same file, only longer: read just the new lines
+                if hashlib.sha256(tail).digest() == row[3]:                       # same file, only longer: read just the new lines
                     new = fh.read(); cut = new.rfind(b'\n') + 1
                     objs = json.loads(zlib.decompress(row[4]))
                     for l in new[:cut].decode('utf-8', 'replace').split('\n'):
@@ -301,7 +383,7 @@ def claude():
                     continue
                 cc = u.get('cache_creation') or {}
                 od = u.get('output_tokens_details') or {}
-                b = buckets[('claude', acct, m.get('model'), o.get('effort') or o.get('perTurnEffort') or '', ts[:13], sid, acct)]
+                b = buckets[('claude', acct, m.get('model'), o.get('effort') or o.get('perTurnEffort') or '', ts[:13], sid, acct, *resolve_project(o.get('cwd')))]
                 i, cw, cr, out = (u.get('input_tokens') or 0, u.get('cache_creation_input_tokens') or 0,
                                   u.get('cache_read_input_tokens') or 0, u.get('output_tokens') or 0)
                 lc = 'lc_' if i + cw + cr > 100000 else ''        # Anthropic long-context tier (Haiku 5.5): prompt over 100K
@@ -403,7 +485,7 @@ def codex():
                 if reset: stats['codex_baseline_skipped'] += 1
                 prev = tot
                 if not any(d.values()): continue
-                b = buckets[('codex', str(last_reset), model, effort, ts[:13], s, a)]
+                b = buckets[('codex', str(last_reset), model, effort, ts[:13], s, a, *resolve_project(cwd, repo))]
                 lc = 'lc_' if (lu.get('input_tokens') or d['input_tokens']) > 272000 else ''   # OpenAI long-context tier: >272K input per request
                 b[lc + 'input_uncached'] += d['input_tokens'] - d['cached_input_tokens']
                 b[lc + 'cache_read'] += d['cached_input_tokens']
@@ -542,7 +624,7 @@ def antigravity():
                                   or md.get('model') or md.get('model_name') or step_model_of.get(o.get('step_index')) or '')
                     if step_model and (not tl_conv or tl_conv[-1][1] != step_model): tl_conv.append([ts[:19], step_model])
                     stats['agy_steps_with_model' if step_model else 'agy_steps_without_model'] += 1
-                    b = buckets[('antigravity', root, step_model or model, '' if step_model else 'settings_label', ts[:13], sid, login_at(ts))]
+                    b = buckets[('antigravity', root, step_model or model, '' if step_model else 'settings_label', ts[:13], sid, login_at(ts), None, 'no_folder_read')]
                     b['input_uncached'] += i; b['cache_read'] += cr; b['output'] += out
                     b['reasoning'] += o.get('thinking_tokens') or 0
                     b['requests'] += 1
@@ -629,7 +711,7 @@ res['token_semantics'] = {
     'output': 'output; codex includes reasoning, claude includes thinking', 'reasoning': 'subset of output where reported'}
 # 'account' keeps its old meaning (claude: tag, codex: reset anchor, agy: root) so merge_usage.py still works;
 # 'login' is the new per-session account tag used to split windows per account.
-res['buckets'] = [dict(provider=k[0], account=k[1], model=k[2], effort=k[3], hour=k[4], session=k[5], login=k[6], **v) for k, v in sorted(buckets.items())]
+res['buckets'] = [dict(provider=k[0], account=k[1], model=k[2], effort=k[3], hour=k[4], session=k[5], login=k[6], project=k[7], project_why=k[8], **v) for k, v in sorted(buckets.items(), key=lambda kv: tuple('' if x is None else str(x) for x in kv[0]))]
 res['meters'] = sorted(meters.values(), key=lambda m: (str(m['resets_at']), m['slot'], m['hour']))
 res['events'] = sorted(events, key=lambda e: str(e.get('ts')))
 res['sessions'] = sorted(sessions.values(), key=lambda s: s['first'])

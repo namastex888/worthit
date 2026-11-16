@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { screenshotArgs } from './screenshot.mjs';
 
 // Relative value ratios can exceed 1; bound only the terminal drawing, including NaN/Infinity.
 export const barCells = (pct, w = 20) => Math.max(1, Math.round(Math.max(0, Math.min(1, pct || 0)) * w));
@@ -43,10 +44,8 @@ export async function renderCardImage(spec, destination) {
     // Use filesystem time: isolated fixtures can freeze the JavaScript clock.
     const started = fs.statSync(html).mtimeMs;
     const result = await new Promise(resolve => {
-      const child = spawn(chrome, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=1',
-        '--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-component-update',
-        '--disable-sync', '--disable-default-apps', '--metrics-recording-only', '--host-resolver-rules=MAP * ~NOTFOUND',
-        '--user-data-dir=' + path.join(scratch, 'profile'), '--window-size=1600,900', '--screenshot=' + png, 'file://' + html], { stdio: 'ignore' });
+      const child = spawn(chrome, [...screenshotArgs(path.join(scratch, 'profile')), '--force-device-scale-factor=1',
+        '--window-size=1600,900', '--screenshot=' + png, 'file://' + html], { stdio: 'ignore' });
       let settled = false, timedOut = false;
       const settle = (code, signal, error = null) => {
         if (settled) return;

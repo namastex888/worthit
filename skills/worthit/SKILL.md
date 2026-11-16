@@ -20,6 +20,14 @@ Run it as `worthit` (or `npx worthit`). All commands below print JSON on stdout;
 
 Start with `worthit get` (no argument): it lists the sections and when the data was generated. If `generated_at` is older than the question needs, run `worthit --json` first, then query.
 
+For safe sample lookups, use `worthit get <section> --demo` (including dotted fields),
+or `worthit get --demo` to list the bundled sample's sections. It uses the same data
+as `worthit --json --demo`. A standalone `--demo` may also precede the lookup command.
+`days --demo` and `sql ... --demo` reject with exit 2 and a one-line error because the
+sample has no historical query tables. Demo lookups never read or write the store,
+even when it is missing or unreadable. Text containing `--demo` inside a SQL statement
+is SQL text, not a CLI flag.
+
 ## `worthit get [section[.field…]]`
 
 Parts of the last run. Dots walk into objects and arrays (`plans.0.usd_per_full_week`).
@@ -326,3 +334,71 @@ Piped (as you run it), it prints JSON: `{topic, written_by, text, characters, im
 3. **A weekly habit** (for example a Monday allowance post): `worthit weekly`; check `safe_to_post`, reasons and exit code before using its text and image.
 4. **Never** post for them, open a browser for them unless asked, or read their logs yourself: worthit is the only reader.
 5. If `worthit share` says there is no finished run, run `worthit --json` once and try again.
+
+
+## Project usage: RFC 0004 delivery 1
+
+`worthit projects` reads the last saved run only: no scan, model or network. Terminal table;
+piped JSON is the `projects` block plus `week`, `generated_at`, `machines_missing`,
+`machines_left_out`, `machines_retained`, `machines_retired`. `worthit get projects` returns
+the saved block. `worthit projects --demo` uses synthetic projects without reading a store.
+An older saved run needs `worthit --json`. Repository identities stay local: never forward
+them to an AI summary, question-bar tool or custom share topic, or put them in dashboard,
+Markdown or share cards. AI lookups expose only usage data, not project/PR identity tables.
+
+`projects` fields (not a new SQL table):
+
+- `floor`: false only with full machine proof and `coverage.unresolved_rows === 0`.
+  Log-derived usage is never called measured. When true, every usage USD/token/request
+  number is “at least”; no project week-over-week field exists.
+- `coverage`: `machines` requires every active machine answered, none left out, no retained
+  day/provider unit overlapping the rolling seven days, and week start on/after every retirement.
+  `unresolved_rows` counts core project_activity rows, including zero-dollar rows;
+  `unresolved_usd` is their rounded value. `attributed_pct` is rounded 100 * project raw USD /
+  (project raw USD + no_repository raw USD), null at zero total.
+  `prs_sources` is git.coverage.prs; `prs_attributed` is true iff no PR lacks a project.
+  Both are null with git off.
+- `rows`: `{project, name, api_value_usd, output_tokens, requests, merged_prs,
+  usd_per_merged_pr, models}`. Dollars round to whole dollars; tokens/requests are exact.
+  Rows plus no_repository reconcile with totals within dollar rounding. Includes PR-only
+  projects. `name` is the last path component, qualified with owner on collision.
+  `models` holds `{model, tool, api_value_usd, output_tokens, requests, share_pct}`.
+  `share_pct` is rounded 100 * raw model USD / raw project USD, null when project USD=0;
+  it is a value share, with no PR credit per model. `usd_per_merged_pr` divides rounded
+  project USD by PR count without rounding the ratio; null with zero PRs.
+- `no_repository`: `{api_value_usd, output_tokens, requests, why_usd}`. why_usd has all six
+  reasons: outside_a_repository, no_origin, origin_not_supported, folder_gone,
+  no_folder_read, saved_before_projects. The last four are unresolved, even at $0.
+- `prs_without_project`: `{merged_prs, why: {no_host_in_key}}`. PR keys with no host
+  never match by repository name. Project counts plus this count equal git.merged_prs.
+  When either PR coverage check is false, counts are “at least” and costs use a
+  “partial PR count”, NEVER a lower bound. With full PR proof and usage floor=true,
+  costs are “at least”. Git off sets this block, both checks and every row's
+  merged_prs/usd_per_merged_pr to null; suggest `worthit --json`.
+
+Scan buckets gain `project` (canonical origin id or null) and `project_why` (null with
+project, else one of six reasons). Claude resolves per request; Codex per session.
+Walk upward from cwd to .git; gitfile -> gitdir -> commondir -> shared config origin.
+File reads only, no git process, include or insteadOf. Canonical lowercase host[:nondefaultport]/path
+supports http/https/ssh/git and user@host:path, strips scheme/user/credentials/trailing .git/slash,
+and drops default ports. No-dot alias hosts, local paths, multiple origin URLs, remotes without
+origin and unreadable configs are origin_not_supported. No remotes is no_origin; existing
+folder outside git is outside_a_repository. Missing cwd/Antigravity/omp/dsh is no_folder_read.
+Absent project key on an older saved bucket means saved_before_projects.
+
+Deleted folder: sanitized Codex URL first, then versioned remembered live resolution, else
+folder_gone. `folder_project (path TEXT PRIMARY KEY, project TEXT, resolved_at TEXT, ver INTEGER)`
+lives only in that machine's scan-cache.db, never worthit.db or SSH payload. Only live resolution
+inserts/replaces; mismatched ver ignored. WORTHIT_NO_CACHE/unwritable cache works without it.
+Folder reuse keeps the latest live repository. The hostless usagemeter cwd_repo map is not used.
+Scan every machine daily with git on to remember folders before worktrees disappear.
+
+The core report adds `project_activity`: `{hour, provider, model, project, project_why, output,
+requests, usd}` from the exact selected/deduplicated/priced rows used for activity, including
+meter rows. buildData uses the same rolling totals window; USD retains pricing precision until
+display rounds. Project history, model PR credit and delivery 2 remain out of scope.
+
+Delivery 1 adds no network request. Audit read lines name each additional .git/commondir/config
+file; existing SSH scans return sanitized repository IDs with usage. URL credentials are
+removed on the originating machine before any cache/transport. Fork origins and upstream PRs,
+or nondefault clone ports and forge keys, stay separate without guessing.
