@@ -86,14 +86,24 @@ const forModel = () => { const { heat, ...rest } = DATA; return JSON.stringify({
 // ---------------------------------------------------------------- headless: --json
 const SHARE = argv[0] === 'share' || flag('--share');
 if (JSON_MODE && !SHARE && !WEEKLY) {
-  if (DEMO) { console.log(JSON.stringify({ worthit: VERSION, ...demoData() }, null, 1)); process.exit(0); }
+  if (DEMO) { console.log(JSON.stringify({ worthit: VERSION, ...demoData(), audit_log: null }, null, 1)); process.exit(0); }
   const cfg = { days: DAYS, hosts: HOSTS, git: F_GIT !== 'no' };
+  const auditFile = NO_FILES ? null : path.resolve(`${STAMP}-worthit-audit.log`);
   const tick = (label, p) => { if (process.stderr.isTTY) process.stderr.write(`\r\x1b[K${label} ${p.pct == null ? '' : Math.round(p.pct * 100) + '%'} ${String(p.detail || '').slice(0, 90)}`); };
   try {
     const gP = cfg.git ? git(cfg, () => {}) : null, s = await scan(cfg, p => tick('scanning', p)), report = await analyse(s.runDir), g = gP ? await gP : null;
     if (process.stderr.isTTY) process.stderr.write('\r\x1b[K');
-    console.log(JSON.stringify({ worthit: VERSION, ...buildData(report, g, cfg, s) }, null, 1)); process.exit(0);
-  } catch (e) { console.error('\nworthit: ' + e.message); process.exit(1); }
+    const data = buildData(report, g, cfg, s);
+    if (auditFile) writeAudit(auditFile, VERSION);
+    console.log(JSON.stringify({ worthit: VERSION, ...data, audit_log: auditFile }, null, 1)); process.exit(0);
+  } catch (e) {
+    console.error('\nworthit: ' + e.message);
+    if (auditFile) {
+      try { writeAudit(auditFile, VERSION); console.error('worthit: audit log: ' + auditFile); }
+      catch (error) { console.error('worthit: could not write audit log ' + auditFile + ': ' + error.message); }
+    }
+    process.exit(1);
+  }
 }
 
 // ---------------------------------------------------------------- catalog: the only things the agent can place
