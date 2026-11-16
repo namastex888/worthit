@@ -62,7 +62,7 @@
     {
       "period": "2026-11-10",
       "model": "claude-sonnet-5-5",
-      "api_usd": 3,
+      "api_usd": 6,
       "output_tokens": 300000,
       "days": 1
     },
@@ -86,7 +86,7 @@
     },
     {
       "period": "2026-11-10",
-      "api_usd": 3,
+      "api_usd": 6,
       "output_tokens": 300000,
       "requests": 2,
       "days": 1,
@@ -107,13 +107,13 @@
     "middle": {
       "models": [
         {
-          "output_tokens": 50000,
+          "output_tokens": 100000,
           "api_usd": 20
         }
       ],
       "providers": [
         {
-          "output_tokens": 50000,
+          "output_tokens": 100000,
           "api_usd": 20
         }
       ]
@@ -122,13 +122,13 @@
       "models": [
         {
           "output_tokens": 200000,
-          "api_usd": 5
+          "api_usd": 20
         }
       ],
       "providers": [
         {
           "output_tokens": 200000,
-          "api_usd": 5
+          "api_usd": 20
         }
       ]
     }
@@ -203,7 +203,7 @@
       ],
       "providers": [
         {
-          "output_tokens": 50000,
+          "output_tokens": 100000,
           "api_usd": 20
         }
       ]
@@ -218,7 +218,7 @@
       "providers": [
         {
           "output_tokens": 200000,
-          "api_usd": 5
+          "api_usd": 20
         }
       ]
     }
@@ -227,7 +227,7 @@
     "middle": {
       "models": [
         {
-          "output_tokens": 50000,
+          "output_tokens": 100000,
           "api_usd": 20
         }
       ],
@@ -242,7 +242,7 @@
       "models": [
         {
           "output_tokens": 200000,
-          "api_usd": 5
+          "api_usd": 20
         }
       ],
       "providers": [
@@ -287,13 +287,13 @@
     "middle": {
       "models": [
         {
-          "output_tokens": 50000,
+          "output_tokens": 100000,
           "api_usd": 20
         }
       ],
       "providers": [
         {
-          "output_tokens": 50000,
+          "output_tokens": 100000,
           "api_usd": 20
         }
       ]
@@ -302,13 +302,13 @@
       "models": [
         {
           "output_tokens": 200000,
-          "api_usd": 5
+          "api_usd": 20
         }
       ],
       "providers": [
         {
           "output_tokens": 200000,
-          "api_usd": 5
+          "api_usd": 20
         }
       ]
     }
@@ -437,13 +437,13 @@
     "middle": {
       "models": [
         {
-          "output_tokens": 50000,
+          "output_tokens": 100000,
           "api_usd": 20
         }
       ],
       "providers": [
         {
-          "output_tokens": 50000,
+          "output_tokens": 100000,
           "api_usd": 20
         }
       ]
@@ -452,13 +452,13 @@
       "models": [
         {
           "output_tokens": 200000,
-          "api_usd": 5
+          "api_usd": 20
         }
       ],
       "providers": [
         {
           "output_tokens": 200000,
-          "api_usd": 5
+          "api_usd": 20
         }
       ]
     }
@@ -473,7 +473,7 @@
       ],
       "providers": [
         {
-          "output_tokens": 50000,
+          "output_tokens": 100000,
           "api_usd": 20
         }
       ]
@@ -488,7 +488,7 @@
       "providers": [
         {
           "output_tokens": 200000,
-          "api_usd": 5
+          "api_usd": 20
         }
       ]
     }

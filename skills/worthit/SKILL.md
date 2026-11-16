@@ -38,7 +38,7 @@ Parts of the last run. Dots walk into objects and arrays (`plans.0.usd_per_full_
 | `game` | Level, XP, streak, personal bests |
 | `heat` | Output tokens per weekday and hour |
 | `week`, `machines`, `days_scanned`, `generated_at` | What the run covered |
-| `machines_missing`, `machines_left_out` | Machines that gave no answer this run (`saved_scan_at` set = their last saved scan was used) and saved machines with usage left out. Either one not empty = the week may be undercounted and every plan is a floor |
+| `machines_missing`, `machines_left_out` | Machines that gave no answer this run (`saved_scan_at` set = their last saved scan was used) and saved machines with usage (or unreadable saved scans) left out. Removing an SSH alias does not clear it; retire the machine or scan a fresh equivalent machine. Either one not empty = the week may be undercounted and every plan is a floor |
 | `machines_retained` | Older scans kept for machines that answered with less data. Each row names `machine` (SSH alias or `this machine`), `days_kept` (distinct local days) and `units` (`day`, `provider`). Each machine/local-day/provider keeps the whole scan unit with higher API-list USD at this run's prices, then total tokens; fresh wins a full tie. Mention the named machines and days kept. Any retained unit intersecting this week makes every plan a floor and `change_vs_last_week_pct` null: later lost hours remain unknown |
 
 When `machines_retained` has a unit inside this week, that week's totals are a lower bound too.
@@ -96,16 +96,19 @@ worthit days --group day --tool codex --since 2026-11-05
 ```
 
 - `--group day|week|month` (default day; week is ISO, `2026-W45`)
-- `--by total|tool|model` (default total; `total` also returns `merged_prs` and `commits`)
+- `--by total|tool|model` (default total; `total` also returns `merged_prs` and `commits` when neither `--tool` nor `--model` is set)
 - `--tool claude|codex|google|omp|dsh`, `--model <part of the id>`
-- Each row has `api_usd`, `output_tokens`, `days` (days with data in the period), and `requests` unless grouped by model.
+- Each row has `api_usd`, `output_tokens`, `days` (days with data in the period), and `requests` only when reading `day_provider`.
 
-`day_provider` uses local days; `day_model` (including `--by model` and `--model`)
-uses UTC days. Each replaces every field on a fully scanned day whose start is on
-or after every retirement, with every machine covered; any other day keeps per-field MAX,
-including partial oldest days and the current day. Missing or left-out machines
-prevent replacement. In `day`, PRs and commits replace independently inside git's
-14-day window when all that metric's sources answered; otherwise they keep MAX,
+`day_provider` uses local days; `day_model` (`--by model` or any `--model`
+filter, including `--by total` and `--by tool`) uses UTC days. Never compare UTC
+and local views per day; date filters and week/month groups use the selected stored
+basis too. Stored usage never decreases on rescan because tools prune logs:
+`day_provider`, `day_model` and `history.json` usage keep per-field MAX on every day,
+including complete, partial, current and outside-window days. Later price cuts or
+dedupe fixes cannot lower days already stored. Missing or left-out machines still
+make allowance values floors. In `day`, PRs and commits replace independently inside
+git's 14-day window when all that metric's sources answered; otherwise they keep MAX,
 including outside that window.
 
 ## `worthit sql "SELECT …"` and `worthit schema`
@@ -233,7 +236,7 @@ Query it with `worthit sql "SELECT generated_at, week_to, safe FROM weekly ORDER
 - Ledger weeks in `plans[].weeks` must not be used to work out a change.
 - **Months:** "times plan price" is against one subscription. A user with several accounts on a plan should divide by the number of accounts.
 - **Resets** are listed in `events` and never assumed used. Usage counts in the period it happened.
-- **omp and dsh** come from the Automagik usagemeter store. omp's own reported cost is used; dsh is priced at the rates those costs imply. Their history only goes back as far as that store (about 30 days).
+- **omp and dsh** come from the Automagik usagemeter store. omp's own reported cost is used; dsh is priced at the rates those costs imply. Their source history only goes back as far as that store; no fixed retention period is assumed.
 - **Open vs closed:** open = DeepSeek, GLM, Kimi, Qwen, Llama, Mistral, Gemma, MiniMax. Everything else is closed.
 - A partial period is partial: check `days` before comparing months or weeks.
 

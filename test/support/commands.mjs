@@ -8,7 +8,7 @@ fs.appendFileSync(env.FIXTURE_TRACE, JSON.stringify({ command, args }) + '\n');
 const die = message => { fs.appendFileSync(env.FIXTURE_TRACE, JSON.stringify({ unexpected: message }) + '\n'); console.error(message); process.exit(86); };
 if (command === 'ssh') {
   const machine = args.at(-2);
-  if (!['box-b', 'box-c'].includes(machine) || !/^env .*python3 - \d+$/.test(args.at(-1))) die('unexpected fixture SSH arguments');
+  if (!['box-b', 'box-c', ...JSON.parse(env.FIXTURE_SSH_ALIASES || '[]')].includes(machine) || !/^env .*python3 - \d+$/.test(args.at(-1))) die('unexpected fixture SSH arguments');
   const tokens = args.at(-1).split(/\s+/), remoteEnv = {};
   for (const token of tokens.slice(1)) {
     const assignment = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(token);
