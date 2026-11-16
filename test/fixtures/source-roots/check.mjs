@@ -90,13 +90,15 @@ if (option) {
     const missingRows = h.rows().filter(row => row.path === missing);
     assert.ok(missingRows.some(row => row.outcome === 'errno:2' && row.dev === null && row.ino === null));
     assert.ok(h.forbidden(missingRows).some(row => row.op === 'stat'), 'prohibited-name checks catch actual ENOENT probes without an inode');
-    assert.equal(h.forbidden(h.rows().filter(row => row.path === permitted)).length, 0, 'default-home names remain outside the extra-root class restriction');
+    const permittedRows = h.rows().filter(row => row.path === permitted);
+    assert.equal(h.forbidden(permittedRows).length, 0, 'default-home names remain outside the extra-root class restriction');
     h.clearTrace();
     const probe = h.evaluate(`import fs from 'node:fs';
       try { fs.statSync(process.env.SOURCE_ROOT_BASE + '/absent-probe/.gemini/settings.json'); }
       catch (error) { console.log(JSON.stringify({code:error.code})); }`);
     assert.equal(probe.code, 'ENOENT');
     assert.ok(h.forbidden(h.rows()).some(row => row.actor === 'collector' && row.op === 'statSync'), 'collector prohibited-name probes are caught too');
+    writeJSON(path.join(h.base, 'poison-proof.json'), { aliasRows, missingRows, permittedRows, collectorRows: h.rows() });
     console.log('source-roots: poison proofs PASS (unlisted-link physical identity; missing scanner/collector prohibited names; default-home exemption)');
   });
   await scenario('physical-link-controls', h => {
