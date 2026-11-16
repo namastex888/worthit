@@ -55,6 +55,8 @@ try {
   }
   assert.equal(share({ ...supported, delivery: { ...delivery, usd_per_feature: 0 } }).topic, 'delivery', 'zero cost is usable');
   // Demo is another caller of the same selection logic; do not change its data.
-  fallback(share(saved, 'delivery', true), 'bundled demo');
+  const demo = share(saved, 'delivery', true);
+  assert.equal(demo.topic, 'delivery', 'bundled demo has usable delivery data');
+  assert.ok(!demo.warnings.some(w => /weekly allowance post instead/.test(w)), 'bundled demo needs no fallback warning');
   console.log('share-delivery-fallback: absent/null data, aliases, demo and supported coverage controls match');
 } finally { isolated.cleanup(); }
