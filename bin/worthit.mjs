@@ -36,11 +36,12 @@ import { startPet, petLines, petSummary, PET_W } from '../src/pet.mjs';
 import { demoHosts, demoScan, demoGit, demoPricing, demoData, demoSpec, demoAnswer, demoPet } from '../src/demo.mjs';
 
 const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
-const h = React.createElement;
+const h = React.createElement, rawArgv = process.argv.slice(2);
 let demoArgs;
-try { demoArgs = normalizeDemoArgs(process.argv.slice(2)); }
+try { demoArgs = normalizeDemoArgs(rawArgv); }
 catch (e) { console.error('worthit: ' + e.message); process.exit(2); }
-const argv = [...demoArgs.args, ...(demoArgs.demo ? ['--demo'] : [])];
+const argv = QUERY_COMMANDS.includes(demoArgs.args[0]) || demoArgs.args[0] === 'projects'
+  ? [...demoArgs.args, ...(demoArgs.demo ? ['--demo'] : [])] : rawArgv;
 const flag = k => argv.includes(k), arg = (k, dflt) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : dflt; };
 // Fail closed before any command touches the store; demo remains completely isolated.
 let hostState = { selected: [], retired: [] };
