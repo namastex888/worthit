@@ -40,7 +40,9 @@ The numbers are only useful if they change what you do next week. Each part of t
 
 You do not have to read tables. Type a question in the bar at the bottom ("which day cost the most?", "what should I move to an open model?") and it answers with a chart. It remembers the conversation while the screen is open.
 
-A plan marked **measured** was read from its own meter. A plan marked **at least** may have use on a machine worthit could not read, so the true figure is that or higher.
+A plan marked **measured** was read from its own meter with every machine accounted for. A plan marked **at least** is a value floor: use may be missing from an unread or left-out machine, or logs may have lost hours or days preserved in a saved scan even though the machine answered. Look for the named machine note, such as **kept N older days**; a floor is not compared week to week.
+
+PR, feature and commit counts marked **at least** have incomplete Git source coverage for that count, separately from plan measurement. Sources include logged-in code-host accounts, the local usagemeter store and local `git log`; a failed source or a missing recent checkout can leave a count incomplete. Costs labelled **partial PR count** or **partial feature count** use that partial denominator and drop the comparison; the costs themselves are not lower bounds.
 
 ## Share a stat
 
