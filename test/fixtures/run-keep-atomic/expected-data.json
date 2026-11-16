@@ -1,0 +1,8 @@
+{
+  "complete": { "output_tokens": 4500000, "api_value_usd": 54 },
+  "local": { "output_tokens": 1500000, "api_value_usd": 18 },
+  "historical_days": {
+    "2026-08-03": { "out": 730000, "usd": 19, "prs": 3, "commits": 7 },
+    "2026-10-01": { "out": 410000, "usd": 11, "prs": 2, "commits": 5 }
+  }
+}
