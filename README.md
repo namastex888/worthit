@@ -62,7 +62,20 @@ Install the skill (the full guide) into whatever agent you use. `npx worthit` al
 npx skills add namastex888/worthit
 ```
 
-Every command prints JSON when piped and reads only local files:
+`get`, `days` and `sql` query the local store and print JSON; `schema` prints static metadata as JSON.
+These commands do not scan or use the network. `--json` and `weekly` scan fresh and print JSON.
+Plain runs and `--json` can read remembered selected SSH machines by default. `--json` enables git
+data by default and may contact code hosts or download the meter if missing. `weekly` defaults to
+every eligible SSH alias in `~/.ssh/config`, excluding code hosts and retired machines, with git
+and AI off. `--hosts none` stops SSH for ordinary and weekly scans. `--git no --ai no` disables
+ordinary git/code-host/meter collection and agent use.
+`share` and `hosts` print JSON when piped; `share` may render a card or use AI for custom topics
+(`share --ai no` disables that AI), while `hosts` manages saved machine state. `--no-files` skips
+presentation artifacts for plain runs, `weekly` and `share`; network requests and store writes
+can still occur. A bare `worthit` or `worthit --demo` draws a dashboard even when piped;
+`--demo --json` and `weekly --demo` print sample JSON. `--skill` prints Markdown; `install-skill`
+runs `npx skills add` to download the skill (npx may also fetch the installer) and inherits its
+output. See the scan flags and “What leaves your machine” below.
 
 ```sh
 worthit --json                   # scan now, print the week's data (no UI, no model)
@@ -81,6 +94,22 @@ worthit --skill                  # print the full guide
 worthit install-skill            # install the skill into your coding agents
 worthit --demo                   # the whole run on sample data
 ```
+
+Stored usage never decreases on rescan because tools prune their logs. Each usage
+field in `day_provider`, `day_model` and `history.json` keeps its maximum on every
+day. Later price cuts or dedupe fixes cannot lower days already stored; higher
+values still increase them. Git PR and commit counts keep their independent
+14-day, per-metric coverage rules. Saved machines with usage or unreadable saved scans
+stay left out after their SSH alias is removed, until retired or covered by a fresh
+answer from the same machine.
+
+`worthit days` keeps its bare JSON row array on stdout and prints the day basis
+on stderr, in terminals and pipes. Total/tool views use **local days** from
+`day_provider`, except that **any `--model` filter uses UTC days** from `day_model`,
+even with `--by total` or `--by tool`. `--by model` always uses UTC days.
+Never compare these UTC and local views per day. Date filters and week/month
+groups use the selected stored basis too, so their boundaries can differ.
+This label does not convert stored dates or values.
 
 `worthit weekly [--hosts all|none|a,b] [--allow-partial] [--no-files]` runs a fresh
 headless scan with all SSH hosts by default, git and AI off. It prints the fixed allowance
@@ -152,13 +181,23 @@ What leaves your machine:
 - With an AI agent, the prompt and week's numbers go through your own Claude, Codex, omp or dsh login to write the summary. With other machines selected from your saved SSH hosts (or remembered from an earlier run), worthit sends the bundled Python scanner over SSH and reads back usage; nothing is installed there, but it keeps a scan cache in `~/.worthit/` there. `--hosts none` disables that SSH scan. `--git no --ai no` disables the forge/meter and AI steps; selected SSH scans still run.
 - The bundled Python core scans and prices logs locally. When output files are enabled and Chrome or Chromium is installed, worthit's Node CLI runs it to render a local HTML dashboard to PNG in headless mode. In interactive setup, accepting skill installation runs `npx skills add`, which downloads the skill into your coding agents.
 
-The audit log records session-log reads and cache hits, collector commands, network activity, agent calls, sent data and output writes. It does not list executable lookup (`which`), hardware probes, the `zstd` decompressor used for `.zst` logs, the account ids read from Claude and Codex login files (`.claude.json`, `auth.json`; hashed), `~/.ssh/config`, or worthit's own store files.
+The audit log records session-log reads and cache hits, collector commands, network activity, agent calls, sent data and output writes. It does not list executable lookup (`which`), hardware probes, the `zstd` decompressor used for `.zst` logs, the account ids read from Claude and Codex login files (`.claude.json`, `auth.json`; hashed), the model names read from Gemini/Antigravity settings (`.gemini/antigravity-cli/settings.json`, `.gemini/antigravity/settings.json`, `.gemini/settings.json`), `claude-limits.jsonl` in the meter state directories, `~/.ssh/config`, all reads and writes inside worthit's own store folder (`WORTHIT_HOME`, default `~/.worthit`: its database and its sidecar files, caches, saved scans, settings and temporary files), or temporary files and working directories worthit creates under the system temporary folder, including rendering scratch and AI-agent working directories. Some store writes are listed, not all.
 
-A normal run writes `./<date>-worthit.md`, `./<date>-worthit.png` and `./<date>-worthit-audit.log`. Its store is `~/.worthit/` (or `WORTHIT_HOME`):
+A normal dashboard run writes `./<date>-worthit.md`, `./<date>-worthit.png` and
+`./<date>-worthit-audit.log`. An ordinary `worthit --json` scan writes only that
+audit log, using the shared scan audit format, and names its absolute path in the
+root `audit_log` field. It writes no Markdown or PNG and runs no Chrome.
+`audit_log` is null with `--no-files` or `--demo`; `--no-files` still updates the
+store, while demo reads and writes no store or output files. On exit 1 after
+activity, the JSON scan attempts to retain its audit and names the path on stderr,
+without printing success JSON. Query commands (`get`, `days`, `sql`, `schema`)
+do not scan or write audit files; saved `last.json` and query output shapes stay
+unchanged. The store is `~/.worthit/` (or `WORTHIT_HOME`):
 
 | Path | Kept data |
 |---|---|
 | `hosts.json` | `selected` aliases and `retired: [{machine, retired_at, last_scan_at, since?}]`; old stores without `retired` work unchanged |
+| `settings.json` | Remembered dashboard machine, git and AI choices; skill installation choice/status and time |
 | `run-keep/<alias>.json` | Latest active scan, merged with saved whole-day/provider winners |
 | `run-keep/retired/<alias>.json` | Frozen snapshot moved at retirement; no run changes it; unretire restores its bytes |
 | `history.json`, `worthit.db` | Daily usage and git history; the database also holds plan values and weekly checkpoints |

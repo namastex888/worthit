@@ -5,4 +5,8 @@ gitlab.com
   ✓ REST API Endpoint: https://gitlab.com/api/v4/
   ✓ GraphQL Endpoint: https://gitlab.com/api/graphql/
   ! No token found (checked config file, keyring, and environment variables).
-  X could not authenticate to one or more of the configured GitLab instances.
+          
+   ERROR  
+          
+  X could not authenticate to one or more of the configured GitLab instances.                                         
+

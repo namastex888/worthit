@@ -49,7 +49,7 @@ try {
   check('left_out_history', history());
   check('stored_providers', query('SELECT day, provider, api_usd, output_tokens, requests FROM day_provider ORDER BY day, provider'));
   check('stored_days', query('SELECT * FROM day ORDER BY day'));
-  // buildData controls isolate history replacement from the earlier saved-scan merge.
+  // buildData controls isolate unconditional usage MAX from the earlier saved-scan merge.
   // Exercise UTC/local midnight, both DST day lengths, current-day protection, per-field MAX,
   // missing/cached hosts, and the separate git-coverage rule with literal expectations.
   for (const [name, tz, now, hour] of [
