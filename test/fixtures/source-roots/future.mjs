@@ -133,7 +133,29 @@ for (const action of ['update', 'unretire']) add('unsupported-' + action, B, '§
   register(h); command(h, [action, 'local', listedId(h), ...(action === 'update' ? ['--file', specFile(h)] : [])], 2, /unsupported/i);
 });
 add('answered-retire-rejected', B, '§7/8 1a lifecycle', 'a read or partial answer cannot retire until 1b', h => {
-  h.admit(declared(h)); command(h, ['retire', 'local', listedId(h)], 2, /unsupported/i);
+  // Import synthetic prior-answer evidence without calling C's root reader.
+  // A lost usage file would still not turn this registration into never-answered.
+  register(h); const id = listedId(h), stamp = '2026-11-13T12:00:00Z';
+  const settings = readJSON(path.join(h.store, 'source-roots.json'));
+  settings.machines.local.roots[0].last_scan_at = stamp;
+  writeJSON(path.join(h.store, 'source-roots.json'), settings);
+  const source_ids = [{ file_id: 'd'.repeat(64), path_id: 'e'.repeat(64) }];
+  const sourceRoot = { id, status: 'read', lifecycle: 'active', selected: true, revision: 1,
+    registered_at: settings.machines.local.roots[0].registered_at, last_scan_at: stamp,
+    machine_id: 'f'.repeat(64), reader_id: 'b'.repeat(64), canonical_id: 'c'.repeat(64),
+    attempted_at: stamp, retired_at: null, reasons: [], boundary: 'verified', sources: [], retained: [],
+    window: { from: '2026-11-01T00:00:00Z', to: stamp, complete: true },
+    attribution: { account_complete: false, model_complete: true, unattributed_rows: 1,
+      unattributed_output_tokens: 100, unattributed_api_value_usd: 0.0015, model_unknown_rows: 0, unpriced_rows: 0 } };
+  writeJSON(path.join(h.store, 'run-keep/roots', id + '.json'), { version: 1, source_roots: [sourceRoot], source_ids,
+    generated_at: stamp, registered_at: sourceRoot.registered_at, last_scan_at: stamp, no_saved_scan: false });
+  writeJSON(path.join(h.store, 'run-keep/local.json'), { host: 'fixture-reader', generated_at: stamp,
+    since: '2026-11-01T00:00:00Z', days: 21, errors: [], stats: { claude_messages: 1 }, accounts: {},
+    source_roots: [sourceRoot], source_ownership: [{ collection: 'buckets', row: 0, source_ids }],
+    buckets: [{ provider: 'claude', session: 'synthetic-owned-root', hour: '2026-11-13T12', model: 'claude-sonnet-5-5',
+      account: 'unattributed', login: 'unattributed', input_uncached: 10, cache_read: 0, cache_write: 0, output: 100, requests: 1 }],
+    meters: [], events: [], sessions: [], meter_usage: [], meter_readings: [], meter_fields: [] });
+  command(h, ['retire', 'local', id], 2, /unsupported/i);
 });
 
 add('nested-bindings', C, '§2/8 first 1a bullet', 'explicit nested and archived Claude/Codex bindings retain usage once', h => {
@@ -458,4 +480,60 @@ add('same-account-native-tags', C, '§3/7/8 each-stage account tags', 'per-recor
   const result = h.admit(declared(h)), rows = scanOf(result).buckets.filter(row => row.provider === 'codex' && ['synthetic-default-codex', 'synthetic-codex'].includes(row.session));
   assert.equal(rows.length, 2); assert.match(rows[0].login, /^acct-/); assert.equal(rows[0].login, rows[1].login);
   assert.ok(!JSON.stringify(result.scans).includes('synthetic-person'));
+});
+
+// The ordinary plan path has an independently persisted endpoint. Weekly's guard
+// cannot stand in for this path, usage deltas, project costs or delivery claims.
+const completeRoot = {
+  id: 'a'.repeat(64), machine_id: 'b'.repeat(64), reader_id: 'c'.repeat(64), canonical_id: 'd'.repeat(64),
+  revision: 1, selected: true, lifecycle: 'active', status: 'read', reasons: [], boundary: 'verified',
+  registered_at: '2026-11-01T00:00:00Z', attempted_at: '2026-11-14T12:00:00Z', last_scan_at: '2026-11-14T12:00:00Z', retired_at: null,
+  window: { from: '2026-10-24T12:00:00Z', to: '2026-11-14T12:00:00Z', complete: true },
+  sources: [], retained: [], attribution: { account_complete: true, model_complete: true, unattributed_rows: 0,
+    unattributed_output_tokens: 0, unattributed_api_value_usd: 0, model_unknown_rows: 0, unpriced_rows: 0 },
+};
+const plainRootGuard = (h, currentRoots, previousRoots, withDelivery = false) => h.evaluate(`
+  import {DatabaseSync} from 'node:sqlite'; import path from 'node:path';
+  import {buildData,HOME} from ${JSON.stringify(pathToFileURL(path.join(repository, 'src/collect.mjs')).href)};
+  const roots=${JSON.stringify(currentRoots)}, previous=${JSON.stringify(previousRoots)};
+  const db=new DatabaseSync(path.join(HOME,'worthit.db'));
+  db.exec('CREATE TABLE plan_value(day TEXT,provider TEXT,plan TEXT,usd_per_full_week INTEGER,times_plan_price INTEGER,stretches INTEGER,proof TEXT,source_roots TEXT,PRIMARY KEY(day,provider))');
+  db.prepare('INSERT INTO plan_value VALUES(?,?,?,?,?,?,?,?)').run('2026-11-07','claude','Claude Ultra',10,1,1,'measured',JSON.stringify(previous));db.close();
+  const activity=[['2026-11-03',60,400000],['2026-11-05',90,600000],['2026-11-10',120,800000],['2026-11-13',180,1200000]]
+    .map(([day,usd,output])=>({hour:day+'T15',provider:'claude',usd,output,requests:1}));
+  const measured={api_usd:300,output_tokens:2000000,cached_input_tokens:0,model_mix_by_usd:{}};
+  const report={activity,source_roots:roots,history_since:'2026-10-24T12:00:00Z',
+    prices:{plan_usd_per_week:{claude:46}},this_week:{claude:{usd_per_full_week:600,meter_start_pct:0,meter_end_pct:50,hours:2,measured}},
+    project_activity:activity.map(row=>({...row,model:'claude-sonnet-5-5',project:null,project_why:'no_folder_read',cost_complete:true}))};
+  const kinds=[];for(const [date,count] of [['2026-11-03',3],['2026-11-05',2],['2026-11-10',3],['2026-11-13',3]])
+    for(let index=0;index<count;index++) kinds.push([Date.parse(date+'T15:00:00Z')+index,'feat']);
+  const git=${withDelivery} ? {prs:kinds.map(([t])=>t),kinds,commits:kinds.map(([t])=>t),repos:1,src:{synthetic:kinds.length},
+    coverage:{prs:true,commits:true,sources:[{source:'synthetic',answered:true,metrics:['prs']}]}} : null;
+  console.log(JSON.stringify(buildData(report,git,{days:21,hosts:[]},{counts:{claude:4},hosts:[{alias:'synthetic-remote',ok:true}],
+    left_out:[],retained:[],retirement:[],source_roots:roots})));
+`);
+for (const [name, current, previous] of [
+  ['active', [completeRoot], []],
+  ['retired-empty', [{ ...completeRoot, lifecycle: 'retired', status: 'retired', selected: false,
+    retired_at: '2026-11-01T00:00:00Z', last_scan_at: null, no_saved_scan: true }], []],
+  ['deselected', [{ ...completeRoot, selected: false, status: 'left_out', attempted_at: null, reasons: ['not_selected'] }], []],
+  ['tombstone', [{ ...completeRoot, selected: false, status: 'left_out', attempted_at: null, reasons: ['removed_setting'] }], []],
+  ['previous-only', [], [completeRoot]],
+]) add('plain-plan-root-' + name, C, '§7/8 both plan endpoints and root-presence after empty retire', 'plain plan changes are null with roots_changed and exact endpoint coverage is persisted', h => {
+  const result = plainRootGuard(h, current, previous);
+  assert.equal(result.plans.length, 1);
+  assert.equal(result.plans[0].change_vs_last_week_pct, null);
+  assert.ok(result.plans[0].not_compared.includes('roots_changed'));
+  assert.deepEqual(result.source_roots, current);
+  const persisted = h.json(h.python, ['-c', 'import json,sqlite3,sys; db=sqlite3.connect(sys.argv[1]); print(json.dumps(json.loads(db.execute("select source_roots from plan_value where day=\'2026-11-14\'").fetchone()[0])))', path.join(h.store, 'worthit.db')]);
+  assert.deepEqual(persisted, current);
+});
+add('root-usage-cost-comparison-guards', C, '§6/7/8 usage, value and delivery-cost guards', 'root presence withholds usage-derived improvements while physical PR counts retain independent proof', h => {
+  const result = plainRootGuard(h, [completeRoot], [], true);
+  assert.equal(result.totals.output_tokens, 2000000); assert.equal(result.totals.api_value_usd, 300);
+  assert.equal(result.totals.output_tokens_change_pct, null); assert.equal(result.totals.api_value_change_pct, null);
+  assert.equal(result.git.usd_per_pr_change_pct, null); assert.equal(result.delivery.usd_per_feature_change_pct, null);
+  assert.equal(result.git.merged_prs, 6); assert.equal(result.git.merged_prs_change_pct, 20);
+  assert.equal(result.delivery.features, 6); assert.equal(result.delivery.features_change_pct, 20);
+  assert.ok(!result.game.personal_bests.includes('lowest cost per PR'));
 });
