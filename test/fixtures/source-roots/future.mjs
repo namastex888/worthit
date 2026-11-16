@@ -174,6 +174,9 @@ for (const kind of ['claude', 'codex', 'meter']) add('per-file-links-' + kind, C
 });
 add('meter-colliding-ids', C, '§4/8 distinct meter DBs', 'distinct DBs with equal row ids both contribute; aliases do not', h => {
   const spec = { ...h.spec, sources: [...h.spec.sources, { kind: 'meter', home: 'other-meter' }] };
+  for (const source of ['meter', 'other-meter']) for (const suffix of ['symlink-one', 'symlink-two', 'hardlink-one', 'hardlink-two']) {
+    spec.sources.push({ kind: 'meter', home: source + '-' + suffix });
+  }
   const result = h.admit([{ spec }]), scan = scanOf(result);
   assert.equal(scan.meter_usage.reduce((n, row) => n + row[7], 0), 100);
   assert.equal(scan.meter_usage.filter(row => row[0] === 'colliding-row').length, 2);

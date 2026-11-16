@@ -73,7 +73,7 @@ if (option) {
     assert.ok(h.forbidden(h.rows()).some(row => /^errno:(1|13)$/.test(row.outcome)), 'OS denied the poisoned read');
   });
   await scenario('physical-link-controls', h => {
-    assert.equal(h.manifest.links.length, 16, 'two symlinks and two hardlinks for Claude, Codex, DB and limits file');
+    assert.equal(h.manifest.links.length, 32, 'two symlinks and two hardlinks for every live/archive native file and both DB/limits pairs');
     for (const { original, alias } of h.manifest.links) {
       const first = fs.statSync(original), second = fs.statSync(alias);
       assert.equal(first.dev, second.dev); assert.equal(first.ino, second.ino);

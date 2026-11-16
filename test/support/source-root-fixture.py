@@ -63,7 +63,10 @@ def materialize(base):
         'five_hour': {'used_percentage': 50, 'resets_at': 1794592800}}) + '\n')
     database(root / 'other-meter/meter.db', 70).close()
     put(root / 'other-meter/claude-limits.jsonl', (meter / 'claude-limits.jsonl').read_text())
-    originals = [native, codex, meter / 'meter.db', meter / 'claude-limits.jsonl']
+    originals = [native, root / 'agents/alpha/.claude/session-archive/archive.jsonl',
+                 codex, root / 'agents/beta/.codex/archived_sessions/archive.jsonl',
+                 meter / 'meter.db', meter / 'claude-limits.jsonl',
+                 root / 'other-meter/meter.db', root / 'other-meter/claude-limits.jsonl']
     links = []
     for original in originals:
         for kind in ('symlink-one', 'symlink-two', 'hardlink-one', 'hardlink-two'):
@@ -73,13 +76,14 @@ def materialize(base):
             else:
                 os.link(original, alias)
             links.append({'original': str(original), 'alias': str(alias), 'kind': kind})
-    for alias in ('meter-symlink-one', 'meter-symlink-two'):
-        (root / alias).symlink_to('meter', target_is_directory=True)
-    for alias in ('meter-hardlink-one', 'meter-hardlink-two'):
-        for name in ('meter.db', 'claude-limits.jsonl'):
-            target = root / alias / name
-            target.parent.mkdir(exist_ok=True)
-            os.link(meter / name, target)
+    for source in ('meter', 'other-meter'):
+        for suffix in ('symlink-one', 'symlink-two'):
+            (root / (source + '-' + suffix)).symlink_to(source, target_is_directory=True)
+        for suffix in ('hardlink-one', 'hardlink-two'):
+            for name in ('meter.db', 'claude-limits.jsonl'):
+                target = root / (source + '-' + suffix) / name
+                target.parent.mkdir(exist_ok=True)
+                os.link(root / source / name, target)
     sentinels = []
     for relative in ('.claude.json', 'agents/alpha/.claude/.claude.json',
                      'agents/alpha/.claude/.credentials.json', 'agents/beta/.codex/auth.json',
