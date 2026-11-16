@@ -297,26 +297,42 @@ export async function git(cfg, on) {
   }
   let glHosts = [];
   if (optional('glab')) {
-    const st = spawnSync('glab', ['auth', 'status'], { encoding: 'utf8', timeout: 20000 });
-    const txt = ((st.stdout || '') + '\n' + (st.stderr || '')).replace(/\x1b\[[0-9;]*m/g, '');
-    const blocks = new Map(); let cur = null;
-    for (const line of txt.split('\n')) {
-      const h = /^([a-z0-9][a-z0-9.-]*\.[a-z]{2,}(?::\d+)?)\s*$/i.exec(line);
-      if (h) { cur = h[1].toLowerCase(); if (!blocks.has(cur)) blocks.set(cur, ''); }
-      else if (cur) blocks.set(cur, blocks.get(cur) + '\n' + line);
+    const st = spawnSync('glab', ['auth', 'status'], { encoding: 'utf8', timeout: 20000,
+      env: { ...process.env, GLAB_CHECK_UPDATE: 'false', GLAB_SHOW_WHATS_NEW: 'false' } });
+    const blocks = []; let malformed = false, noInstances = false;
+    const unreadable = line => { malformed = true; audit('note', `glab discovery could not read line: ${line.trim()}`); };
+    // glab prints unindented host keys and indents their messages by two spaces.
+    // Keep the exact key for --hostname; glab rejects port keys before making a request.
+    for (const stream of [st.stdout || '', st.stderr || '']) {
+      let cur = null, footer = false;
+      for (const raw of stream.replace(/\x1b\[[0-9;]*m/g, '').split(/\r?\n/)) {
+        const line = raw.trimEnd();
+        if (!line || /^ +ERROR$/.test(line)) continue;
+        if (/^\s*[Xx✗×] could not authenticate to one or more of the configured GitLab instances\.?$/.test(line)) { cur = null; continue; }
+        if (/^\s*no GitLab instances have been authenticated with glab; run .+ to authenticate\.?$/i.test(line)) { noInstances = true; cur = null; continue; }
+        if (/^[!⚠] Token is from environment variable \w+\. This takes precedence over tokens stored in config or keyring\.$/.test(line)) { footer = true; cur = null; continue; }
+        if (footer && /^  (Run .+ to find the source:|A plain path means it is set in your environment)/.test(line)) continue;
+        if (/^\s/.test(line)) {
+          if (cur && /^  (?:[✓x!] |  )/.test(line)) cur.body += '\n' + line;
+          else unreadable(line);
+          continue;
+        }
+        cur = null; footer = false;
+        // Host keys are opaque glab configuration keys, not DNS names to normalize.
+        if (/\s/.test(line)) unreadable(line);
+        else { cur = { host: line, body: '' }; blocks.push(cur); }
+      }
     }
-    // glab can exit 1 because its default gitlab.com host has no token, while other hosts answer.
-    // Classify each host's actual auth result; the aggregate process exit cannot select sources.
-    let failed = !!st.error || st.signal != null || st.status == null ||
-      (!blocks.size && !/no GitLab instances have been authenticated with glab/i.test(txt));
-    for (const [host, block] of blocks) {
-      const loggedIn = /Logged in to\s+/i.test(block), noToken = /No token found/i.test(block);
-      const error = /API call failed:|could not read the token:|failed to initialize api client:/i.test(block);
+    // A token-less default host can make glab exit 1 while other hosts answer.
+    let failed = malformed || !!st.error || st.signal != null || st.status == null || (!blocks.length && !noInstances);
+    for (const { host, body } of blocks) {
+      const loggedIn = /Logged in to\s+/i.test(body), noToken = /No token found/i.test(body);
+      const error = /API call failed:|could not read the token:|failed to initialize api client:/i.test(body);
       if (noToken && !loggedIn) audit('note', `glab ${host} has no token: skipped as a source`);
-      else if (error || !loggedIn || noToken) failed = true;
-      else glHosts.push(host);
+      else if (error || !loggedIn || noToken) { failed = true; audit('note', `glab discovery could not read authenticated block for line: ${host}`); }
+      else if (!glHosts.includes(host)) glHosts.push(host);
     }
-    if (!blocks.size && !failed) audit('note', 'glab has no authenticated instance: skipped as a source');
+    if (!blocks.length && !failed) audit('note', 'glab has no authenticated instance: skipped as a source');
     if (failed) answer('glab discovery', false, ['prs']);
     audit('run', 'glab auth status' + `   (GitLab hosts you are logged in to: ${glHosts.join(', ') || 'none'}; discovery may contact gitlab.com even without a token)`);
   }
@@ -389,6 +405,19 @@ export function buildData(report, g, cfg, scanInfo) {
   const ledgerProofAt = end => retirementBlocks(retired, end).length ||
     retained.some(x => x.units.some(u => retainedUnitOverlapsWeek(u, end))) ? { proof: 'floor' } : {};
   let ledger = []; try { ledger = fs.readFileSync(path.join(HOME, 'weeks', 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch { /* first run */ }
+  // A daily observation certifies only its own stored value, never a ledger pool.
+  // Read before this run replaces today's row; do not substitute a nearby day.
+  const previousDay = new Date(now); previousDay.setDate(previousDay.getDate() - 7);
+  let previousValues = [];
+  if (fs.existsSync(path.join(HOME, 'worthit.db'))) {
+    let db;
+    try {
+      db = new DatabaseSync(path.join(HOME, 'worthit.db'), { readOnly: true });
+      if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'plan_value'").get())
+        previousValues = db.prepare('SELECT provider, plan, usd_per_full_week, proof FROM plan_value WHERE day = ?').all(dayKey(previousDay));
+    } catch (e) { audit('note', 'previous plan value unavailable: ' + e.message); }
+    finally { db?.close(); }
+  }
   const day0 = new Date(w1).toISOString().slice(0, 10), events = loadEvents().filter(e => e.date_utc >= day0).map(e => ({ date: e.date_utc, provider: e.provider, type: e.type, title: e.title, confidence: e.confidence, source: e.source_url }));
   const plans = [];
   for (const key of ['claude', 'google', 'codex']) {
@@ -401,12 +430,15 @@ export function buildData(report, g, cfg, scanInfo) {
     const byWeek = {}; for (const k in acc) if (+k >= 1) byWeek[String(99 - k).padStart(2, '0')] = acc[k].pts >= 15 ? Math.round(acc[k].usd / (acc[k].pts / 100)) : acc[k].max;
     const past = Object.keys(byWeek).sort().slice(-5).map(k => byWeek[k]), pl = (report.pooled || {})[key], v = pl ? pl.usd_per_full_week : w.usd_per_full_week, resets = events.filter(e => e.provider === key && e.type === 'reset' && e.confidence === 'high').length, from = Math.round(w.meter_start_pct), to = Math.round(w.meter_end_pct), per = report.prices.plan_usd_per_week[key];
     const proofAt = end => key === 'claude' && measuredAt(end) ? 'measured' : 'floor';
+    const previous = previousValues.find(p => p.provider === key && p.plan === PLAN[key].plan);
+    const change = proofAt(now) === 'measured' && previous?.proof === 'measured' && previous.usd_per_full_week > 0 && ledgerProofAt(w1).proof !== 'floor'
+      ? pctChange(v, previous.usd_per_full_week) : null;
     const retirementNote = allMachines && key === 'claude' ? retirementStatement(retired) : '';
     plans.push({ key, ...PLAN[key], usd_per_full_week: v, times_plan_price: Math.round(v / per), proof: proofAt(now), ...(retirementNote ? { retirement_note: retirementNote } : {}), plan_usd_per_week: Math.round(per), meter_from: from, meter_to: to,
       meter: pl ? `${pl.stretches} stretches · ${pl.meter_points} points` : key === 'google' ? `no meter · cap after ${w.hours} h` : `meter ${from}% → ${to}% in ${w.hours} h`, priced_usd: pl ? pl.api_usd : w.measured.api_usd, fraction_of_week: pl ? +(pl.meter_points / 100).toFixed(2) : +((to - from) / 100).toFixed(2),
       other_machines_usd: pl && pl.other_machines_usd >= 1 ? Math.round(pl.other_machines_usd) : 0, usd_per_full_week_all_machines: pl && pl.other_machines_usd >= 1 ? pl.usd_per_full_week_all_machines : null,
       stretches: pl ? pl.stretches : 1, range_usd: report.this_week[key + '_range'] || null, resets_this_week: resets,
-      tokens: pl ? `${ft(pl.output_tokens)} out ${ft(pl.cached_input_tokens)} cached` : `${ft(w.measured.output_tokens)} out ${ft(w.measured.cached_input_tokens)} cached`, models: models(w.measured.model_mix_by_usd), history: [...past, v], weeks: [...Object.keys(byWeek).sort().slice(-11).map(k => ({ weeks_ago: 99 - +k, to: new Date(now - (99 - +k) * 7 * DAY).toISOString().slice(0, 10), usd: byWeek[k], ...ledgerProofAt(now - (99 - +k) * 7 * DAY) })), { weeks_ago: 0, to: new Date(now).toISOString().slice(0, 10), usd: v, proof: proofAt(now) }], change_vs_last_week_pct: byWeek['98'] != null && proofAt(now) === 'measured' && proofAt(w1) === 'measured' ? pctChange(v, byWeek['98']) : null });
+      tokens: pl ? `${ft(pl.output_tokens)} out ${ft(pl.cached_input_tokens)} cached` : `${ft(w.measured.output_tokens)} out ${ft(w.measured.cached_input_tokens)} cached`, models: models(w.measured.model_mix_by_usd), history: [...past, v], weeks: [...Object.keys(byWeek).sort().slice(-11).map(k => ({ weeks_ago: 99 - +k, to: new Date(now - (99 - +k) * 7 * DAY).toISOString().slice(0, 10), usd: byWeek[k], ...ledgerProofAt(now - (99 - +k) * 7 * DAY) })), { weeks_ago: 0, to: new Date(now).toISOString().slice(0, 10), usd: v, proof: proofAt(now) }], change_vs_last_week_pct: change });
   }
 
   // waste: account-weeks that closed in the last 7 days (and ones still open, shown as at risk, never as waste)

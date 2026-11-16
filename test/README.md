@@ -90,7 +90,8 @@ Leaving box-b out yields a current $18 while the store preserves the earlier $54
 The left-out case also selects box-c while the previously saved box-b is left out: two
 machines answer, current usage is $36, box-b is named as left out, and the plan stays a
 floor with no allowance comparison. A fresh-store box-a + box-c control measures $6 per
-full Claude week with an eligible comparison. This distinguishes the left-out rule from
+full Claude week but has no measured observation saved seven days earlier, so its
+allowance change is null too. This distinguishes the left-out rule from
 the separate rule for a run with no remote answers. Both runs use their own literal expectations.
 Both stored weeks are checked through the real CLI's SQL command.
 
@@ -100,6 +101,21 @@ is three current PRs (two features, one fix) and two previous PRs. The case adds
 inactive second account after the first account is already cached, reruns for
 deduplication, selects the second account alone in a fresh store, and reverses the
 active account order in another fresh store.
+
+`ledger-week-proof` runs the actual CLI twice a week apart, withholding future source
+logs for the first run. A missing box-b records a $3 floor; a fresh complete $9 run
+must show no change in JSON, the TUI, allowance card HTML or actual `worthit share`
+text. Two complete $9 runs show 0%. A literal stored $6 observation produces 50%
+while the independent ledger pool stays $9, proving the denominator is the stored
+value. Exact-day controls reject measured rows six or eight days back, the wrong
+provider/plan, zero USD, absent/null proof and a same-day overwritten floor. A local
+New York date crossing UTC midnight pins the run-day key; spring-forward and fall-back
+controls require seven local calendar days rather than 168 elapsed hours. A first git
+run creating its tables without `plan_value` must not log a missing-baseline error. Retained prior-week units
+still override stored measured proof. Historical ledger rows remain unmeasured.
+The common source cases and saved-days fixture expect null for ledger-only history:
+today's complete machine answers cannot prove an earlier observation. Saved-days then
+seeds a measured $10 baseline and checks a 100% change, including its intact seven-day window.
 
 Each case keeps literal expectations in its own `expected-data.json`. Every root key must
 be exercised, including the adopted saved-days expectations; unused or misspelled keys fail.
@@ -155,6 +171,34 @@ and still counts another readable checkout. Literal glab 1.123.0 output shapes
 cover token-less gitlab.com alone, a self-hosted login beside it, token-bearing
 host errors, and the no-authenticated-instances message. Only synthetic identities
 are used; source references are recorded with the PR.
+
+Issue #54 adds literal merged-request rows for `10.0.0.5`, `gitlab.k8s`, bare
+`gitlab` and the unindented `ERROR` host key. Each contributes one MR and its exact
+persisted identity, replaces seeded daily counts in both stores, and passes its
+unchanged config key plus a relative REST path to the synthetic subprocess. The
+valid digit-TLD key advertises a distinct HTTPS `api_host` with a port, while bare
+`gitlab` advertises an HTTP API host with a port; these config keys pass glab's
+validator, and glab owns their API host/protocol configuration. The fake API mirrors glab 1.123.0's hostname
+validator before reading any MR rows: keys containing `:` or `/` exit 1 with
+`Error parsing --hostname: invalid hostname.`. Accordingly, `gitlab:3000` and
+`localhost:3000` retain PR MAX in both stores, count no GitLab MR, report false PR
+coverage and name the unusable answer. Port-key support is tracked separately in
+#91. Every attempted API argv still needs its own `net` audit entry.
+
+All auth error frames, including token-less self-hosted/logged-out and no-instance
+cases, use the badge, margins and trailing padding from an authorized offline
+`glab 1.123.0 (5686d7484)` capture of mutually exclusive `auth status --all
+--hostname x` flags. That validation exits before auth/host contact. Fixed error
+messages from the checked source replace only the frame's message; no real auth
+output or credentials are used. Malformed blocks before and after token-less
+gitlab.com keep coverage false, name their line and retain the readable IP host's
+MR. Orphan/unreadable/empty blocks and token-read/client-init errors also preserve
+PR MAX independently of commits. Both streams and the environment-token footer
+are covered. The auth stub records and requires `GLAB_CHECK_UPDATE=false` and
+`GLAB_SHOW_WHATS_NEW=false`, even with both inherited as true, proving discovery
+suppresses update requests and notices. Case-prefixed assertions identify malformed
+coverage failures. Counts and MR identities are literal; the old-regex negative
+control belongs only in a private copy. Existing fixture registrations stay intact.
 
 `retire-machine` primes a real scan with fourteen literal daily Claude source rows
 (Oct 25–Nov 7, 200,000 output tokens and $2 per day), retires box-b, and verifies
