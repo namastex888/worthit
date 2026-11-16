@@ -1,4 +1,4 @@
-// worthit query commands: instant answers from what earlier runs stored (no scan, no model, no network).
+// worthit query commands: instant answers from earlier runs or the bundled --demo sample (no scan, no model, no network).
 //   worthit get [section[.field…]]      a part of the last run's data (plans, months, model_mix, tools, waste, git, events, game, totals…)
 //   worthit days [--since D] [--until D] [--group day|week|month] [--by total|tool|model] [--tool X] [--model X]
 //   worthit sql "SELECT …"              read-only SQL over the local store
@@ -8,6 +8,8 @@ import './quiet.mjs';
 import fs from 'node:fs'; import path from 'node:path';
 import { createRequire } from 'node:module';
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');   // loaded here, after quiet.mjs, so its 'experimental' warning stays silent
+import { demoData } from './demo.mjs';
+import { dataForAgent, redactProjectValues } from './project-privacy.mjs';
 import { HOME, ROOT } from './collect.mjs';
 
 const DB = path.join(HOME, 'worthit.db'), LAST = path.join(HOME, 'last.json');
@@ -16,6 +18,18 @@ const fail = msg => { throw new Error(msg); };
 const open = () => { if (!fs.existsSync(DB)) fail('no local store yet. Run `worthit --json` once to scan and fill it.'); return new DatabaseSync(DB, { readOnly: true }); };
 
 export const SCHEMA = {
+  projects: { about: 'RFC 0004 delivery 1. Last-run JSON block; worthit get projects. worthit projects reads last.json without scanning or network: terminal table, piped JSON adds week, generated_at, machines_missing, machines_left_out, machines_retained and machines_retired. --demo is synthetic and never reads a store. No dashboard, Markdown, share card, project history, week-over-week or model PR credit. Project identities are excluded from summary prompts, question-bar lookups and custom share topics.', fields: {
+    floor: 'boolean: false only when coverage.machines and unresolved_rows === 0. Usage is log-derived, never called measured. Every value/token/request is at least when true.',
+    coverage: '{machines: boolean, unresolved_rows: integer, unresolved_usd: whole dollars, attributed_pct: whole percent | null, prs_sources: boolean | null, prs_attributed: boolean | null}. machines uses RFC 0002: every active machine answered, none left out, no retained unit overlaps rolling week, week starts on/after all retirements. Unresolved rows include $0 rows. attributed_pct is rounded 100 * project USD / total USD, null at zero. prs_sources is git.coverage.prs; prs_attributed requires zero unattributed PRs; both null with git off.',
+    rows: 'array of {project, name, api_value_usd, output_tokens, requests, merged_prs, usd_per_merged_pr, models}. project=canonical origin host[:nondefaultport]/path, lowercase, no scheme/user/credentials/trailing .git or slash. name=last path part, with owner when names collide. Includes PR-only projects. Same rolling seven-day usage window as totals; project_prs merge times use git rolling week. Dollars whole; tokens/requests exact; rows plus no_repository reconcile with totals (USD within rounding). merged_prs integer | null; usd_per_merged_pr=rounded project USD / PRs, unrounded ratio, null with zero PRs or git off.',
+    models: 'rows[].models: [{model, tool, api_value_usd, output_tokens, requests, share_pct}]. Model id as logged, tool provider. share_pct=rounded 100 * model raw USD / project raw USD, null when project USD=0; no PR credit per model.',
+    no_repository: '{api_value_usd, output_tokens, requests, why_usd: {outside_a_repository, no_origin, origin_not_supported, folder_gone, no_folder_read, saved_before_projects}}. Last four reasons are unresolved, even at zero USD.',
+    prs_without_project: 'null with git off, else {merged_prs, why: {no_host_in_key}}. Hostless keys never matched by repository name. Project PRs plus this count equal git.merged_prs. When prs_sources or prs_attributed is false, PRs say at least and cost says partial PR count, NEVER lower bound. With complete PR proof and floor=true, cost says at least. Git-off rows have null merged_prs/usd_per_merged_pr; run worthit --json to fill them.' } },
+  'scan.buckets.project': { about: 'RFC 0004 machine scan bucket key parts, per request for Claude Code and per session for Codex.', fields: {
+    project: 'canonical origin id | null; walk cwd upward to .git, resolve gitfile -> gitdir -> commondir -> shared config origin. File reads only, no git subprocess/includes/insteadOf. Supported http/https/ssh/git URLs and user@host:path; default ports omitted; nondefault ports kept. Alias hosts without a dot/local paths/multiple origin URLs/unreadable config/non-origin remotes are unsupported. Credentials removed on originating machine before any cache or SSH transport.',
+    project_why: 'null with project; otherwise outside_a_repository (live folder, no .git), no_origin (no remotes), origin_not_supported, folder_gone, no_folder_read (Antigravity/omp/dsh/missing cwd), saved_before_projects (old bucket lacks project key). Deleted folder: sanitized Codex URL first, then current-version live-resolution map, else folder_gone. No hostless cwd_repo guess.' } },
+  project_activity: { about: 'Core report array of {hour, provider, model, project, project_why, output, requests, usd}; same selected, deduplicated, priced scan and meter rows as activity, including omp/dsh no_folder_read rows; buildData filters with totals rolling window. USD retains pricing precision until project display rounds. Not a worthit.db table.' },
+  folder_project: { about: 'Only in each machine scan-cache.db, never worthit.db or transported. Optional; disabled with WORTHIT_NO_CACHE or unwritable cache. Only live resolutions insert/replace; mismatched ver is ignored; path reuse remembers latest live origin.', columns: { path: 'TEXT PRIMARY KEY: folder as logged', project: 'TEXT: sanitized canonical id', resolved_at: 'TEXT: ISO live-resolution time', ver: 'INTEGER: identity-rule version (1)' } },
   'scan.result': { about: 'worthit --json: fresh headless scan, git on by default, no AI, Markdown, PNG or Chrome. The usual last-run data plus output metadata; saved last.json and get/days/sql query results are unchanged.', fields: {
     audit_log: 'root field: absolute <date>-worthit-audit.log path in the current working directory, using the shared scan audit format; null with --no-files or --demo. --no-files still updates the store; demo reads and writes no store or output files. Exit 1 after activity attempts to retain the audit and names its path on stderr, with no success JSON.' } },
   'days.result': { about: 'worthit days returns a bare JSON row array on stdout. A one-line stderr note names the selected day basis, in terminals and pipes: "worthit days: local days (day_provider)" for total/tool without --model, or "worthit days: UTC days (day_model)" for --by model OR a --model filter (including --by total/tool). --since/--until and day/week/month grouping use that stored basis. Never compare UTC and local views per day; grouped boundaries can differ too. No dates, values or stored columns are converted.' },
@@ -58,22 +72,36 @@ export const SCHEMA = {
 };
 
 export const QUERY_COMMANDS = ['get', 'days', 'sql', 'schema'];
+// Match standalone CLI flags only; SQL text containing "--demo" remains one statement.
+const withoutDemo = argv => argv.filter(arg => arg !== '--demo' && !arg.startsWith('--demo='));
+export function normalizeDemoArgs(argv) {
+  if (argv.some(arg => arg.startsWith('--demo='))) fail('--demo takes no value: use `--demo`.');
+  return { demo: argv.includes('--demo'), args: withoutDemo(argv) };
+}
 // CLI entry: prints the answer as JSON; false when argv is not a query command
 export async function query(argv) {
   if (argv.includes('--skill')) { console.log(fs.readFileSync(path.join(ROOT, 'skills', 'worthit', 'SKILL.md'), 'utf8')); return true; }
-  if (!QUERY_COMMANDS.includes(argv[0])) return false;
+  if (!QUERY_COMMANDS.includes(withoutDemo(argv)[0])) return false;
   try { out(run(argv, note => console.error(note))); } catch (e) { console.error('worthit: ' + e.message); process.exit(2); }
   return true;
 }
 // The same commands as a function: returns the value, with an optional day-basis note for the caller.
 export function run(argv, note = () => {}) {
+  const { demo, args } = normalizeDemoArgs(argv);
+  argv = args;
   const cmd = argv[0], arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
+  if (demo && ['days', 'sql'].includes(cmd)) fail(`--demo is not supported for ${cmd}: the bundled sample has no query tables. Use \`worthit get <section> --demo\`.`);
   if (cmd === 'schema') return SCHEMA;
   if (cmd === 'get') {
-    if (!fs.existsSync(LAST)) fail('no saved run yet. Run `worthit --json` once.');
-    const data = JSON.parse(fs.readFileSync(LAST, 'utf8')), p = argv[1] && !argv[1].startsWith('--') ? argv[1] : '';
+    let data;
+    if (demo) data = demoData();
+    else {
+      if (!fs.existsSync(LAST)) fail('no saved run yet. Run `worthit --json` once.');
+      data = JSON.parse(fs.readFileSync(LAST, 'utf8'));
+    }
+    const p = argv[1] && !argv[1].startsWith('--') ? argv[1] : '';
     if (!p) return { generated_at: data.generated_at, sections: Object.keys(data), hint: 'worthit get <section>, e.g. worthit get plans, worthit get model_mix.series, worthit get plans.0.usd_per_full_week' };
-    let v = data; for (const k of p.split('.')) { if (v == null || !(k in Object(v))) fail(`no "${p}" in the last run. Sections: ${Object.keys(data).join(', ')}`); v = v[k]; }
+    let v = data; for (const k of p.split('.')) { if (v == null || !(k in Object(v))) fail(`no "${p}" in the ${demo ? 'sample' : 'last'} run. Sections: ${Object.keys(data).join(', ')}`); v = v[k]; }
     return p.includes('.') ? v : { generated_at: data.generated_at, [p]: v };
   }
   if (cmd === 'days') {
@@ -94,4 +122,45 @@ export function run(argv, note = () => {}) {
     db.close(); return rows.length > 500 ? { rows: rows.slice(0, 500), truncated: true, total_rows: rows.length } : rows;
   }
   throw new Error('unknown command: ' + cmd);
+}
+
+// AI lookups use only usage tables in an in-memory database. They cannot query
+// pr_kind, meta, weekly JSON, attached files or another saved identity surface.
+const AGENT_TABLES = ['day_provider', 'day_model', 'day', 'plan_value', 'month'];
+export function runForAgent(argv, data, note = () => {}) {
+  const { demo, args } = normalizeDemoArgs(argv);
+  argv = args;
+  const cmd = argv[0];
+  if (demo && ['days', 'sql'].includes(cmd)) return run([...argv, '--demo'], note);
+  if (demo) data = demoData();
+  if (cmd === 'get') {
+    const section = (argv[1] || '').split('.')[0];
+    if (section === 'projects' || section === 'project_activity') throw new Error('repository details are local only');
+    const safe = JSON.parse(dataForAgent(data));
+    if (!section) return { generated_at: safe.generated_at, sections: Object.keys(safe) };
+    let v = safe;
+    for (const key of argv[1].split('.')) {
+      if (v == null || !Object.hasOwn(Object(v), key)) throw new Error('section unavailable to the agent');
+      v = v[key];
+    }
+    return v;
+  }
+  if (cmd === 'schema') return Object.fromEntries(AGENT_TABLES.map(k => [k, SCHEMA[k]]));
+  if (cmd === 'days') return run(argv, note);
+  if (cmd !== 'sql') throw new Error('only get, days, sql and schema can be looked up');
+  const q = (argv[1] || '').trim();
+  if (!/^(select|with)\b/i.test(q) || /;\s*\S/.test(q)) throw new Error('only one usage SELECT is accepted');
+  const source = open(), db = new DatabaseSync(':memory:');
+  try {
+    for (const table of AGENT_TABLES) {
+      const cols = Object.keys(SCHEMA[table].columns);
+      db.exec(`CREATE TABLE "${table}" (${cols.map(c => `"${c}"`).join(',')})`);
+      if (!source.prepare("SELECT 1 FROM sqlite_master WHERE name = ?").get(table)) continue;
+      const insert = db.prepare(`INSERT INTO "${table}" VALUES (${cols.map(() => '?').join(',')})`);
+      for (const row of source.prepare(`SELECT ${cols.map(c => `"${c}"`).join(',')} FROM "${table}"`).all()) insert.run(...cols.map(c => row[c]));
+    }
+    const rows = db.prepare(q).all();
+    return redactProjectValues(rows.slice(0, 500), data);
+  } catch { throw new Error('AI SQL is limited to usage tables; use days or get for usage'); }
+  finally { source.close(); db.close(); }
 }
