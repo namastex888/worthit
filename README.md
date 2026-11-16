@@ -62,7 +62,20 @@ Install the skill (the full guide) into whatever agent you use. `npx worthit` al
 npx skills add namastex888/worthit
 ```
 
-Every command prints JSON when piped and reads only local files:
+`get`, `days` and `sql` query the local store and print JSON; `schema` prints static metadata as JSON.
+These commands do not scan or use the network. `--json` and `weekly` scan fresh and print JSON.
+Plain runs and `--json` can read remembered selected SSH machines by default. `--json` enables git
+data by default and may contact code hosts or download the meter if missing. `weekly` defaults to
+every eligible SSH alias in `~/.ssh/config`, excluding code hosts and retired machines, with git
+and AI off. `--hosts none` stops SSH for ordinary and weekly scans. `--git no --ai no` disables
+ordinary git/code-host/meter collection and agent use.
+`share` and `hosts` print JSON when piped; `share` may render a card or use AI for custom topics
+(`share --ai no` disables that AI), while `hosts` manages saved machine state. `--no-files` skips
+presentation artifacts for plain runs, `weekly` and `share`; network requests and store writes
+can still occur. A bare `worthit` or `worthit --demo` draws a dashboard even when piped;
+`--demo --json` and `weekly --demo` print sample JSON. `--skill` prints Markdown; `install-skill`
+runs `npx skills add` to download the skill (npx may also fetch the installer) and inherits its
+output. See the scan flags and “What leaves your machine” below.
 
 ```sh
 worthit --json                   # scan now, print the week's data (no UI, no model)
