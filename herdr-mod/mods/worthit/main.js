@@ -74,7 +74,7 @@ export default class Worthit extends View {
         .child(div().h(6).rounded(3).bg(p.color).w(Math.max(2, Math.round((p.usd_per_full_week / max) * 100)) + "%")))
       .child(h_flex().justify_between()
         .child(div().text_size(11).text_color(t.dim).child(note))
-        .when(measured && ch != null, (el) => el.child(div().text_size(11).text_color(ch >= 0 ? t.done : t.blocked).child((ch >= 0 ? "▲ " : "▼ ") + Math.abs(ch) + "% vs last week"))));
+        .when(measured && ch != null, (el) => el.child(div().text_size(11).text_color(ch === 0 ? t.dim : ch > 0 ? t.done : t.blocked).child((ch === 0 ? "" : ch > 0 ? "▲ " : "▼ ") + Math.abs(ch) + "% vs last week"))));
   }
 
   tile(label, value, t) {
