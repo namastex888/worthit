@@ -103,10 +103,13 @@ values still increase them. Git PR and commit counts keep their independent
 stay left out after their SSH alias is removed, until retired or covered by a fresh
 answer from the same machine.
 
-`day_provider` uses local days. `day_model` uses UTC days for `--by model` or any
-`--model` filter, including `--by total` and `--by tool`. Never compare UTC and
-local views per day; date filters and week/month groups use the selected stored
-basis too, so their boundaries can differ. No stored dates or values are converted.
+`worthit days` keeps its bare JSON row array on stdout and prints the day basis
+on stderr, in terminals and pipes. Total/tool views use **local days** from
+`day_provider`, except that **any `--model` filter uses UTC days** from `day_model`,
+even with `--by total` or `--by tool`. `--by model` always uses UTC days.
+Never compare these UTC and local views per day. Date filters and week/month
+groups use the selected stored basis too, so their boundaries can differ.
+This label does not convert stored dates or values.
 
 `worthit weekly [--hosts all|none|a,b] [--allow-partial] [--no-files]` runs a fresh
 headless scan with all SSH hosts by default, git and AI off. It prints the fixed allowance

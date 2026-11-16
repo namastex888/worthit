@@ -374,7 +374,7 @@ function Main({ cfg }) {
       const cmds = !done.n && !done.err && lookups < 2 ? [...String(done.raw || '').matchAll(/^\s*`?QUERY:\s*worthit\s+(.+?)`?\s*$/gm)].map(x => x[1].trim()).slice(0, 3) : [];
       if (!cmds.length) return closeAsk(done);
       const res = cmds.map(c => { const av = [...c.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)].map(x => x[1] ?? x[2] ?? x[3]); st(setCur)('looking up', 'worthit ' + c); audit('run', `worthit ${c}   (lookup in the local store, asked for by ${agent.cli})`);
-        let v; try { if (!QUERY_COMMANDS.includes(av[0])) throw new Error('only get, days, sql and schema can be looked up'); v = JSON.stringify(runQuery(av)); } catch (e) { v = 'error: ' + e.message; }
+        let v; try { if (!QUERY_COMMANDS.includes(av[0])) throw new Error('only get, days, sql and schema can be looked up'); let note = ''; v = JSON.stringify(runQuery(av, label => { note = label + '\n'; })); v = note + v; } catch (e) { v = 'error: ' + e.message; }
         return `$ worthit ${c}\n${v.length > 6000 ? v.slice(0, 6000) + ' … (truncated)' : v}`; });
       round(base + '\n\nLookup results from the local store:\n' + res.join('\n\n') + '\n\nNow answer by placing blocks. Do not ask for more lookups.', lookups + 1); });
     round(base, 0); };

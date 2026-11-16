@@ -16,6 +16,7 @@ const fail = msg => { throw new Error(msg); };
 const open = () => { if (!fs.existsSync(DB)) fail('no local store yet. Run `worthit --json` once to scan and fill it.'); return new DatabaseSync(DB, { readOnly: true }); };
 
 export const SCHEMA = {
+  'days.result': { about: 'worthit days returns a bare JSON row array on stdout. A one-line stderr note names the selected day basis, in terminals and pipes: "worthit days: local days (day_provider)" for total/tool without --model, or "worthit days: UTC days (day_model)" for --by model OR a --model filter (including --by total/tool). --since/--until and day/week/month grouping use that stored basis. Never compare UTC and local views per day; grouped boundaries can differ too. No dates, values or stored columns are converted.' },
   'weekly.result': { about: 'worthit weekly [--hosts all|none|a,b] [--allow-partial] [--no-files]: fresh headless allowance scan; hosts default all, git/AI off. Fixed allowance template, no questions, browser UI, clipboard or posting. Exit 0 safe or explicitly allowed partial, 1 scan/no-data/render/audit/store failure, 3 unsafe with JSON still printed. Chrome/Chromium renders the PNG unless --no-files.', fields: {
     week: '{from, to}: YYYY-MM-DD rolling seven-day window', generated_at: 'ISO checkpoint time', text: 'fixed SHARE_TOPICS.allowance post', image: 'absolute <date>-worthit-share-allowance.png path, or null with --no-files; --demo uses synthetic data with null baseline/image and never reads or writes a store or files',
     audit_log: 'absolute <date>-worthit-audit.log path beside the PNG, same audit format as a plain scan; null with --no-files or --demo; checkpoint store still updated with --no-files',
@@ -59,11 +60,11 @@ export const QUERY_COMMANDS = ['get', 'days', 'sql', 'schema'];
 export async function query(argv) {
   if (argv.includes('--skill')) { console.log(fs.readFileSync(path.join(ROOT, 'skills', 'worthit', 'SKILL.md'), 'utf8')); return true; }
   if (!QUERY_COMMANDS.includes(argv[0])) return false;
-  try { out(run(argv)); } catch (e) { console.error('worthit: ' + e.message); process.exit(2); }
+  try { out(run(argv, note => console.error(note))); } catch (e) { console.error('worthit: ' + e.message); process.exit(2); }
   return true;
 }
-// The same commands as a function: returns the value, throws an Error with a plain message
-export function run(argv) {
+// The same commands as a function: returns the value, with an optional day-basis note for the caller.
+export function run(argv, note = () => {}) {
   const cmd = argv[0], arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
   if (cmd === 'schema') return SCHEMA;
   if (cmd === 'get') {
@@ -83,7 +84,7 @@ export function run(argv) {
       FROM ${table} WHERE ${where.join(' AND ')} GROUP BY 1${keyCol ? ', 2' : ''} ORDER BY 1, api_usd DESC`).all(...args);
     if (by === 'total' && !tool && !model) { const gd = {}; for (const r of db.prepare(`SELECT ${g} AS period, SUM(prs) AS prs, SUM(commits) AS commits FROM day WHERE day >= ? AND day <= ? GROUP BY 1`).all(since, until)) gd[r.period] = r;
       for (const r of rows) { r.merged_prs = (gd[r.period] || {}).prs ?? null; r.commits = (gd[r.period] || {}).commits ?? null; } }
-    db.close(); return rows;
+    db.close(); note(`worthit days: ${table === 'day_model' ? 'UTC' : 'local'} days (${table})`); return rows;
   }
   if (cmd === 'sql') {
     const q = (argv[1] || '').trim(); if (!/^(select|with)\b/i.test(q) || /;\s*\S/.test(q)) fail('only one read-only SELECT (or WITH … SELECT) statement is accepted. See `worthit schema`.');
