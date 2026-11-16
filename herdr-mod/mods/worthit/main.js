@@ -108,7 +108,7 @@ export default class Worthit extends View {
     const g = d.git, tot = d.totals || {}, pc = !!(g && g.coverage && g.coverage.prs);
     root.child(v_flex().gap(6)
       .child(h_flex().gap(6).child(this.tile("TOKENS OUT", short(tot.output_tokens || 0), t)).child(this.tile("API VALUE USED", usd(tot.api_value_usd || 0), t)))
-      .when(!!g && g.merged_prs != null, (el) => el.child(h_flex().gap(6).child(this.tile("MERGED PRS", (pc ? "" : "at least ") + g.merged_prs, t)).child(this.tile("COST PER PR" + (pc ? "" : " · PARTIAL"), "$" + Number(g.usd_per_merged_pr || 0).toFixed(2), t)))));
+      .when(!!g && g.merged_prs != null, (el) => el.child(h_flex().gap(6).child(this.tile("MERGED PRS", (pc ? "" : "at least ") + g.merged_prs, t)).child(this.tile("COST PER PR" + (pc ? "" : " · PARTIAL"), g.usd_per_merged_pr == null ? "n/a" : "$" + Number(g.usd_per_merged_pr).toFixed(2), t)))));
 
     const un = (d.waste || []).reduce((a, x) => a + (x.unused_usd || 0), 0), open = (d.waste || []).reduce((a, x) => a + (x.at_risk_usd || 0), 0);
     const om = d.model_mix && d.model_mix.open, share = om ? Math.round(om.share_pct[om.share_pct.length - 1]) : null;

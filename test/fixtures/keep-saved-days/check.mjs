@@ -161,7 +161,8 @@ else {const r=spawnSync(${JSON.stringify(python)},args,{stdio:'inherit'});proces
   const cli = (dir, hosts = 'box-a,box-b') => JSON.parse(run(process.execPath, ['bin/worthit.mjs', '--json', '--git', 'no', '--hosts', hosts], { env: { ...env, FIXTURE_SCAN_DIR: dir } }));
   const before = cli(baselineDir), oldHistory = read(path.join(env.WORTHIT_HOME, 'history.json'));
   const after = cli(nextDir), newHistory = read(path.join(env.WORTHIT_HOME, 'history.json'));
-  assert.deepEqual(after.totals, before.totals, 'weekly USD and output stay stable');
+  // #102: retained usage preserves amounts, but its week-to-week changes are null.
+  assert.deepEqual(after.totals, { ...before.totals, output_tokens_change_pct: null, api_value_change_pct: null }, 'weekly USD and output stay stable');
   assert.deepEqual(newHistory, oldHistory, 'every history row stays stable');
   assert.equal(after.machines, 2, 'duplicate SSH alias of local machine is counted once');
   assert.equal(after.machines_retained[0].machine, 'box-a');
@@ -177,7 +178,7 @@ else {const r=spawnSync(${JSON.stringify(python)},args,{stdio:'inherit'});proces
   for (const name of ['local.json', 'box-b.json']) write(path.join(emptyDir, name), read(path.join(nextDir, name)));
   const emptyAnswer = cli(emptyDir);
   assert.deepEqual(emptyAnswer.machines_missing, [], 'empty successful response is not a missing machine');
-  assert.deepEqual(emptyAnswer.totals, before.totals, 'empty successful response preserves the week');
+  assert.deepEqual(emptyAnswer.totals, { ...before.totals, output_tokens_change_pct: null, api_value_change_pct: null }, 'empty successful response preserves the week');
   assert.deepEqual({ output_tokens: emptyAnswer.totals.output_tokens, api_value_usd: emptyAnswer.totals.api_value_usd }, expected.get('week'), 'empty answer matches literal expected week');
   assert.deepEqual(read(path.join(env.WORTHIT_HOME, 'history.json')), oldHistory, 'empty successful response preserves every history row');
   assert.equal(read(path.join(env.WORTHIT_HOME, 'run-keep/box-a.json')).buckets.length, expected.get('saved_days'), 'empty answer persists all saved days');

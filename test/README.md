@@ -7,6 +7,17 @@ in `test/run-fixtures.mjs` are required, so deleting a folder or its check fails
 whitespace-only scripts fail with the folder's name while other checks still run. Add another
 folder with a `check.mjs` to add a case; no registration or framework is needed.
 
+`usage-floor-comparisons` calls real `buildData` with synthetic activity and Git
+inputs. Missing, saved-fallback, left-out and retained machines suppress usage
+changes and costs even with complete PR coverage. Complete-source, retained-outside,
+prior-only retained, empty-plan and partial-PR controls preserve independent counts
+and partial-denominator semantics. The actual saved JSON, dashboard, delivery card
+and share command are checked; no output JSON is patched. Real shaping controls
+also distinguish absent delivery, insufficient features, zero PRs and numeric zero
+cost from usage withholding. `render.mjs` is a separate explicit step that reads
+the fixture's optional artifacts and renders complete/retained dashboard blocks
+and delivery cards for inspection; it is not part of the fixture gate.
+
 `share-delivery-fallback` invokes the actual `share delivery --ai no --no-files` CLI
 against a literal synthetic saved run. Missing delivery or an unavailable cost must
 name the weekly allowance fallback in `warnings`, report `topic: allowance`, and
