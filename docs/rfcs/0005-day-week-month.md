@@ -3,18 +3,18 @@
 ## Proposal in short
 
 1. **Views.** The plain run leads with today against yesterday by the same hour. `--weekly` and `--monthly` are new views beside the `worthit weekly` command. Once all three exist, the plain run drops its week and month blocks.
-2. **Proof.** A day is recorded only when it was read whole. A change is shown only when both ends match in machines, PR sources, prices and counting rules, and for dollars have no omp or dsh usage. Otherwise it is blank, the allowance change included.
-3. **Game.** Delivery 1 takes token XP, the usage streak and the unproven bests off the screen; the level stays as a count of merged PRs and commits, labelled activity, and can drop once. No win, streak or best is scored until a merged PR can be validated by an approving review from another account on the forge. Until then the views show comparisons and activity.
-4. **KR1.** Per project and per model, daily: merged PRs, value per merged PR, and a first-pass proxy (no commit after the PR was opened), always labelled a proxy. The model and proxy fields need RFC 0004 delivery 2.
-5. **Privacy.** Project rows appear only in `worthit projects`: not in the dashboard, the PNG, the `.md` or the AI agent's data.
-6. **Order.** Proof base, day view, KR1 cut, week view, month view: one PR each. Month comparisons start in January 2027. **`yes` accepts every recommended answer below.**
+2. **Proof.** A day is recorded only when it was read whole. A change is shown only when both ends match in machines, PR sources, prices and counting rules; otherwise it reads "not compared", the allowance change included. A dollar change compares priced usage only, labelled "priced usage only; omp/dsh not compared".
+3. **Game.** A day wins with a qualifying merged PR (title kind feat, fix, perf or refactor, counted once) on a complete day. A week or a month wins when qualifying PRs or their priced cost got better by more than 5% and neither got worse. Streaks and bests read judged periods only. A trivial PR titled `feat:` still wins, so a win is labelled the game and never feeds KR1, a comparison or a productivity claim.
+4. **On screen.** Nothing changes until the day view ships. Then, in one delivery: the Today block; the win streak and judged bests replace the usage streak and the old bests; XP stops paying for tokens and commits, with no level lost; a change with no proof reads "not compared".
+5. **KR1 and privacy.** Per project and per model, daily: merged PRs, value per merged PR, and a first-pass proxy (no commit after the PR was opened), always labelled a proxy, in `worthit projects --daily`. Project rows never reach the dashboard, the PNG, the `.md` or the AI agent's data. The model and proxy fields need RFC 0004 delivery 2.
+6. **Order.** Record (nothing on screen), the KR1 cut, the day view with the game, the week, the month. The day view is the largest PR and is not promised in days; the first two are. Month comparisons start in January 2027. **`yes` accepts every recommended answer below.**
 
 | Field | Value |
 |---|---|
 | Status | Queued |
 | Created | 2026-11-16 |
 | Issue | none yet (the owner's ask, relayed 2026-11-16; KR1 of the OKR accepted 2026-11-16) |
-| Depends on | Deliveries 1 and 2 need no data from another RFC; they land after RFC 0004 delivery 1 (same files). Delivery 3 needs RFC 0004 delivery 1, and its model and proxy fields RFC 0004 delivery 2. Scoring needs RFC 0004 question 6 |
+| Depends on | Delivery 1 needs no data from another RFC; it lands after RFC 0004 delivery 1 (same files). Delivery 2 needs RFC 0004 delivery 1, and its model and proxy fields RFC 0004 delivery 2 |
 
 ## Summary
 
@@ -23,7 +23,8 @@ plain run shows the day, `--weekly` the week, `--monthly` the month. Each view c
 the one before, like with like. A new table, `period_result`, keeps one row for every period that was
 read whole, with the basis it was counted on, and a comparison is shown only when the two bases match.
 RFC 0004's per-project and per-model fields get a daily cut, kept in a second table so weeks and months
-can add it up. The game's rules are fixed here, but nothing is scored until a delivery can be validated.
+can add it up. The game is judged per period on qualifying merged PRs. It is labelled a game and kept
+apart from every comparison and from KR1.
 
 ## Motivation
 
@@ -62,9 +63,9 @@ answer everything else from the store. The code confirms the reading and correct
 4. **The store cannot say whether a past day was complete.** `history.json`, `day_provider` and `day`
    keep the highest value seen (`src/collect.mjs:487`, `:518`) with no machine check. RFC 0003 refused
    the meter ledger as a baseline for the same reason. A comparison therefore needs a new stored record.
-5. **A daily win cannot be scored honestly yet.** The collector knows who authored a merged PR, when it
-   merged and its title prefix (`src/collect.mjs:265-270`): no review and no size. Any count of merged
-   PRs can be raised by trivial ones, so scoring waits for a validated delivery (section 3).
+5. **Any merged PR is too easy a win.** The collector knows who authored a merged PR, when it merged
+   and its title prefix (`src/collect.mjs:265-270`): no review and no size. So the game counts
+   qualifying PRs only, says what still games it, and is kept apart from every comparison (section 3).
 
 ## Design
 
@@ -104,8 +105,8 @@ judged complete. This is what lets a month be trusted although git's coverage re
 
 - `kind` is `day`, `week` or `month`; `period` is the id; `judged_at` is an ISO time; `json` holds the
   numbers the period was judged on and their `basis` (section 5).
-- `result` is the day's activity (`delivered`, `active`, `off`: section 3). For a week or a month it is
-  `null` until scoring starts, then `win`, `held` or `miss`.
+- `result` is the game's result (section 3): `win`, `rest` or `miss` for a day, `win`, `held` or `miss`
+  for a week or a month. It is `null` when the period is complete and has no result.
 - A row proves the period was complete **for the machines and the PR sources its `basis` names**. It
   says nothing about a machine or a source added later. No row means **not judged**.
 
@@ -165,7 +166,7 @@ One run draws one view. The flags choose what is drawn, never what is scanned or
 | `worthit --weekly` | week | `Week` | week 47 so far against the same weekdays of week 46 |
 | `worthit --monthly` | month | `Month` | November so far against the same days of October |
 
-**The Today block** (synthetic numbers; the model lines arrive with delivery 3):
+**The Today block** (synthetic numbers):
 
 ```
  TODAY  Thu 19 Nov · through 14:00                             yesterday by 14:00
@@ -174,7 +175,7 @@ One run draws one view. The flags choose what is drawn, never what is scanned or
  value used     $270 · 2.8M tokens out                         $255   context
  opus-5-5       led 4 PRs · first-pass proxy 3 of 4
  gpt-6.1-sol    led 2 PRs · first-pass proxy 1 of 2
- ◆ merged a PR today · 2 of 3 judged days this week had one · yesterday: 8 merged PRs
+ game ◆ 5-day win streak since 12 Nov · 1 day off · 1 not judged · 5 qualifying PRs so far today
 ```
 
 When the day is a floor, the same block says so and compares nothing:
@@ -190,8 +191,9 @@ When the day is a floor, the same block says so and compares nothing:
 PlanRanking), Receipts, Delivery, Row(Heatmap, LimitTrend), WasteTable, Months, ModelMix, Events, Summary
 (`bin/worthit.mjs:146`).
 
-- **Delivery 1** adds no block. It changes what the existing blocks may claim (sections 3 and 5).
-- **Delivery 2** puts `Today` after the Verdict. No other block moves.
+- **Deliveries 1 and 2** change nothing on screen.
+- **Delivery 3** puts `Today` after the Verdict and changes what the existing blocks may claim
+  (section 3). No other block moves.
 - **Every view keeps** Row(LevelCard, PlanRanking) and, with an AI agent, the Verdict and the Summary.
   Goal 1 is the allowance, so PlanRanking, its proof labels and its machine notes are on every view,
   and the Verdict keeps its rule (which plan gave the most).
@@ -205,14 +207,14 @@ PlanRanking), Receipts, Delivery, Row(Heatmap, LimitTrend), WasteTable, Months, 
   because allowance about to reset is something to act on today. This changes what a plain run draws,
   and the README says so in the same PR.
 - The plan change on every view is the one rule the plain run has: `plans[].change_vs_last_week_pct`,
-  from the `plan_value` row seven local days earlier, both measured, and from delivery 1 with matching
+  from the `plan_value` row seven local days earlier, both measured, and from delivery 3 with matching
   bases (section 5). No third rule. The month view shows no plan change month over month.
 - Files: `--weekly` writes `<date>-worthit-weekly.md` and `.png`, `--monthly` writes `-monthly`. The
   audit log keeps its name.
 
 **`--weekly` and `worthit weekly`.** Both are kept. The command's fields and their types, its exit codes
-0, 1 and 3, its card and its `weekly` table stay as RFC 0003 delivered them. Two things change for it:
-delivery 1 adds `basis` keys to its JSON and makes its changes fail closed (section 5), and delivery 4
+0, 1 and 3, its card and its `weekly` table stay as RFC 0003 delivered them. Three things change for it:
+delivery 1 adds `basis` keys to its JSON, delivery 3 makes its changes follow section 5, and delivery 4
 adds a stderr line in a terminal (below).
 
 | | `worthit weekly` (RFC 0003) | `worthit --weekly` (this RFC) |
@@ -234,103 +236,122 @@ Alternatives: merge the two (a public command would change by whether it is pipe
 
 ### 3. The game
 
-**Delivery 1 takes the unproven rewards and comparisons off the screen.** The rule: a reward is drawn
-only when it is scored under this section, and a change between two periods is stated only when section
-5 allows it. The table lists every reward in `buildData` and every change field found by searching
-`src/collect.mjs`, `src/draw.mjs`, `src/card.mjs` and `bin/worthit.mjs` for `change_pct`, `change_pts`,
-`last_week_pct`, `moved` and `delta(`. The fields keep their types.
+**The game is a game, and it is kept apart.** It is drawn under the word "game". Its numbers live under
+`game` only. `periods.*.now`, `projects`, every `change` field, KR1's numbers, the summary's claims
+about improving and the share texts' claims about productivity never read a win, a streak, a best or
+the qualifying count. What improved is said by the comparisons of sections 1 and 5, nothing else.
 
-| Today | From delivery 1 |
+**A qualifying PR.** It uses data worthit already has, and it works for a team on one forge account. A
+merged PR qualifies when its title kind is `feat`, `fix`, `perf` or `refactor`. It does not qualify when
+the kind is `docs`, `chore`, `ci`, `test`, `style`, `build` or `revert`, or when the title has no prefix.
+
+It is counted once. These rules are requirements on delivery 1, and together they are `rules.delivery` 1:
+
+1. One PR is one key (`host/owner/repo#number`), whichever account or source saw it. A PR seen by a
+   forge and by the usagemeter store is one PR, as today (`src/collect.mjs:346-349`).
+2. It counts on the local day it merged, and on no other day.
+3. A revert never qualifies. Today GitHub's default title, `Revert "..."`, parses as no prefix
+   (`src/collect.mjs:177`); delivery 1 reads it as `revert`. A revert merged in a repository takes one
+   qualifying PR of that repository off the same day's count, never below zero.
+4. Only merged PRs are read. A PR closed without merging and replaced by another counts as its merged
+   end only.
+5. **An unknown kind is not a miss.** A PR whose title was never read (one that only the usagemeter store
+   knows, `src/collect.mjs:351`) has no kind. A day whose merged PRs are all of unknown kind has no
+   result.
+
+**A daily win.** A judged day (section 1) is one of:
+
+| Result | Rule |
 |---|---|
-| XP per output token (`src/collect.mjs:558`) | the token term leaves `game.xp`. Levels are recomputed from history once, so a level can drop |
-| `game.streak_days`: days with any output (`:559`) | stays in the JSON, marked legacy in the schema and the skill, and is no longer drawn |
-| `game.personal_bests`: most tokens; most PRs and lowest cost from stored maxima with no basis (`:561-563`) | an empty list, and not drawn, until bests are scored |
-| `totals.output_tokens_change_pct`, `totals.api_value_change_pct`: no machine check (`:467`) | `null` unless both rolling weeks pass conditions 2, 3 and 5 of section 1; the dollar one also needs the dollar rule of section 5 |
-| `git.usd_per_pr_change_pct`, `delivery.usd_per_feature_change_pct`: PR coverage only (`:473`, `:504`) | the same, with PR coverage |
-| `model_mix` `change_pts`: token shares from stored maxima (`:549`) | `null` unless both rolling weeks pass conditions 2, 3 and 5 of section 1 |
-| `git.merged_prs_change_pct`, `delivery.features_change_pct`, `delivery.kinds[].change_pct`, `delivery.fix_share_last_week_pct` (`:473`, `:503-505`) | unchanged: already `null` without PR coverage, and both weeks come from one run, so one set of PR sources and one `rules.delivery` |
-| `plans[].change_vs_last_week_pct`, and `moved` in `worthit weekly` (`:437`, `src/weekly.mjs:42-46`) | `null` unless the two bases match (section 5). LimitTrend draws this same field (`src/draw.mjs:119`): it is not a third rule |
-| Tiles, LevelCard, Delivery, ModelMix, LimitTrend (`src/draw.mjs:65-79`, `:119`, `:146-148`, `:198`) | a `null` change is drawn as "not compared". LevelCard draws the activity level, the days tracked and the Zero Waste line |
-| the share cards and the `.md` report (`src/card.mjs:76`, `:92`, `:100`, `bin/worthit.mjs:263`, `:268`) | read the same fields, so a `null` draws no arrow and no percentage |
-| the summary prompt (`bin/worthit.mjs:148`) and share texts | state a change only when its field is not `null`, and call a week more or less productive only then |
+| `win` | at least one qualifying PR merged that day |
+| `rest` | no observed usage of any kind (no request, no input token, no output token, no omp or dsh row) and no qualifying PR |
+| `miss` | observed usage and no qualifying PR |
 
-Not in the table, and unchanged in delivery 1: the history charts (AllowanceHistory, the LimitTrend and
-Delivery week columns, Months, the ModelMix bars). They draw stored values per week or month and state no
-change. Their limit is named: an older week there has no basis, so nothing may be read off them as
-proven. Deliveries 4 and 5 give the week and the month a proven comparison beside them.
+A day with no usage and only a PR that does not qualify is a `rest`. While today is open the game shows
+the qualifying PRs so far, never a result.
 
-**The activity level.** With the token term gone, XP is 25 per merged PR and 2 per commit, as today. It
-stays because it is a running count, not a claim of improvement, and it takes no part in any comparison.
-Its limit is named: trivial PRs and commits raise it. LevelCard labels it "activity". Question 6 can hide
-it. The Zero Waste line stays: it reports unused allowance (goal 1) and scores nothing.
-
-**Activity per day, not a result.** A judged day is one of:
-
-| Activity | Rule |
-|---|---|
-| `delivered` | at least one merged PR that day |
-| `active` | some observed activity and no merged PR |
-| `off` | no request, no token in or out, no omp or dsh row, no merged PR and no commit |
-
-The views say "merged a PR today" and "2 of 3 judged days this week had one". There is no daily win and
-no streak.
-
-**Why nothing is scored yet.** Any merged PR counts, and nothing checks what it was. One self-merged
-formatting PR a day would win every day, and splitting work raises any count of PRs. A filter on the
-title prefix does not close this: the prefix is written by the author. So wins, streaks and bests wait
-for a delivery that can be validated.
-
-**A validated PR** is a merged PR whose last review on its head commit is approving and was posted on
-the forge by an account other than the PR's author. A negative verdict, no verdict, a verdict on an
-older commit, or a verdict from the author's own account does not validate: the last one is as
-self-declared as a title prefix.
-
-- This rests on RFC 0004's question 6 (squads post their verdict on the forge). RFC 0004 found no forge
-  review on three of this repository's merged PRs.
-- A team that works under one forge account has no validated PR until its reviewer posts from a second
-  account. For that team nothing is scored, and the views keep showing comparisons and activity.
-- The scoring delivery is not scheduled. It needs that answer to be `yes` and RFC 0004 delivery 2 to
-  read reviews.
-- Its first fixtures: a day with one self-merged `style:` PR and no verdict is `delivered` and scores
-  nothing; a PR approved by its own author, or merged over a negative verdict, is not validated; the
-  same PR approved on its head commit by another account is one validated PR.
-
-**The rules scoring will use.** They are fixed here so that delivery is small.
-
-- **Two measures:** validated PRs (more is better) and API value per validated PR (less is better, with
-  at least five at both ends and the dollar rule of section 5). The first-pass proxy is shown, never
-  scored. Nothing is scored on dollars, tokens or requests alone.
-- **A week or a month.** Each measure that can be compared is `better` or `worse` when it moved more than
-  5% (the `moved` threshold of RFC 0003, with the same rounding), otherwise `same`.
+**A weekly and a monthly win.** Two measures: qualifying PRs (more is better) and the priced cost per
+qualifying PR (less is better, with at least five at both ends and the dollar rule of section 5). The
+first-pass proxy is never scored. Each measure that can be compared is `better` or `worse` when it moved
+more than 5% (the `moved` threshold of RFC 0003, with the same rounding), otherwise `same`. Any
+qualifying PR is `better` when the period before had none.
 
 | Result | Rule |
 |---|---|
 | `win` | at least one measure better, none worse |
 | `miss` | at least one measure worse, none better |
 | `held` | everything else: all the same, or one better and one worse |
-| not judged | a day of either period is not judged, or no measure can be compared (section 5) |
+| no result | a day of either period is not judged, or no measure can be compared (section 5) |
 
-- **No day off for a week or a month.** A fully read week with no validated PR after a week that had
-  some is a `miss`.
-- **A day** is a `win` with at least one validated PR. It is a `miss` when it had activity and no
-  validated PR: `active`, or `delivered` with only PRs that are not validated. It passes when `off`.
-- **A streak** is the number of wins since the last miss. `held`, `off` and not-judged periods pass:
-  they add nothing and break nothing. The visible text always shows them: "3 winning weeks since week
-  44 · 1 held · 1 not judged".
-- **Bests.** Two for each of the day, the week and the month, over judged periods only: the most
-  validated PRs, and the lowest API value per validated PR (at least five in the period, and the dollar
-  rule). A best is kept per basis (section 5): it is beaten only by a period it can be compared with,
-  and it is marked new when the period that just closed set it.
-- **Missing evidence is never a loss.** A period that is not judged is never a miss.
+**No day off for a week or a month.** A known worse period is never turned into a pause: a fully read
+week with no qualifying PR, after a week that had some, is a `miss`.
 
-Known limits, named: a validated PR can still be small or split; a verdict posted by the team's own
-account is the team's process, not an outside check; a person who ships without pull requests has no
-delivery to count.
+**Streaks.** One per period: the number of wins since the last miss, read from judged periods only. A
+`rest` day, a `held` period and a period with no result pass: they add nothing and break nothing. The
+visible text always says how many passed: "5-day win streak since 12 Nov · 1 day off · 1 not judged".
+Missing evidence is never a loss.
 
-Alternatives: score merged PRs as counted (question 1; it can be farmed); count commits as delivery
-(cheaper still to inflate, and `git.coverage.commits` is a weaker source); filter by title prefix (the
-author writes it); one score that mixes the measures (nobody can check it); a win for any measure that
-got better (a cost that got worse would be hidden).
+**Bests.** Two for each of the day, the week and the month, over judged periods only: the most
+qualifying PRs, and the lowest priced cost per qualifying PR (at least five in the period, and the dollar
+rule). A best is kept with its basis (section 5): it is beaten only by a period it can be compared with,
+and it is marked new when the period that just closed set it.
+
+**XP and the level.** From delivery 3, XP is paid by the game: 25 per qualifying PR on a judged day and
+50 per daily win, then 100 per winning week (delivery 4) and 400 per winning month (delivery 5). Tokens
+and commits stop paying. The XP earned before that day is kept as it stood, so no level is lost. It
+still contains the token XP of the past: that is said in the schema and the skill.
+
+**What still games it.** The game is harder to farm than today's, not impossible:
+
+- a trivial PR titled `feat:` or `fix:` qualifies: the prefix is the author's word, and no review or
+  size is checked;
+- splitting one change into several PRs raises the count and lowers the cost per PR;
+- a revert and its reland on different days both stay counted, because a day row is final and nothing
+  links a PR to the one it replaces;
+- a repository mirrored on two forges, with the PR merged on both, counts it twice;
+- moving work to omp or dsh inside the bound of section 5 lowers the priced cost;
+- a repository that uses no title prefixes has no qualifying PR (`delivery.typed_pct` says how many
+  titles carry one).
+
+**What changes on screen, and when.** Nothing changes before delivery 3. In delivery 3 each thing that
+leaves the screen has its replacement in the same PR, or the rule that forces it is named. The list is
+every reward in `buildData` and every change field found by searching `src/collect.mjs`, `src/draw.mjs`,
+`src/card.mjs` and `bin/worthit.mjs` for `change_pct`, `change_pts`, `last_week_pct`, `moved` and
+`delta(`. The fields keep their types. The rules named are: **usage** (nothing is scored on usage alone:
+the brief of this RFC), **floor** (AGENTS.md: a floor is never compared week to week) and **basis**
+(section 5: an unknown or different basis is never compared).
+
+| Today | From delivery 3 | Replacement, or rule |
+|---|---|---|
+| XP per output token and per commit (`src/collect.mjs:558`) | stop paying; earned XP is kept, no level drops | XP per qualifying PR and per win. Rule: usage |
+| `game.streak_days`, drawn as "N-day streak" (`:559`, `src/draw.mjs:76`) | stays in the JSON, marked legacy; no longer drawn | the day win streak, drawn in its place |
+| best "most tokens in a week" (`:561`) | removed | none. Rule: usage |
+| bests "PRs merged in a week" and "lowest cost per PR", from stored maxima with no basis (`:562-563`) | removed | the day bests; the week bests return in delivery 4. Rule: floor |
+| `totals.output_tokens_change_pct`, `totals.api_value_change_pct`: no machine check (`:467`) | `null` unless both rolling weeks pass conditions 2, 3 and 5 of section 1; the dollar one follows the dollar rule of section 5 | the `Today` comparison. Rule: floor |
+| `git.usd_per_pr_change_pct`, `delivery.usd_per_feature_change_pct`: PR coverage only (`:473`, `:504`) | the same, with PR coverage | Rule: floor |
+| `model_mix` `change_pts`: token shares from stored maxima (`:549`) | `null` unless both rolling weeks pass the same conditions | Rule: floor |
+| `git.merged_prs_change_pct`, `delivery.features_change_pct`, `delivery.kinds[].change_pct`, `delivery.fix_share_last_week_pct` (`:473`, `:503-505`) | unchanged: already `null` without PR coverage, and both weeks come from one run, so one set of PR sources and one `rules.delivery` | |
+| `plans[].change_vs_last_week_pct`, and `moved` in `worthit weekly` (`:437`, `src/weekly.mjs:42-46`); LimitTrend draws the same field (`src/draw.mjs:119`) | `null` unless the two bases match | Rule: basis. Bases are recorded from delivery 1, so the change is blank only if delivery 3 follows it by less than seven days |
+| Tiles, LevelCard, Delivery, ModelMix, LimitTrend (`src/draw.mjs:65-79`, `:119`, `:146-148`, `:198`) | a `null` change is drawn as "not compared" | |
+| the share cards and the `.md` report (`src/card.mjs:76`, `:92`, `:100`, `bin/worthit.mjs:263`, `:268`) | read the same fields, so a `null` draws no arrow and no percentage | |
+| the summary prompt (`bin/worthit.mjs:148`) and share texts | state a change only when its field is not `null`; may name the streak and the level as the game, never as improvement | |
+
+The Zero Waste line stays: it reports unused allowance (goal 1) and scores nothing.
+
+Not in the table, and unchanged: the history charts (AllowanceHistory, the LimitTrend and Delivery week
+columns, Months, the ModelMix bars). They draw stored values per week or month and state no change.
+Their limit is named: an older week there has no basis, so nothing may be read off them as proven.
+Deliveries 4 and 5 give the week and the month a proven comparison beside them.
+
+**The alternative: validated PRs** (question 1). A win would need a merged PR whose last review on its
+head commit is approving and was posted on the forge by an account other than the PR's author. It is
+harder to farm, and it is not recommended: RFC 0004 found no forge review on three of this repository's
+merged PRs, and a team on one forge account would have no game at all.
+
+Other alternatives: count every merged PR (a formatting PR a day would win every day); count commits
+(cheaper still to inflate, and `git.coverage.commits` is a weaker source); one score that mixes the
+measures (nobody can check it); a win for any measure that got better (a cost that got worse would be
+hidden); a day off for a week (a known worse week would be hidden).
 
 ### 4. Truth rules
 
@@ -382,7 +403,7 @@ with:
 "basis": { "worthit": ["0.41.0"],
            "rules": { "usage": [1], "delivery": [1], "first_pass": [1] },
            "prices": ["3fa9c1d2e4b7"],
-           "outside_table": { "rows": 0, "usd": 0, "unpriced_output_tokens": 0 },
+           "outside_table": { "rows": 0, "usd": 0, "unpriced_output_tokens": 0, "output_tokens_pct": 0 },
            "machines": { "id": ["9c1e44a07b2d"], "read": 3, "missing": [], "left_out": [],
                          "retired": [], "retained": [] },
            "pr_sources": { "id": ["5d20be81f3a6"], "answered": 2 } }
@@ -393,7 +414,7 @@ with:
 | `worthit` | the package version that scanned and priced. The scanner is bundled and the same file is sent to every ssh machine, so one run has one scanner version |
 | `rules` | three new integers, starting at 1, like `CACHE_VER`. `usage`: what a request counts or costs. `delivery`: which PRs are counted and how they are deduplicated. `first_pass`: the PR-to-model link and the proxy. A PR that changes one of these raises it |
 | `prices` | the first 12 hex digits of the SHA-256 of `core/prices.json` without its `_sources` notes. It is computed, so nobody can forget it |
-| `outside_table` | usage the price table did not price: omp rows with the cost omp reports, dsh rows priced at rates fitted from those costs or left unpriced at $0 (`core/weekly.py:359-365`), and tokens of any model the table has no price for. `rows` counts them whatever their dollar value |
+| `outside_table` | usage the price table did not price: omp rows with the cost omp reports, dsh rows priced at rates fitted from those costs or left unpriced at $0 (`core/weekly.py:359-365`), and tokens of any model the table has no price for. `rows` counts them whatever their dollar value, and `output_tokens_pct` is their share of the period's output tokens |
 | `machines.id` | which machines were counted, not how many: a hash of the sorted host names of every machine that answered and every retired snapshot, salted with a random value kept in the store. It cannot be read back into names and means nothing outside this store |
 | `machines` (the rest) | machines read, and the missing, left-out, retired and retained lists for that period, as the run JSON has them |
 | `pr_sources.id` | which PR sources answered: the same kind of hash over the names in `git.coverage.sources` (`usagemeter`, each `gh` account, each `glab` host, `tea`). Account names never leave the hash |
@@ -403,25 +424,32 @@ A day has one value in each list. A week or a month has every distinct value of 
 **What may be compared.** A value is compared between two periods only when every key in its row is
 known, single and equal at both ends. Anything else is not compared, with the reason in
 `change.not_compared`: `basis_unknown`, `machines_changed`, `pr_sources_changed`, `rules_changed`,
-`repriced`, `outside_table`.
+`repriced`, `outside_share_moved`.
 
 | Compared | Keys |
 |---|---|
-| merged PRs, validated PRs | `pr_sources.id`, `rules.delivery` |
+| merged PRs, qualifying PRs | `pr_sources.id`, `rules.delivery` |
 | the first-pass proxy, PRs led | those, and `rules.first_pass`, `machines.id`, `rules.usage` |
 | tokens and requests | `machines.id`, `rules.usage` |
-| any dollar value: API value, cost per merged PR, cost per feature | `machines.id`, `rules.usage`, `prices`, and `outside_table.rows` and `unpriced_output_tokens` both 0 at both ends. A cost per PR also needs the PR keys |
+| any dollar value: API value, cost per merged PR, cost per qualifying PR, cost per feature | `machines.id`, `rules.usage`, `prices`, on priced usage only (below). A cost per PR also needs the PR keys |
 | a plan's value per full week | `machines.id`, `rules.usage`, `prices` |
 
-- **A ratio or a rate needs five.** `usd_per_merged_pr`, a cost per validated PR and `first_pass_pct`
+- **A ratio or a rate needs five.** `usd_per_merged_pr`, a cost per qualifying PR and `first_pass_pct`
   are compared only with at least five PRs in the denominator at both ends, in every period, the day
   stretch included. Under five the reason is `under_five` and the counts are shown.
-- **This covers every period and both kinds of comparison.** A day's cost against yesterday's follows
-  the dollar row like a week's: omp reports a cost per row, and two days can carry two tariffs. One run
-  shares its version, rules, prices and machines, not its outside-table costs.
-- **Anyone who uses omp or dsh gets no dollar comparison and no cost best,** at any period. Their dollar
-  values are still shown. This is relaxed only when both ends can be priced on one documented basis.
-- **The same table decides a win and a best.** A week or month with no comparable measure is not judged.
+- **A dollar comparison is made on priced usage only.** Priced usage is what `core/prices.json` priced.
+  omp's reported cost, dsh's fitted or missing price and unpriced tokens are left out of both ends,
+  because two days can carry two tariffs there with no change to `prices`. Their presence is still
+  tracked in `outside_table`, by rows, not by dollars. The dollar values shown stay the full ones.
+- **It is labelled.** When either end has outside-table usage, the comparison reads "priced usage only;
+  omp/dsh not compared", in the views, the cards and the JSON (`change.priced_only`).
+- **It is bounded.** Priced dollars per PR fall when work moves to omp or dsh, with nothing getting
+  cheaper. So the comparison is made only when `output_tokens_pct` moved by no more than 5 points
+  between the two ends; beyond that the reason is `outside_share_moved`. Inside the bound the effect
+  is small, and it is named in section 3.
+- **This covers every period, the day included, and the game:** a win or a cost best may rest on a
+  priced comparison, under the same label and bound.
+- **The same table decides a win and a best.** A week or month with no comparable measure has no result.
   A best is beaten only by a period whose keys match its own; on a new basis a best starts again and the
   old one is kept with its basis.
 - **The version alone does not block.** Every merge into `dev` cuts a release. When the two ends differ,
@@ -431,21 +459,24 @@ known, single and equal at both ends. Anything else is not compared, with the re
 - A view prints one line when a comparison is left out: "prices changed on 3 Dec: cost per PR not
   compared", or "a machine was added on 9 Dec: usage not compared".
 
-**The allowance comparisons** follow the same table from delivery 1, on both paths:
+**The allowance comparisons** follow the same table, on both paths. Delivery 1 records the bases and
+delivery 3 applies the rule:
 
 - `plan_value` gets one column, `basis` (the object above, as JSON). `plans[].change_vs_last_week_pct`
   is `null` when either row's basis is unknown or the keys differ.
 - The `worthit weekly` JSON gets `basis` at its root and inside `compared_with`. Its
   `plans[].change_vs_last_week_pct` and `moved` follow the same rule. `safe_to_post`, `reasons` and the
   exit codes do not change: they are about machines.
-- **There is no exception for old rows.** A row written before delivery 1 has no basis, so a plan's
-  change is `null` for the first seven days after delivery 1 in a plain run, and in the first
-  `worthit weekly` checkpoint after it. That is stated in the release note and the README.
+- **There is no exception for old rows.** A row with no basis is never compared. Delivery 1 starts
+  writing bases, so when delivery 3 follows it by seven days or more, with one `worthit weekly`
+  checkpoint taken in between, no plan change goes blank. If delivery 3 comes sooner, the change is
+  `null` for the days that are missing, and the release note and the README say so.
 
 Alternatives: a hand-written version in `prices.json` (somebody forgets to raise it); a count of machines
 (a replaced machine keeps the count); block every comparison across two worthit versions (releases are
 daily, so nothing would ever be compared); keep the percentage and label it "basis unknown" (a price
-change would show as a quota change in exactly that week).
+change would show as a quota change in exactly that week); refuse every dollar comparison when omp or
+dsh was used (the owner's own fleet runs both, so he would see less than today).
 
 ### 6. Per project and per model, per period
 
@@ -560,19 +591,19 @@ that change value are listed under "Public contract touched".
 "periods": {
   "day": {
     "id": "2026-11-19", "days": "local", "open": true, "through": "2026-11-19T14:00",
-    "now":    { "merged_prs": 6, "features": 3, "api_value_usd": 270, "output_tokens": 2800000,
-                "usd_per_merged_pr": 45,
+    "now":    { "merged_prs": 6, "features": 3, "api_value_usd": 270, "priced_usd": 270,
+                "output_tokens": 2800000, "usd_per_merged_pr": 45,
                 "first_pass": null, "first_pass_known": null, "first_pass_pct": null },
     "before": { "id": "2026-11-18", "through": "2026-11-18T14:00",
-                "merged_prs": 5, "features": 2, "api_value_usd": 255, "output_tokens": 2600000,
-                "usd_per_merged_pr": 51,
+                "merged_prs": 5, "features": 2, "api_value_usd": 255, "priced_usd": 255,
+                "output_tokens": 2600000, "usd_per_merged_pr": 51,
                 "first_pass": null, "first_pass_known": null, "first_pass_pct": null },
     "change": { "merged_prs": 1, "merged_prs_pct": 20, "usd_per_merged_pr_pct": -12,
-                "first_pass_pts": null, "not_compared": [] },
+                "first_pass_pts": null, "priced_only": false, "not_compared": [] },
     "floor": false,
     "coverage": { "machines": true, "prs": true },
     "basis": "the basis object of section 5, for this run",
-    "last_closed": { "id": "2026-11-18", "activity": "delivered", "merged_prs": 8,
+    "last_closed": { "id": "2026-11-18", "merged_prs": 8,
                      "api_value_usd": 384, "usd_per_merged_pr": 48,
                      "basis": "the basis object of 2026-11-18" },
     "projects": "the cut of section 6, for the same stretch as now"
@@ -580,8 +611,14 @@ that change value are listed under "Public contract touched".
 },
 "game": {
   "day": {
-    "today": "delivered",
-    "this_week": { "delivered": 2, "active": 1, "off": 0, "judged": 3 },
+    "today": { "qualifying_prs": 5 },
+    "last": { "id": "2026-11-18", "result": "win", "qualifying_prs": 7,
+              "basis": "the basis object of 2026-11-18" },
+    "streak": { "wins": 5, "since": "2026-11-12", "rest": 1, "not_judged": 1, "best": 9 },
+    "bests": [ { "what": "qualifying_prs", "value": 9, "id": "2026-11-06", "new": false,
+                 "basis": "the basis object of 2026-11-06" },
+               { "what": "priced_usd_per_qualifying_pr", "value": 31, "id": "2026-11-10", "new": false,
+                 "basis": "the basis object of 2026-11-10" } ],
     "not_judged": [ { "id": "2026-11-13", "why": "machine_missing", "machines": ["build-box"] } ]
   }
 }
@@ -596,9 +633,14 @@ that change value are listed under "Public contract touched".
   `retained_unit`, `before_retirement`, `source_error`, `partial_window`, `too_old`.
 - `periods.week`, `periods.month`, `game.week` and `game.month` arrive with deliveries 4 and 5, in the
   same shape. For a week or a month, `through` is the end of yesterday.
-- When scoring starts, `game.<kind>` gets `last` (the result, its `measures`, its `basis` and
-  `before_basis`), `streak` (`wins`, `since`, `held`, `off`, `not_judged`, `best`) and `bests` (each with
-  its `basis`).
+- `game.<kind>.last` and every entry of `bests` carry the `basis` of their period. For a week or a
+  month, `last` also carries `before_basis` and `measures`, for example `{ "qualifying_prs": "better",
+  "priced_usd_per_qualifying_pr": "same" }`, and `streak` also counts `held`.
+- `game.day.today` is a count, never a result: a result exists only for a judged day. A judged day
+  whose merged PRs are all of unknown kind has `result: null` and the reason `kind_unknown`.
+- `usd_per_merged_pr` is the full value. The change beside it is made on `priced_usd` (section 5).
+- `periods.day` arrives in two steps: its `id`, `through`, `basis` and `projects` with delivery 2, the
+  rest with delivery 3.
 - `worthit get periods.day` and `worthit get game.day` read them from the last run.
 
 **`worthit schema`** gets four entries: `periods`, `game` (the section has no entry today: its fields
@@ -620,7 +662,7 @@ lookup list (`bin/worthit.mjs:159`), the README, and `demoData()` so `--demo` ca
 - **Rules the skill and the question bar get:** read a period from `period_result`, never work one out;
   say "not judged" and the reason, never "lost"; say "at least" for a floor and compare nothing; say why
   a comparison was left out; give the counts beside any rate; say "first-pass proxy", never "passed
-  first time".
+  first time"; name a win, a streak or the level as the game, never as proof of improving.
 
 ### 9. RFC 0004
 
@@ -632,9 +674,9 @@ lookup list (`bin/worthit.mjs:159`), the README, and `demoData()` so `--demo` ca
 - **The same privacy.** Repository names are never drawn and never reach the AI agent (RFC 0004,
   section 5), unless its questions 1 and 3 say otherwise.
 - **Order.** RFC 0004 delivery 1 goes first: the squads' week is judged with it on 2026-11-23. This
-  RFC's deliveries 1 and 2 follow its merge, because they touch `buildData`, `src/query.mjs` and the
-  skill. Delivery 3 here needs RFC 0004 delivery 1 in the scan. KR1 is met when delivery 3 here and RFC
-  0004 delivery 2 are both merged, with the proxy labelled.
+  RFC's delivery 1 follows its merge, because both touch `buildData`, `src/query.mjs` and the skill.
+  Delivery 2 here needs RFC 0004 delivery 1 in the scan. KR1 is met when delivery 2 here and RFC 0004
+  delivery 2 are both merged, with the proxy labelled.
 - **Two places in RFC 0004 are now out of date.** This PR does not edit that file. The author of this
   RFC updates both in one docs PR after PR 117 merges, when the orchestrator says so:
   1. its question 5 (the first-pass source) is answered: `opened`;
@@ -651,16 +693,18 @@ use `worthit --demo` with synthetic projects (`app-api`, `web-client`).
 
 ### Public contract touched
 
-- **Delivery 1.** New: the `period_result` table, `basis` (in its rows, in `plan_value`, in the
-  `worthit weekly` JSON), the scanner's three `rules` numbers. Existing fields that keep their type and
-  change value: `game.xp`, `level`, `title` and `xp_next` (no token term), `game.personal_bests`
-  (empty), and these changes, which are `null` more often: `totals.output_tokens_change_pct`,
-  `totals.api_value_change_pct`, `git.usd_per_pr_change_pct`, `delivery.usd_per_feature_change_pct`,
-  `plans[].change_vs_last_week_pct` in a plain run and in `worthit weekly`, with `moved`. LevelCard and
-  Tiles draw accordingly. Exit codes do not change.
-- **Delivery 2.** The `periods` section (`day`), `game.day`, the `Today` block, the `--daily` flag.
-- **Delivery 3.** `periods.day.projects`, the `day_project` table, `worthit projects --daily`, the
-  model lines of `Today`.
+- **Delivery 1.** New, and nothing existing changes value: the `period_result` table, `basis` (in its
+  rows, in a new `plan_value.basis` column, and as new keys in the `worthit weekly` JSON), the scanner's
+  three `rules` numbers, failed reads in the scan's `errors`, and `Revert "..."` read as `revert`.
+- **Delivery 2.** `periods.day` with its `projects` cut, the `day_project` table,
+  `worthit projects --daily`.
+- **Delivery 3.** New: the rest of `periods.day`, `game.day`, the `Today` block, the `--daily` flag.
+  Existing fields that keep their type and change value: `game.xp`, `level`, `title` and `xp_next`
+  (paid by the game from that day), `game.personal_bests` (judged bests), and these changes, which are
+  `null` more often: `totals.output_tokens_change_pct`, `totals.api_value_change_pct`,
+  `git.usd_per_pr_change_pct`, `delivery.usd_per_feature_change_pct`, `model_mix` `change_pts`,
+  `plans[].change_vs_last_week_pct` in a plain run and in `worthit weekly`, with `moved`. Exit codes do
+  not change.
 - **Delivery 4.** `--weekly`, the week keys, `worthit projects --weekly`, the stderr line, exit 2 for
   two view flags.
 - **Delivery 5.** `--monthly`, the month keys, `worthit projects --monthly`, the slim plain run.
@@ -668,8 +712,11 @@ use `worthit --demo` with synthetic projects (`app-api`, `web-client`).
 ### Tests
 
 Fixture cases for delivery 1:
-- a complete day gets a row with its activity: `delivered`, `active` (requests and input, no output and
-  no PR) or `off`;
+- a complete day gets a row: a `win` with a `feat:` PR; a `miss` with requests and input, no output
+  and no qualifying PR; a `rest` with no usage, also when a `docs:` PR merged that day;
+- a day with a `style:` PR and a `chore:` PR and usage is a `miss`; a `feat:` PR and its `Revert "..."`
+  on the same day leave no qualifying PR; a PR seen by two accounts counts once; a day whose only PR
+  has an unknown kind has no result;
 - no row is written and the reason is named for each of: a machine missing, a machine left out, a
   retained unit on that day, a day before a retirement, `--git no`, PR coverage false, `worthit weekly`;
 - **a failed read:** a first scan where one tool's reader fails and git answers writes no row
@@ -679,67 +726,84 @@ Fixture cases for delivery 1:
 - a judged day is not rewritten by a later run with a machine missing or with higher usage;
 - `basis`: a changed price file gives another `prices`, and a change to `_sources` alone does not; a
   machine added, and a machine replaced by another with the count unchanged, each give another
-  `machines.id`; a newly logged-in forge account gives another `pr_sources.id`;
-- a dsh row priced at $0 sets `outside_table.rows`, and every dollar change is `null`, the day one
-  included;
-- both allowance paths give `null` against a row with no basis, with other prices, or with another
-  `machines.id`; the exit code of `worthit weekly` is unchanged;
-- with a machine missing, the tiles draw "not compared" for tokens, value and cost per PR, and the
-  summary states no change;
-- `game.xp` has no token term, `personal_bests` is empty, the usage streak is not drawn; rendered images
-  of LevelCard and Tiles were looked at;
-- an older store gets the table and the column on its first run.
+  `machines.id`; a newly logged-in forge account gives another `pr_sources.id`; a dsh row priced at $0
+  sets `outside_table.rows`;
+- an older store gets the table and the column on its first run; every existing field of `--json` and
+  of `worthit weekly` is unchanged, and the dashboard image is unchanged.
 
 Fixture cases for delivery 2:
-- today against yesterday: usage is cut at the last full hour and PRs at the same clock time; a floor at
-  either end gives `null` changes; under 5 merged PRs at either end the cost change is `null`;
-- with a fixed time zone, a PR merged at 23:30 local counts for that local day;
-- `--demo` carries the new fields; rendered images of the `Today` block, complete and floor, were
-  looked at.
-
-Fixture cases for delivery 3:
 - a day's rows plus `no_repository` add up to that day's totals;
 - under five known PRs the rate is `null` and the counts are present; a week whose days are each under
   five has a rate on its sums;
 - an unresolved usage row makes value "at least" and not compared, while PR counts still are;
 - a PR that is not linked counts for its project and for no model;
 - every output says "first-pass proxy"; none says "passed first time";
-- no repository name is in the PNG, the `.md`, the summary prompt or a question-bar lookup, by `get
-  periods`, a deeper path or `sql`.
+- no repository name reaches the summary prompt or a question-bar lookup, by `get periods`, a deeper
+  path or `sql`.
+
+Fixture cases for delivery 3:
+- today against yesterday: usage is cut at the last full hour and PRs at the same clock time; a floor at
+  either end gives `null` changes; under 5 merged PRs at either end the cost change is `null`;
+- with a fixed time zone, a PR merged at 23:30 local counts for that local day;
+- with omp rows at both ends, the cost change is made on priced usage and carries the label; when the
+  omp and dsh share of output tokens moved by more than 5 points, it is `null`;
+- both allowance paths give `null` against a row with no basis, with other prices, or with another
+  `machines.id`; the exit code of `worthit weekly` is unchanged;
+- with a machine missing, the tiles draw "not compared" for tokens, value and cost per PR, and the
+  summary states no change;
+- a not-judged day between two wins: the streak counts both wins and says "1 not judged"; a miss sets
+  the streak to 0 and keeps the best streak; a rest day passes and is shown;
+- the level on the day of the switch equals the level the day before; a day of tokens with no
+  qualifying PR adds no XP;
+- no win, streak, best or qualifying count is in `periods`, in `projects`, in a change field, in the
+  summary's claim about the week or in a share text's claim;
+- no repository name is in the PNG or the `.md`;
+- `--demo` carries the new fields; rendered images of the `Today` block (complete, floor, priced usage
+  only), LevelCard and Tiles were looked at.
 
 ## Deliveries
 
 | # | Delivery | State |
 |---|---|---|
-| 1 | The proof base, with no new block: `basis`, the day admission rules, `period_result` with day rows, every existing change and both allowance paths fail closed, token XP and the unproven streak and bests off the screen, the summary and share prompts, schema, skill, README, the fixture cases | open |
-| 2 | The day view: `periods.day`, `game.day`, the `Today` block, `--daily`, demo data, the fixture cases | open |
-| 3 | Per project and per model, daily (KR1): `periods.day.projects`, `day_project`, `worthit projects --daily`, the model lines of `Today`. Model and proxy fields fill when RFC 0004 delivery 2 merges | open |
+| 1 | Record, with nothing on screen changed: failed reads reported by the scanner, the day admission rules, `basis` (period rows, `plan_value`, the `worthit weekly` JSON), `period_result` day rows with the qualifying count and the result, the counting rules, schema, skill, the fixture cases | open |
+| 2 | Per project and per model, daily (KR1): `day_project`, `periods.day` with `projects`, `worthit projects --daily`. Needs RFC 0004 delivery 1. Model and proxy fields fill when RFC 0004 delivery 2 merges | open |
+| 3 | The day view and the game, the first delivery that changes the screen: the rest of `periods.day`, the `Today` block with its model lines, `--daily`, `game.day` (win, streak, bests, XP), every switch of section 3's table, the summary and share prompts, README, demo data, the fixture cases | open |
 | 4 | The week view: week rows, `periods.week`, `game.week`, `--weekly` and the `Week` block, `worthit projects --weekly`, the stderr line on `worthit weekly` | open |
 | 5 | The month view: month rows, `periods.month`, `game.month`, `--monthly` and the `Month` block, `worthit projects --monthly`, the slim plain run | open |
-| 6 | Scoring on validated PRs: wins, streaks, bests, XP for wins (section 3). Needs RFC 0004 question 6 answered `yes` and its delivery 2 reading reviews | not scheduled |
 
-Deliveries 1 and 2 are each a few days of work. The proof base goes first because a day view drawn
-above unproven changes would contradict itself on one screen.
+**Does the first visible delivery fit in days?** Not as one PR that also carries the proof base. So the
+proof base is split in two. Its recording half is delivery 1: it changes nothing on screen, claims no
+new comparison, and can ship in days. It is complete for the person through the assistant, which can
+answer from `period_result`, and it has to come first because rows are final: the game and KR1 read
+what it stored. Its visible half cannot be split further. The switches of section 3 must land with the
+`Today` block, or one screen would show "not compared" above an unproven change; and the game must land
+with the switches, or rewards would leave the screen with nothing in their place. That is delivery 3,
+the smallest first visible delivery and the largest PR of this RFC. It is not promised in days.
+
+**Why KR1 is delivery 2.** `worthit projects --daily` needs the day rows and RFC 0004 delivery 1, not
+the `Today` block. Only the model lines of `Today` wait for delivery 3.
 
 **Later work, not in this RFC.** Each of these is reported as unknown wherever it cannot be attributed,
 never guessed:
 
 - attribution by bot or squad (worthit sees repositories and models, not bots: RFC 0004, question 2);
-- rework: a merged PR that a later PR fixes or reverts;
+- rework: a merged PR that a later PR fixes or reverts on another day, and a reland;
 - human interventions: a person typing on a squad's branch counts for its model today (RFC 0004);
 - wins, streaks and bests per project or per model;
-- dollar comparisons for omp and dsh usage, once both ends can be priced on one documented basis;
+- omp and dsh dollars inside a comparison, once both ends can be priced on one documented basis;
 - a share card for a streak or a best.
 
 ## Open questions (for the owner)
 
-Question 6 blocks delivery 1. No question blocks delivery 2. Questions 4 and 5 block delivery
-3. Question 2 blocks delivery 4. Question 3 blocks delivery 5. Question 1 blocks only delivery 6. Each
-answer is one word, and `yes` alone takes every recommended one.
+Question 1 blocks delivery 1. Questions 4 and 5 block delivery 2. No question blocks delivery 3 beyond
+question 1. Question 2 blocks delivery 4. Question 3 blocks delivery 5. Each answer is one word, and
+`yes` alone takes every recommended one.
 
-1. **When scoring starts.** `validated`: no win, streak or best until merged PRs carry an approving
-   review from another account on the forge (recommended; a team on one account then has no game).
-   `counted`: score merged PRs as counted from delivery 4, knowing trivial PRs can farm it.
+1. **The game.** `qualifying`: a win is a qualifying merged PR by its title kind, on data worthit has
+   today, for a team on one forge account; what still games it is listed in section 3 (recommended).
+   `validated`: a win needs an approving review from another account on the forge. Then there is no win,
+   streak or best until such reviews exist, a team on one account has no game, and from delivery 3 the
+   screen keeps the level with no new XP and loses the usage streak and the old bests under their rules.
 2. **The flag names.** `weekly`: `--weekly` and `--monthly`, the owner's words, beside the
    `worthit weekly` command (recommended). `week`: `--week` and `--month`, further from the command.
 3. **The plain run once all three views exist.** `slim`: the day blocks and the allowance only
@@ -750,5 +814,3 @@ answer is one word, and `yes` alone takes every recommended one.
 5. **KR1's "passed on the first try".** `proxy`: KR1 is reported with the opened-date proxy, always
    labelled a proxy (recommended; what was relayed is that the source `opened` was chosen, not that it
    defines KR1). `review`: KR1 waits for review verdicts on the forge.
-6. **The activity level.** `keep`: LevelCard draws the level from merged PRs and commits, labelled
-   "activity" (recommended). `hide`: no level on screen until scoring starts.
