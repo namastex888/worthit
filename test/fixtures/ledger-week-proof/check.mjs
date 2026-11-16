@@ -35,8 +35,8 @@ sourceCase(folder, ({ expected, tmp, home, env, python, root, run, query }) => {
       assert.doesNotMatch(share.text, /%|week before/, label + ' actual share no change');
     } else {
       assert.match(trend, new RegExp(change + '%.*vs last'), label + ' TUI change');
-      assert.equal(spec.sub, `▲ ${change}% vs last week`, label + ' card change');
-      assert.match(share.text, new RegExp('▲' + change + '% vs the week before'), label + ' actual share change');
+      assert.equal(spec.sub, change === 0 ? '0% vs last week' : `▲ ${change}% vs last week`, label + ' card change');
+      assert.match(share.text, new RegExp((change === 0 ? '' : '▲') + change + '% vs the week before'), label + ' actual share change');
     }
     const historical = p.weeks.filter(w => w.weeks_ago > 0);
     assert.ok(historical.length, label + ' real ledger history exists');

@@ -133,6 +133,22 @@ only when an intentional contract or fixture change explains the new number.
 Run `make check` before pushing. Deliberate regression experiments belong in a
 private throwaway copy; leave the checked-out implementation intact.
 
+`symmetric-percent` pins literal priced values 1000 → 997 (-0.3%), 200 → 211
+(+5.5%) and 200 → 189 (-5.5%), plus exact ±5% threshold controls. Unchanged
+fixture inputs exercise ordinary `buildData` with a literal prior ledger and
+weekly `prepareWeekly` with a measured checkpoint. Both paths must return positive
+zero, +6 and -6 without changing source values, proof or the JSON shape; weekly
+`moved` uses the existing strictly-greater-than-5 rounded threshold. Allowance
+text, card HTML/colors, TUI ANSI/colors and the actual Herdr mod plan builder
+(with inert view nodes) pin neutral zero without arrows. Null, zero-baseline,
+floor, missing, left-out and retained-unit guards remain covered. Schema and
+agent skill both describe whole-number percentages. Before production edits the
+fixture failed with ordinary and weekly -0 and -5; +6 and exact ±5 passed.
+`symmetric-percent/render.mjs` builds the two inspected images
+`docs/symmetric-percent-card.png` and `docs/symmetric-percent-tui.png` from bundled
+demo data with only these literal synthetic edge plans. It uses private headless
+browser profiles with network resolution disabled and reads no real store.
+
 `weekly-checkpoint` runs `worthit weekly` with closed stdin on those source logs.
 It checks complete, missing, explicitly allowed partial, left-out, floor-only,
 current retained and prior retained results; unsafe reasons name machines and

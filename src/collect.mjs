@@ -5,6 +5,7 @@ import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'; import { createRequire } from 'node:module';
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');   // loaded here, after quiet.mjs, so its 'experimental' warning stays silent
 import { C } from './draw.mjs';
+import { roundPercent } from './percent.mjs';
 import { readHosts, writeHosts, activeHosts, retirementBlocks, retirementStatement } from './hosts.mjs';
 
 export const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
@@ -369,7 +370,7 @@ function loadEvents() {
   return rows.filter(r => r.length >= 5).map(r => Object.fromEntries(head.map((k, i) => [k, r[i] || ''])));
 }
 const isoWeek = t => { const d = new Date(t); d.setUTCHours(0, 0, 0, 0); d.setUTCDate(d.getUTCDate() + 3 - (d.getUTCDay() + 6) % 7); const y = d.getUTCFullYear(), w1 = new Date(Date.UTC(y, 0, 4)); return y + '-W' + String(1 + Math.round(((d - w1) / DAY - 3 + (w1.getUTCDay() + 6) % 7) / 7)).padStart(2, '0'); };
-const pctChange = (a, b) => b > 0 ? Math.round(100 * (a - b) / b) : null;
+const pctChange = (a, b) => b > 0 ? roundPercent(100 * (a - b) / b) : null;
 const dayKey = t => { const d = new Date(t); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 const TITLES = ['Apprentice', 'Builder', 'Shipper', 'Operator', 'Conductor', 'Maestro', 'Orchestrator', 'Architect', 'Fleet Admiral'];
 const models = mix => Object.entries(mix || {}).slice(0, 2).map(([k, v]) => `${k.replace('claude-', '').replace('gpt-', 'GPT-')} ${Math.round(v * 100)}%`).join(', ');
