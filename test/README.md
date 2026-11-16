@@ -128,6 +128,11 @@ fixture stores byte-for-byte unchanged; an absent demo store is never created.
 Issue #60 extends this same fixture with real synthetic scans on both exit 0 and
 unsafe exit 3: the audit beside the PNG names local reads, scanner commands, selected
 SSH attempts and output writes, and its absolute path matches JSON and SQLite.
+The fixture compares the audited `merge_scans.py` arguments with the actual spawn on
+success and failure, including tilde paths, and checks the README/header exclusions.
+An INSERT trigger fails after the first successful audit write: no checkpoint is
+saved, and the retained audit explains the attempted checkpoint and repeated audit
+write attempts. Removing the merge command's audit entry fails this guard.
 Only headless Chrome is replaced by a deterministic one-pixel PNG writer; no browser
 is launched. `--no-files` keeps each output folder empty, reports null paths and
 still stores its checkpoint; demo also reports a null audit path without store writes.

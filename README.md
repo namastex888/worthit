@@ -152,13 +152,14 @@ What leaves your machine:
 - With an AI agent, the prompt and week's numbers go through your own Claude, Codex, omp or dsh login to write the summary. With other machines selected from your saved SSH hosts (or remembered from an earlier run), worthit sends the bundled Python scanner over SSH and reads back usage; nothing is installed there, but it keeps a scan cache in `~/.worthit/` there. `--hosts none` disables that SSH scan. `--git no --ai no` disables the forge/meter and AI steps; selected SSH scans still run.
 - The bundled Python core scans and prices logs locally. When output files are enabled and Chrome or Chromium is installed, worthit's Node CLI runs it to render a local HTML dashboard to PNG in headless mode. In interactive setup, accepting skill installation runs `npx skills add`, which downloads the skill into your coding agents.
 
-The audit log records session-log reads and cache hits, collector commands, network activity, agent calls, sent data and output writes. It does not list executable lookup (`which`), hardware probes, the `zstd` decompressor used for `.zst` logs, the account ids read from Claude and Codex login files (`.claude.json`, `auth.json`; hashed), `~/.ssh/config`, or worthit's own store files.
+The audit log records session-log reads and cache hits, collector commands, network activity, agent calls, sent data and output writes. It does not list executable lookup (`which`), hardware probes, the `zstd` decompressor used for `.zst` logs, the account ids read from Claude and Codex login files (`.claude.json`, `auth.json`; hashed), the model names read from Gemini/Antigravity settings (`.gemini/antigravity-cli/settings.json`, `.gemini/antigravity/settings.json`, `.gemini/settings.json`), `claude-limits.jsonl` in the meter state directories, `~/.ssh/config`, all reads and writes inside worthit's own store folder (`WORTHIT_HOME`, default `~/.worthit`: its database and its sidecar files, caches, saved scans, settings and temporary files), or temporary files and working directories worthit creates under the system temporary folder, including rendering scratch and AI-agent working directories. Some store writes are listed, not all.
 
 A normal run writes `./<date>-worthit.md`, `./<date>-worthit.png` and `./<date>-worthit-audit.log`. Its store is `~/.worthit/` (or `WORTHIT_HOME`):
 
 | Path | Kept data |
 |---|---|
 | `hosts.json` | `selected` aliases and `retired: [{machine, retired_at, last_scan_at, since?}]`; old stores without `retired` work unchanged |
+| `settings.json` | Remembered dashboard machine, git and AI choices; skill installation choice/status and time |
 | `run-keep/<alias>.json` | Latest active scan, merged with saved whole-day/provider winners |
 | `run-keep/retired/<alias>.json` | Frozen snapshot moved at retirement; no run changes it; unretire restores its bytes |
 | `history.json`, `worthit.db` | Daily usage and git history; the database also holds plan values and weekly checkpoints |
