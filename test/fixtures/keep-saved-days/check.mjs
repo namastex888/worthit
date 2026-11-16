@@ -178,7 +178,7 @@ else {const r=spawnSync(${JSON.stringify(python)},args,{stdio:'inherit'});proces
   for (const name of ['local.json', 'box-b.json']) write(path.join(emptyDir, name), read(path.join(nextDir, name)));
   const emptyAnswer = cli(emptyDir);
   assert.deepEqual(emptyAnswer.machines_missing, [], 'empty successful response is not a missing machine');
-  assert.deepEqual(emptyAnswer.totals, before.totals, 'empty successful response preserves the week');
+  assert.deepEqual(emptyAnswer.totals, { ...before.totals, output_tokens_change_pct: null, api_value_change_pct: null }, 'empty successful response preserves the week');
   assert.deepEqual({ output_tokens: emptyAnswer.totals.output_tokens, api_value_usd: emptyAnswer.totals.api_value_usd }, expected.get('week'), 'empty answer matches literal expected week');
   assert.deepEqual(read(path.join(env.WORTHIT_HOME, 'history.json')), oldHistory, 'empty successful response preserves every history row');
   assert.equal(read(path.join(env.WORTHIT_HOME, 'run-keep/box-a.json')).buckets.length, expected.get('saved_days'), 'empty answer persists all saved days');
