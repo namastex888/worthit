@@ -11,7 +11,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Queued |
+| Status | Accepted |
 | Created | 2026-11-16 |
 | Issue | none yet (the owner's ask, relayed 2026-11-16; KR1 of the OKR accepted 2026-11-16) |
 | Depends on | Delivery 1 lands after RFC 0004 delivery 1: same files, and it stores that delivery's project rows per day. The model and proxy fields need RFC 0004 delivery 2 |
@@ -508,7 +508,8 @@ RFC 0004 delivers the fields: delivery 1 the projects, delivery 2 the lead model
 signal. Its source is `opened`, as relayed from the owner: a date proxy, true when no commit on the PR
 is dated after the PR was opened. It is not the review, and work redone before the PR was opened passes
 it. This RFC defines the daily cut of those fields and how a week and a month add them up. That is KR1,
-with the proxy standing for "passed on the first try" only if question 5 says so.
+with the proxy standing for "passed on the first try" under the owner's accepted `proxy` answer to
+question 5, always labelled a proxy.
 
 **The daily cut.** `periods.day.projects` is RFC 0004's `projects` block for one local day instead of
 seven rolling days, with the same field names. It covers today so far, the same stretch as `now`.
@@ -611,7 +612,7 @@ PRIMARY KEY (day, project, model, tool))`
   after. That row's `json` keeps the cut's `coverage`. So no judged day is without its cut; delivery 2
   adds only the JSON section and the command.
 - A day with no row is read from this run's scan when it is inside it, and makes the sum a floor.
-- This is the daily table RFC 0004 lists as its delivery 3. It is built once, here (section 9).
+- RFC 0004 delivery 3 leaves this daily table to this RFC. It is built once, here (section 9).
 
 Alternatives: keep the cut inside `period_result.json` (the question bar's `sql` would hand repository
 names to the AI agent); average the daily rates (a day with one PR would weigh as much as a day with
@@ -709,16 +710,13 @@ lookup list (`bin/worthit.mjs:159`), the README, and `demoData()` so `--demo` ca
 - **Different windows, labelled.** `projects` covers the run's rolling seven days (the squads' week of
   16 to 23 Nov). `periods.week` is the ISO week. The two are never shown as the same week.
 - **The same privacy.** Repository names are never drawn and never reach the AI agent (RFC 0004,
-  section 5), unless its questions 1 and 3 say otherwise.
-- **Order.** RFC 0004 delivery 1 goes first: the squads' week is judged with it on 2026-11-23. This
-  RFC's delivery 1 follows its merge: both touch `buildData`, `src/query.mjs` and the skill, and it
-  stores RFC 0004's project rows per day. KR1 is met when delivery 2 here and RFC 0004 delivery 2 are
-  both merged, with the proxy labelled.
-- **Two places in RFC 0004 are now out of date.** This PR does not edit that file. The author of this
-  RFC updates both in one docs PR after PR 117 merges, when the orchestrator says so:
-  1. its question 5 (the first-pass source) is answered: `opened`;
-  2. its delivery 3 no longer builds the daily table: `day_project` is built here, and RFC 0004's
-     delivery 3 keeps `worthit days --by project`.
+  section 5), following its accepted `command` and `no` answers to questions 1 and 3.
+- **Order.** RFC 0004 delivery 1 (#117) has shipped, satisfying this RFC's delivery 1 prerequisite:
+  both touch `buildData`, `src/query.mjs` and the skill, and this RFC stores its project rows per day.
+  RFC 0004 delivery 2 (#127) has also shipped. KR1 still needs delivery 2 here, with the proxy labelled.
+- **RFC 0004's record is aligned.** Its question 5 records `opened`. Its delivery 3 leaves the daily
+  `day_project` table to this RFC and keeps `worthit days --by project` and week-over-week history,
+  not scheduled.
 
 ### What leaves the machine, and privacy
 
@@ -811,7 +809,7 @@ Fixture cases for delivery 3:
 | # | Delivery | State |
 |---|---|---|
 | 1 | Record, with nothing on screen changed: failed reads reported by the scanner, the day admission rules, `basis` (period rows, `plan_value`, the `worthit weekly` JSON), `period_result` day rows with the qualifying count and the result, `day_project` rows, the counting rules, schema, skill, the fixture cases | open |
-| 2 | Per project and per model, daily (KR1), shown: `periods.day` with `projects` and `worthit projects --daily`, from the rows delivery 1 stored. Model and proxy fields fill when RFC 0004 delivery 2 merges | open |
+| 2 | Per project and per model, daily (KR1), shown: `periods.day` with `projects` and `worthit projects --daily`, from the rows delivery 1 stored, using the model and proxy fields shipped in RFC 0004 delivery 2 (#127) | open |
 | 3 | The day view and the game, the first delivery that changes the screen: the rest of `periods.day`, the `Today` block with its model lines, `--daily`, `game.day` (win, streak, bests, XP), every switch of section 3's table, the summary and share prompts, README, demo data, the fixture cases | open |
 | 4 | The week view: week rows, `periods.week`, `game.week`, `--weekly` and the `Week` block, `worthit projects --weekly`, the stderr line on `worthit weekly` | open |
 | 5 | The month view: month rows, `periods.month`, `game.month`, `--monthly` and the `Month` block, `worthit projects --monthly`, the slim plain run | open |
@@ -839,24 +837,27 @@ never guessed:
 - omp and dsh dollars inside a comparison, once both ends can be priced on one documented basis;
 - a share card for a streak or a best.
 
-## Open questions (for the owner)
+## Questions (owner answers recorded)
 
-Question 1 blocks delivery 1. Questions 4 and 5 block delivery 2. No question blocks delivery 3 beyond
-question 1. Question 2 blocks delivery 4. Question 3 blocks delivery 5. Each answer is one word, and
-`yes` alone takes every recommended one.
+The owner's `yes` accepted every recommended answer below. The RFC is Accepted; none of its
+deliveries has shipped. The answers settle the decisions for deliveries 1 to 5.
 
 1. **The game.** `qualifying`: a win is a qualifying merged PR by its title kind, on data worthit has
    today, for a team on one forge account; what still games it is listed in section 3 (recommended).
    `validated`: a win needs an approving review from another account on the forge. Then there is no win,
    streak or best until such reviews exist, a team on one account has no game, and from delivery 3 the
    screen keeps the level with no new XP and loses the usage streak and the old bests under their rules.
+   **Answer: `qualifying`.**
 2. **The flag names.** `weekly`: `--weekly` and `--monthly`, the owner's words, beside the
    `worthit weekly` command (recommended). `week`: `--week` and `--month`, further from the command.
+   **Answer: `weekly` (`--weekly` / `--monthly`).**
 3. **The plain run once all three views exist.** `slim`: the day blocks and the allowance only
    (recommended, it is what the owner asked for). `full`: everything it draws today, plus `Today`.
+   **Answer: `slim`.**
 4. **Where the per-project cut is shown.** `command`: `worthit projects --daily`, with per-model lines
    only in the dashboard (recommended, it follows RFC 0004's privacy rule). `dashboard`: project rows in
    the `Today` block, which puts repository names into the PNG and the `.md`.
+   **Answer: `command`.**
 5. **KR1's "passed on the first try".** `proxy`: KR1 is reported with the opened-date proxy, always
-   labelled a proxy (recommended; what was relayed is that the source `opened` was chosen, not that it
-   defines KR1). `review`: KR1 waits for review verdicts on the forge.
+   labelled a proxy (recommended). `review`: KR1 waits for review verdicts on the forge.
+   **Answer: `proxy`.**
