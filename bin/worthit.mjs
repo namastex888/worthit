@@ -58,7 +58,7 @@ if (argv[0] && !argv[0].startsWith('-') && !['get', 'days', 'sql', 'schema', 'in
 if (argv[0] === 'hosts') {
   const roots = argv[1] === 'roots';
   try { const result = roots ? rootsCommand(HOME, sshHosts(), argv.slice(2)) : hostsCommand(HOME, sshHosts(), argv.slice(1));
-    if (process.stdout.isTTY) console.log(roots ? result.help || (Array.isArray(result) ? result : [result]).map(r => `${r.id}: ${r.selected ? 'selected' : 'left out'} · ${r.lifecycle} · ${r.status} · reader ${r.reader_id || 'unknown'}`).join('\n') || 'No declared roots.' : Array.isArray(result) ? result.map(r => `${r.machine}: ${r.status}`).join('\n') || 'No saved SSH machines. Choose machines on your next run.' : `${result.machine}: ${result.status}`);
+    if (process.stdout.isTTY) console.log(roots ? result.help || (Array.isArray(result) ? result : [result]).map(r => `${r.id}: ${r.selected ? 'selected' : 'left out'} · ${r.lifecycle} · ${r.status} · reader ${r.reader_id || 'unknown'}${r.lifecycle === 'retired' && !r.last_scan_at ? ' · retired with no saved scan, as stated by you' : ''}`).join('\n') || 'No declared roots.' : Array.isArray(result) ? result.map(r => `${r.machine}: ${r.status}`).join('\n') || 'No saved SSH machines. Choose machines on your next run.' : `${result.machine}: ${result.status}`);
     else console.log(JSON.stringify(result, null, 1));
   } catch (e) { console.error('worthit hosts: ' + (roots && !e.exitCode ? 'private source-root operation failed' : e.message)); process.exit(e.exitCode || 2); }
   await finish();

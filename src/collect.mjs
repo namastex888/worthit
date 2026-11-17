@@ -103,7 +103,7 @@ export async function scan(cfg, on) {
   const coverageByMachine = new Map();
   const privatePaths = Object.values(rootsStore.state.machines).flatMap(entry => entry.roots.flatMap(root => [root, ...root.revisions].map(r => r.spec.path))).sort((a, b) => b.length - a.length);
   const sanitizeSaved = value => {
-    if (typeof value === 'string') { for (const privatePath of privatePaths) value = value.replaceAll(privatePath, '<private-root>'); return value; }
+    if (typeof value === 'string') { for (const privatePath of privatePaths) value = privatePath === '/' ? value.replace(/(^|[\s"'=])\/[^\s"']+/g, '$1<private-root>') : value.replaceAll(privatePath, '<private-root>'); return value; }
     if (Array.isArray(value)) return value.map(sanitizeSaved);
     if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [sanitizeSaved(key), sanitizeSaved(item)]));
     return value;
@@ -115,7 +115,7 @@ export async function scan(cfg, on) {
     // An empty transport envelope is absence of evidence, never an empty answer.
     const data = previous ? sanitizeSaved(previous) : { host: identity.get(machine)?.host || null, generated_at: null, since: null, days: 0, stats: {}, accounts: {}, errors: [],
       buckets: [], meters: [], events: [], meter_usage: [], meter_readings: [], meter_fields: [], sessions: [] };
-    const roots = unreadCoverage(HOME, rootsStore, machine, identity.get(machine), new Date(startedAt).toISOString(), !identity.has(machine));
+    const roots = unreadCoverage(HOME, rootsStore, machine, identity.get(machine), new Date(startedAt).toISOString(), !identity.has(machine), true);
     coverageByMachine.set(machine, roots);
     if (unknown.has(machine)) for (const root of roots) root.reasons = [...new Set([...root.reasons, 'identity_unknown'])].sort();
     data.source_roots = roots;
@@ -169,6 +169,10 @@ export async function scan(cfg, on) {
   const merged = spawnSync(py, mergeArgs, { env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' }, encoding: 'utf8', maxBuffer: 64 << 20 });
   if (merged.status) throw new Error('keeping saved scan days failed: ' + String(merged.stderr).trim().split('\n').pop());
   const { retained, retired, conflicts } = JSON.parse(merged.stdout);
+  if (declared.size) for (const file of fs.readdirSync(runDir).filter(name => name.endsWith('.json'))) {
+    const target = path.join(runDir, file), data = readScan(target);
+    if (data) writeFileAtomic(target, JSON.stringify(sanitizeSaved(data)));
+  }
   for (const x of conflicts) audit('note', `${x.machine} is retired but answers as ${x.same_as}`);
   for (const x of retained) for (const u of x.units) audit('note', `${x.machine}: older ${u.day} ${u.provider} scan kept (higher API value, then tokens)`);
   on({ pct: 1, detail: 'done', counts });
@@ -184,7 +188,7 @@ export async function scan(cfg, on) {
   const sourceRoots = [];
   for (const machine of declared.keys()) {
     const data = readScan(path.join(runDir, machine + '.json'));
-    sourceRoots.push(...(coverageByMachine.get(machine) || data?.source_roots || unreadCoverage(HOME, rootsStore, machine, null, null, true).map(root => ({ ...root, status: root.lifecycle === 'retired' ? 'retired' : 'left_out', reasons: root.lifecycle === 'retired' ? [] : ['not_selected'], attempted_at: null }))));
+    sourceRoots.push(...(coverageByMachine.get(machine) || data?.source_roots || unreadCoverage(HOME, rootsStore, machine, null, null, true, true).map(root => ({ ...root, status: root.lifecycle === 'retired' ? 'retired' : 'left_out', reasons: root.lifecycle === 'retired' ? [] : ['not_selected'], attempted_at: null }))));
   }
   for (const root of sourceRoots) audit('source_root', JSON.stringify(Object.fromEntries(['id', 'machine_id', 'attempted_at', 'status', 'reasons', 'revision'].map(k => [k === 'id' ? 'root_id' : k, root[k]]))));
   return { runDir, counts, hosts, cached, left_out: leftOut, retained, retired, retirement, retirement_conflicts: conflicts, started_at: startedAt,

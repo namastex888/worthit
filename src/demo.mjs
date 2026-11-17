@@ -38,7 +38,7 @@ export function demoData({ git = true } = {}) {
   // Bundled git totals are a complete synthetic control using the existing coverage contract.
   if (D.git) D.git.coverage = { prs: true, commits: true, sources: [{ source: 'usagemeter', answered: true, metrics: ['prs', 'commits'] }, { source: 'git log', answered: true, metrics: ['commits'] }, { source: 'gh:demo-coder', answered: true, metrics: ['prs'] }] };
   D.source_roots = [];
-  for (const plan of D.plans) plan.not_compared = plan.change_vs_last_week_pct == null ? ['no_baseline'] : [];
+  for (const plan of D.plans) plan.not_compared = plan.proof !== 'measured' ? ['floor'] : plan.change_vs_last_week_pct == null ? ['no_baseline'] : [];
   D.generated_at = now.toISOString(); D.week = { from: new Date(now - 7 * 864e5).toISOString().slice(0, 10), to: now.toISOString().slice(0, 10) };
   D.projects.delivery = git ? demoDelivery(D, now) : null;
   if (!git) {

@@ -4,6 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import os from 'node:os';
 import { spawnSync } from 'node:child_process';
+import { activeHosts } from './hosts.mjs';
 
 const HASH = /^[a-f0-9]{64}$/;
 const RECORD = ['key', 'selected', 'revision', 'spec', 'registered_at', 'boundary', 'revisions', 'retired_at', 'last_scan_at', 'since'];
@@ -74,6 +75,7 @@ function readEvidence(file) {
   } catch { throw new RootError('cannot validate saved source-root evidence', 1); }
 }
 function privateWrite(file, data) {
+  if (Buffer.byteLength(data) > 1 << 20) invalid();
   const tmp = file + '.' + crypto.randomUUID() + '.tmp';
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -121,6 +123,12 @@ export function readSourceRoots(home) {
   if (!exists && !keyExists) {
     // A prior provenance record prevents accidental reinitialization after loss.
     if (fs.existsSync(path.join(home, 'run-keep/roots'))) throw new RootError('source-root settings or key missing; restore the private store');
+    const keep = path.join(home, 'run-keep');
+    if (fs.existsSync(keep)) for (const name of fs.readdirSync(keep).filter(n => n.endsWith('.json'))) {
+      let scan;
+      try { scan = readEvidence(path.join(keep, name)); } catch { continue; }
+      if (HASH.test(scan.machine_id)) throw new RootError('source-root settings or key missing; restore the private store');
+    }
     return { state: { version: 1, machines: {} }, key: null };
   }
   if (!exists || !keyExists) throw new RootError('source-root settings or key missing; restore the private store');
@@ -196,7 +204,7 @@ function mutateRoots(home, known, argv) {
     const spec = validateSpec(readJSON(argv[3]));
     if (roots.some(r => JSON.stringify(canonical(r.spec)) === JSON.stringify(canonical(spec)))) throw new RootError('source root is already registered');
     const identity = machine === 'local' ? localIdentity() : null;
-    const saved = savedMachineId(home, store, machine);
+    const saved = machine === 'local' ? null : savedMachineId(home, store, machine);
     if (machine !== 'local' && !identity && !saved) throw new RootError('scan ' + machine + ' once before adding a root');
     record = { key: crypto.randomUUID(), selected: true, revision: 1, spec, registered_at: new Date().toISOString(), boundary: null,
       revisions: [], retired_at: null, last_scan_at: null, since: null };
@@ -243,7 +251,8 @@ function mutateRoots(home, known, argv) {
           throw new RootError('retirement date must be valid UTC, no earlier than registration and no later than now');
       }
       revise(record); record.selected = false; record.retired_at = new Date(retiredAt).toISOString(); record.since = since || null;
-      const frozen = { version: 1, source_roots: [publicRecord(home, store, machine, record)], generated_at: new Date(now).toISOString(),
+      const coverage = unreadCoverage(home, store, machine, null, null).find(root => root.id === id);
+      const frozen = { version: 1, source_roots: [coverage], generated_at: new Date(now).toISOString(),
         since: record.registered_at, registered_at: record.registered_at, last_scan_at: null, no_saved_scan: true, source_ids: [],
         ...Object.fromEntries(collections.map(k => [k, []])) };
       const snapshot = path.join(home, 'run-keep/roots/retired', id + '.json');
@@ -269,10 +278,10 @@ export function rootsCommand(home, known, argv) {
     catch (e) { throw new RootError(e.code === 'EEXIST' ? 'source-root store is busy; retry after the current operation' : 'cannot lock private source-root store', e.code === 'EEXIST' ? 2 : 1); }
     return mutateRoots(home, known, argv);
   } catch (e) { if (e instanceof RootError) throw e; throw new RootError('private source-root operation failed', 1); }
-  finally { if (fd !== undefined) { fs.closeSync(fd); fs.unlinkSync(lock); } }
+  finally { if (fd !== undefined) try { fs.closeSync(fd); fs.unlinkSync(lock); } catch { throw new RootError('cannot release private source-root store lock', 1); } }
 }
 
-export function unreadCoverage(home, store, machine, identity, attemptedAt, transportFailed = false) {
+export function unreadCoverage(home, store, machine, identity, attemptedAt, transportFailed = false, inspectSnapshot = false) {
   return sourceRootsFor(home, store, machine).map(({ record, id, tombstone }) => {
     if (tombstone) { const { machine: ignored, ...coverage } = tombstone; return { ...coverage, selected: false, lifecycle: 'active', status: 'left_out', reasons: ['removed_setting'], attempted_at: null }; }
     const machineId = identity ? rootHash(store.key, 'machine-v1', [identity.host]) : null;
@@ -282,6 +291,16 @@ export function unreadCoverage(home, store, machine, identity, attemptedAt, tran
     const retired = !!record.retired_at, selected = record.selected && !retired;
     const reasons = retired ? [] : !selected ? ['not_selected'] : transportFailed ? ['transport_failed'] :
       boundary === 'failed' ? ['boundary_failed'] : boundary !== 'verified' ? ['boundary_unverified'] : ['legacy_coverage_unknown'];
+    if (retired && inspectSnapshot) {
+      const snapshot = path.join(home, 'run-keep/roots/retired', id + '.json');
+      if (!fs.existsSync(snapshot)) reasons.push('not_found');
+      else try {
+        const frozen = readJSON(snapshot);
+        if (frozen.version !== 1 || frozen.no_saved_scan !== true || frozen.last_scan_at !== null || frozen.since !== record.registered_at ||
+            !Array.isArray(frozen.source_ids) || frozen.source_ids.length || !collections.every(k => Array.isArray(frozen[k]) && frozen[k].length === 0) ||
+            !frozen.source_roots?.some(r => r.id === id && r.lifecycle === 'retired')) reasons.push('parse_error');
+      } catch { reasons.push('parse_error'); }
+    }
     const status = retired ? 'retired' : selected ? 'unreadable' : 'left_out';
     return { id, machine_id: machineId, reader_id: readerId, canonical_id: null, revision: record.revision, registered_at: record.registered_at,
       selected: record.selected, lifecycle: retired ? 'retired' : 'active', status, reasons, attempted_at: selected ? attemptedAt : null,
@@ -293,17 +312,21 @@ export function unreadCoverage(home, store, machine, identity, attemptedAt, tran
   });
 }
 export function saveRootCoverage(home, machine, roots) {
-  for (const root of roots) privateWrite(path.join(home, 'run-keep/roots', root.id + '.json'), JSON.stringify({ version: 1,
-    machine, source_roots: [root], generated_at: new Date().toISOString(), registered_at: root.registered_at,
-    last_scan_at: root.last_scan_at, no_saved_scan: !root.last_scan_at, source_ids: [] }));
+  for (const root of roots) {
+    const file = path.join(home, 'run-keep/roots', root.id + '.json');
+    const prior = fs.existsSync(file) ? readJSON(file) : {};
+    privateWrite(file, JSON.stringify({ version: 1, machine, source_roots: [root], generated_at: new Date().toISOString(),
+      registered_at: root.registered_at, last_scan_at: root.last_scan_at || prior.last_scan_at || null,
+      no_saved_scan: prior.no_saved_scan !== false && !root.last_scan_at, source_ids: prior.source_ids || [] }));
+  }
 }
 
 const localIdentity = () => ({ host: os.hostname(), os: process.platform, uid: process.geteuid?.() ?? null, gid: process.getegid?.() ?? null });
 function savedMachineId(home, store, machine) {
   const file = path.join(home, 'run-keep', machine + '.json');
   if (!fs.existsSync(file)) return null;
-  const scan = readEvidence(file);
-  return HASH.test(scan.machine_id) ? scan.machine_id : null;
+  try { const scan = readEvidence(file); return HASH.test(scan.machine_id) ? scan.machine_id : null; }
+  catch { return null; } // Unreadable/legacy evidence cannot establish identity.
 }
 export function initializeRootStore(home, store) {
   if (store.key) return;
@@ -329,6 +352,7 @@ function probeIdentity(machine, py) {
 // Establish once, before concurrent scanner/meter lanes. Identity-only probes carry
 // no paths/spec/key and their bounded raw pipes are consumed only in memory.
 export function sourceRootPolicy(home, aliases = []) {
+  aliases = activeHosts(home, aliases);
   const store = readSourceRoots(home);
   initializeRootStore(home, store);
   const machines = new Set(['local', ...aliases, ...Object.keys(store.state.machines), ...storedRootCoverage(home).map(r => r.machine).filter(Boolean)]);
@@ -336,9 +360,13 @@ export function sourceRootPolicy(home, aliases = []) {
   const established = new Map();
   for (const machine of machines) {
     const roots = sourceRootsFor(home, store, machine);
+    if (roots.length) { declared.set(machine, roots); withheld.add(machine); }
+  }
+  // Default-only stores retain their existing saved-scan error/reuse behavior.
+  if (!declared.size) return { store, declared, identity, withheld, unknown };
+  for (const machine of machines) {
     const id = store.state.machines[machine]?.machine_id || storedRootCoverage(home).find(r => r.machine === machine)?.machine_id || savedMachineId(home, store, machine);
     if (id) established.set(machine, id);
-    if (roots.length) { declared.set(machine, roots); withheld.add(machine); }
   }
   const rootIds = new Set([...declared.keys()].map(machine => established.get(machine)).filter(Boolean));
   if (declared.size) {

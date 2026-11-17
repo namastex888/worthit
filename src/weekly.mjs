@@ -55,7 +55,7 @@ export function prepareWeekly(data, comparedWith) {
   }
   const reasons = [];
   for (const root of roots) {
-    for (const reason of root.reasons?.length ? root.reasons : ['legacy_coverage_unknown']) reasons.push(`${root.id}: ${reason}`);
+    for (const reason of root.reasons?.length ? root.reasons : ['legacy_coverage_unknown']) reasons.push(`${root.id}: ${reason}${root.lifecycle === 'retired' && !root.last_scan_at ? ' (retired with no saved scan, as stated by you)' : ''}`);
   }
   for (const row of data.machines_missing) reasons.push(`${row.machine}: no fresh answer${row.saved_scan_at ? ' (saved scan used)' : ''}`);
   for (const machine of data.machines_left_out) reasons.push(`${machine}: saved machine with usage left out`);
