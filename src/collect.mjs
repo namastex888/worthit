@@ -10,6 +10,7 @@ import { collectDeliveryEvidence } from './delivery-forges.mjs';
 import { roundPercent } from './percent.mjs';
 import { readHosts, writeHosts, activeHosts, retirementBlocks, retirementStatement } from './hosts.mjs';
 import { copyFileAtomic, writeFileAtomic, cleanSavedTemps } from './atomic.mjs';
+import { unreadCoverage, saveRootCoverage, sourceRootPolicy, rootHash } from './source-roots.mjs';
 
 export const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 export const HOME = process.env.WORTHIT_HOME || path.join(os.homedir(), '.worthit');
@@ -76,6 +77,9 @@ function savedLeftOut(keepDir, selected, retired, freshHosts) {
   return leftOut;
 }
 export async function scan(cfg, on) {
+  // Validate before creating run results. B never sends a spec or HMAC key to a reader.
+  const rootPolicy = cfg.rootPolicy || sourceRootPolicy(HOME, cfg.hosts || []);
+  const rootsStore = rootPolicy.store;
   cleanSavedTemps(HOME);
   const startedAt = Date.now(), retirement = readHosts(HOME).retired;
   cfg = { ...cfg, hosts: activeHosts(HOME, cfg.hosts || []) };
@@ -85,19 +89,42 @@ export async function scan(cfg, on) {
   }
   const py = ['python3', 'python'].find(has);
   if (!py) throw new Error('Python 3 is needed for the log scanner. macOS: xcode-select --install · Linux: install python3 with your package manager.');
+  const { declared, identity, withheld, unknown } = rootPolicy;
   const runs = path.join(HOME, 'run'), runDir = path.join(runs, String(process.pid)); fs.mkdirSync(runs, { recursive: true });
   for (const x of fs.readdirSync(runs)) { let alive = false; try { process.kill(+x, 0); alive = /^\d+$/.test(x); } catch { /* gone */ } if (!alive || +x === process.pid) fs.rmSync(path.join(runs, x), { recursive: true, force: true }); }
   fs.mkdirSync(runDir, { recursive: true });
   const script = path.join(ROOT, 'core', 'extract_usage.py'), counts = { claude: 0, codex: 0, antigravity: 0 };
   const cache = path.join(HOME, 'run-counts.json'), keepDir = path.join(HOME, 'run-keep');
-  if (!cfg.fresh && !retirement.length && process.env.WORTHIT_REUSE && fs.existsSync(path.join(keepDir, 'local.json'))) {
+  if (!declared.size && !cfg.fresh && !retirement.length && process.env.WORTHIT_REUSE && fs.existsSync(path.join(keepDir, 'local.json'))) {
     for (const f of fs.readdirSync(keepDir, { withFileTypes: true })) if (f.isFile() && f.name.endsWith('.json')) fs.copyFileSync(path.join(keepDir, f.name), path.join(runDir, f.name));
     audit('note', 'WORTHIT_REUSE: using the previous scan'); return { runDir, counts: JSON.parse(fs.readFileSync(cache, 'utf8')), hosts: [], left_out: savedLeftOut(keepDir, cfg.hosts, retirement, new Set()), started_at: 0 };
   }
   let cached = 0; const names = cfg.hosts || [], pcts = { local: 0 }; names.forEach(a => { pcts[a] = 0; });
+  const coverageByMachine = new Map();
+  const privatePaths = Object.values(rootsStore.state.machines).flatMap(entry => entry.roots.flatMap(root => [root, ...root.revisions].map(r => r.spec.path))).sort((a, b) => b.length - a.length);
+  const sanitizeSaved = value => {
+    if (typeof value === 'string') { for (const privatePath of privatePaths) value = value.replaceAll(privatePath, '<private-root>'); return value; }
+    if (Array.isArray(value)) return value.map(sanitizeSaved);
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [sanitizeSaved(key), sanitizeSaved(item)]));
+    return value;
+  };
   const emit = detail => { const v = Object.values(pcts); on({ pct: v.reduce((a, b) => a + b, 0) / v.length, detail, counts }); };
-  audit('run', `${py} core/extract_usage.py ${cfg.days}   (reads local session logs and repository .git, commondir and config metadata, read-only)`);
-  const local = new Promise((res, rej) => {
+  if (!withheld.has('local')) audit('run', `${py} core/extract_usage.py ${cfg.days}   (reads local session logs and repository .git, commondir and config metadata, read-only)`);
+  const savedOnly = machine => {
+    const previous = readScan(path.join(keepDir, machine + '.json'));
+    // An empty transport envelope is absence of evidence, never an empty answer.
+    const data = previous ? sanitizeSaved(previous) : { host: identity.get(machine)?.host || null, generated_at: null, since: null, days: 0, stats: {}, accounts: {}, errors: [],
+      buckets: [], meters: [], events: [], meter_usage: [], meter_readings: [], meter_fields: [], sessions: [] };
+    const roots = unreadCoverage(HOME, rootsStore, machine, identity.get(machine), new Date(startedAt).toISOString(), !identity.has(machine));
+    coverageByMachine.set(machine, roots);
+    if (unknown.has(machine)) for (const root of roots) root.reasons = [...new Set([...root.reasons, 'identity_unknown'])].sort();
+    data.source_roots = roots;
+    writeFileAtomic(path.join(runDir, machine + '.json'), JSON.stringify(data));
+    saveRootCoverage(HOME, machine, roots);
+    return { alias: machine, ok: !!previous, files: 0, ...(previous ? { saved_at: previous.generated_at || null } : {}) };
+  };
+  const localState = withheld.has('local') ? savedOnly('local') : null;
+  const local = localState ? Promise.resolve() : new Promise((res, rej) => {
     const p = spawn(py, [script, String(cfg.days)], { env: { ...process.env, WORTHIT_HOME: HOME, WORTHIT_PROGRESS: '1', PYTHONDONTWRITEBYTECODE: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
     const out = fs.createWriteStream(path.join(runDir, 'local.json')), written = new Promise(r => { out.on('finish', r); out.on('error', r); }); p.stdout.pipe(out);
     let buf = '', errs = '';
@@ -107,7 +134,7 @@ export async function scan(cfg, on) {
       const [lo, hi] = SPAN[tool] || [0, 1]; pcts.local = +b > 0 ? lo + (hi - lo) * (+a / +b) : lo; emit(`${names.length ? 'this machine · ' : ''}${TOOL[tool] || tool} · ${hit ? 'unchanged, from cache · ' : ''}${tilde(file)}`); } });
     p.on('error', rej); p.on('close', async code => { await written; pcts.local = 1; code ? rej(new Error('scanner failed: ' + (errs.trim().split('\n').pop() || 'exit ' + code))) : res(); });
   });
-  const remote = (cfg.hosts || []).map(alias => new Promise(res => {      // other machines over ssh: the same script, piped in, nothing installed there
+  const remote = (cfg.hosts || []).map(alias => withheld.has(alias) ? Promise.resolve(savedOnly(alias)) : new Promise(res => {      // other machines over ssh: the same script, piped in, nothing installed there
     audit('run', `ssh ${alias} "nice python3 - ${cfg.days}" < core/extract_usage.py   (same read-only scanner, piped in; repository ids returned with usage; nothing is installed there)`);
     const p = spawn('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', alias, `env WORTHIT_PROGRESS=1 PYTHONDONTWRITEBYTECODE=1 nice python3 - ${cfg.days}`], { stdio: ['pipe', 'pipe', 'pipe'] });
     let buf = '', files = 0, hcached = 0;
@@ -122,17 +149,22 @@ export async function scan(cfg, on) {
   const head = f => { try { const fd = fs.openSync(f, 'r'), b = Buffer.alloc(400); fs.readSync(fd, b, 0, 400, 0); fs.closeSync(fd); return b.toString(); } catch { return ''; } };
   const savedAt = f => (/"generated_at"\s*:\s*"([^"]*)"/.exec(head(f)) || [])[1] || null;
   // a machine that gave no answer keeps its last saved scan, and the run says so: a week never shrinks because one machine was asleep
-  for (const x of hosts) { const k = path.join(keepDir, x.alias + '.json'); if (x.ok || !fs.existsSync(k)) continue;
+  for (const x of hosts) { const k = path.join(keepDir, x.alias + '.json'); if (withheld.has(x.alias) || x.ok || !fs.existsSync(k)) continue;
     fs.copyFileSync(k, path.join(runDir, x.alias + '.json')); x.ok = true; x.saved_at = savedAt(k) || fs.statSync(k).mtime.toISOString(); audit('note', `${x.alias} gave no answer: its last saved scan (${x.saved_at}) is used`); }
   // two ssh aliases can point at one machine: keep the first answer, drop the repeat so nothing is counted twice
   const hostOf = f => (/"host"\s*:\s*"([^"]*)"/.exec(head(f)) || [])[1] || null;
   const seenHost = new Map([[hostOf(path.join(runDir, 'local.json')), 'this machine']]);
   for (const x of [...hosts].sort((a, b) => !!a.saved_at - !!b.saved_at)) { if (!x.ok) continue; const f = path.join(runDir, x.alias + '.json'), hn = hostOf(f);   // fresh answers first: a saved copy never wins over one
     if (hn && seenHost.has(hn)) { x.same_as = seenHost.get(hn); x.ok = false; delete x.saved_at; fs.rmSync(f, { force: true }); audit('note', `${x.alias} is the same machine as ${x.same_as} (${hn}): its copy is dropped`); } else if (hn) seenHost.set(hn, x.alias); }
-  const freshHosts = new Set(['local', ...hosts.filter(x => x.ok && !x.saved_at).map(x => x.alias)]
+  for (const machine of ['local', ...hosts.filter(x => x.ok && !x.saved_at).map(x => x.alias)]) {
+    if (withheld.has(machine)) continue;
+    const file = path.join(runDir, machine + '.json'), data = readScan(file);
+    if (data?.host) { data.machine_id = rootHash(rootsStore.key, 'machine-v1', [data.host]); data.source_roots = []; writeFileAtomic(file, JSON.stringify(data)); }
+  }
+  const freshHosts = new Set([...(localState ? [] : ['local']), ...hosts.filter(x => x.ok && !x.saved_at).map(x => x.alias)]
     .map(alias => readScan(path.join(runDir, alias + '.json'))?.host).filter(h => typeof h === 'string' && h));
   // Merge only the deduplicated machines (including local), before pricing and persisting run-keep.
-  const mergeArgs = [path.join(ROOT, 'core', 'merge_scans.py'), runDir, keepDir, HOSTS_FILE, String(startedAt), String(cfg.days), JSON.stringify(['local.json', ...hosts.filter(x => x.ok && !x.saved_at).map(x => x.alias + '.json')])];
+  const mergeArgs = [path.join(ROOT, 'core', 'merge_scans.py'), runDir, keepDir, HOSTS_FILE, String(startedAt), String(cfg.days), JSON.stringify([...(localState ? [] : ['local.json']), ...hosts.filter(x => x.ok && !x.saved_at).map(x => x.alias + '.json')])];
   audit('run', `${py} core/merge_scans.py ${mergeArgs.slice(1).map((a, i) => i < 3 ? tilde(a) : i === 5 ? "'" + a + "'" : a).join(' ')}   (merges saved scans into this run: kept days, retirements, conflicts)`);
   const merged = spawnSync(py, mergeArgs, { env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' }, encoding: 'utf8', maxBuffer: 64 << 20 });
   if (merged.status) throw new Error('keeping saved scan days failed: ' + String(merged.stderr).trim().split('\n').pop());
@@ -147,9 +179,16 @@ export async function scan(cfg, on) {
   fs.mkdirSync(keepDir, { recursive: true });
   for (const f of fs.readdirSync(runDir, { withFileTypes: true })) {
     if (!f.isFile() || !f.name.endsWith('.json') || retirement.some(r => f.name === r.machine + '.json')) continue;
-    copyFileAtomic(path.join(runDir, f.name), path.join(keepDir, f.name));
+    if (!withheld.has(f.name.slice(0, -5))) copyFileAtomic(path.join(runDir, f.name), path.join(keepDir, f.name));
   }
-  return { runDir, counts, hosts, cached, left_out: leftOut, retained, retired, retirement, retirement_conflicts: conflicts, started_at: startedAt };
+  const sourceRoots = [];
+  for (const machine of declared.keys()) {
+    const data = readScan(path.join(runDir, machine + '.json'));
+    sourceRoots.push(...(coverageByMachine.get(machine) || data?.source_roots || unreadCoverage(HOME, rootsStore, machine, null, null, true).map(root => ({ ...root, status: root.lifecycle === 'retired' ? 'retired' : 'left_out', reasons: root.lifecycle === 'retired' ? [] : ['not_selected'], attempted_at: null }))));
+  }
+  for (const root of sourceRoots) audit('source_root', JSON.stringify(Object.fromEntries(['id', 'machine_id', 'attempted_at', 'status', 'reasons', 'revision'].map(k => [k === 'id' ? 'root_id' : k, root[k]]))));
+  return { runDir, counts, hosts, cached, left_out: leftOut, retained, retired, retirement, retirement_conflicts: conflicts, started_at: startedAt,
+    source_roots: sourceRoots, local_saved_only: !!localState, local_saved_scan_at: localState?.saved_at || null };
 }
 
 // ---------------------------------------------------------------- step 2: price every request, read the weekly meters
@@ -188,6 +227,8 @@ export const KINDS = { feat: 'features', fix: 'fixes', docs: 'docs', test: 'test
 export const kindOf = title => { const m = /^\s*\[?([a-z]+)\]?\s*(\([^)]*\))?\s*!?\s*:/i.exec(String(title || '')); if (!m) return 'other'; const k = KIND_ALIAS[m[1].toLowerCase()] || m[1].toLowerCase(); return KINDS[k] && k !== 'other' ? k : 'other'; };
 const HIST = 84 * DAY;                 // merged pull requests are kept for 12 weeks, so delivery can be shown week by week and month by month
 export async function git(cfg, on) {
+  const rootPolicy = cfg.rootPolicy || sourceRootPolicy(HOME, cfg.hosts || []);
+  const savedOnlyLocal = rootPolicy.withheld.has('local');
   const since = Date.now() - 14 * DAY, prs = new Map(), commits = new Map(), src = { github: 0, meter: 0, gitea: 0, gitlab: 0 }; let repos = 0, meter = null;
   const answers = [], answer = (source, answered, metrics) => {
     answers.push({ source, answered, metrics });
@@ -195,6 +236,7 @@ export async function git(cfg, on) {
   };
   let meterOK = false, storeOK = false, logsOK = true, recentNoCheckout = false;
   try {
+    if (savedOnlyLocal) throw new Error('declared-root machine uses saved usage only; meter sync/store and local repository discovery withheld');
     meter = await meterBin(on);
     on({ pct: .15, detail: 'usagemeter sync · reading new usage into its local store' });
     audit('run', `${tilde(meter.bin)} sync --no-publish --budget-secs 20`);
@@ -421,8 +463,11 @@ export function buildData(report, g, cfg, scanInfo) {
   // plans: this week's measured value of one full weekly limit
   // measured needs every machine's answer from this run: one that gave no answer (even with a saved scan standing in) or a saved machine with usage left out means use elsewhere may be missing
   const hs = scanInfo.hosts || [], missing = hs.filter(x => x.saved_at || !(x.ok || x.same_as)).map(x => ({ machine: x.alias, saved_scan_at: x.saved_at || null })), leftOut = scanInfo.left_out || [];
+  if (scanInfo.local_saved_only) missing.push({ machine: 'local', saved_scan_at: scanInfo.local_saved_scan_at || null });
   const retired = scanInfo.retirement || [], retained = scanInfo.retained || [];
-  const answered = !missing.length && !leftOut.length && (hs.length > 0 || !activeHosts(HOME, sshHosts().map(h => h.alias)).length);
+  const sourceRoots = scanInfo.source_roots || [];
+  const rootsPresent = sourceRoots.length > 0;
+  const answered = !rootsPresent && !scanInfo.local_saved_only && !missing.length && !leftOut.length && (hs.length > 0 || !activeHosts(HOME, sshHosts().map(h => h.alias)).length);
   // Evaluate each rolling week separately: a current measured week cannot certify an older floor.
   const measuredAt = end => answered && !retirementBlocks(retired, end).length &&
     !retained.some(x => x.units.some(u => retainedUnitOverlapsWeek(u, end)));
@@ -442,7 +487,7 @@ export function buildData(report, g, cfg, scanInfo) {
     try {
       db = new DatabaseSync(path.join(HOME, 'worthit.db'), { readOnly: true });
       if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'plan_value'").get())
-        previousValues = db.prepare('SELECT provider, plan, usd_per_full_week, proof FROM plan_value WHERE day = ?').all(dayKey(previousDay));
+        previousValues = db.prepare('SELECT * FROM plan_value WHERE day = ?').all(dayKey(previousDay));
     } catch (e) { audit('note', 'previous plan value unavailable: ' + e.message); }
     finally { db?.close(); }
   }
@@ -459,14 +504,17 @@ export function buildData(report, g, cfg, scanInfo) {
     const past = Object.keys(byWeek).sort().slice(-5).map(k => byWeek[k]), pl = (report.pooled || {})[key], v = pl ? pl.usd_per_full_week : w.usd_per_full_week, resets = events.filter(e => e.provider === key && e.type === 'reset' && e.confidence === 'high').length, from = Math.round(w.meter_start_pct), to = Math.round(w.meter_end_pct), per = report.prices.plan_usd_per_week[key];
     const proofAt = end => key === 'claude' && measuredAt(end) ? 'measured' : 'floor';
     const previous = previousValues.find(p => p.provider === key && p.plan === PLAN[key].plan);
-    const change = proofAt(now) === 'measured' && previous?.proof === 'measured' && previous.usd_per_full_week > 0 && ledgerProofAt(w1).proof !== 'floor'
+    let previousRoots = [];
+    try { previousRoots = JSON.parse(previous?.source_roots || '[]'); } catch { previousRoots = []; }
+    const rootComparison = rootsPresent || (Array.isArray(previousRoots) && previousRoots.length > 0);
+    const change = !rootComparison && proofAt(now) === 'measured' && previous?.proof === 'measured' && previous.usd_per_full_week > 0 && ledgerProofAt(w1).proof !== 'floor'
       ? pctChange(v, previous.usd_per_full_week) : null;
     const retirementNote = allMachines && key === 'claude' ? retirementStatement(retired) : '';
     plans.push({ key, ...PLAN[key], usd_per_full_week: v, times_plan_price: Math.round(v / per), proof: proofAt(now), ...(retirementNote ? { retirement_note: retirementNote } : {}), plan_usd_per_week: Math.round(per), meter_from: from, meter_to: to,
       meter: pl ? `${pl.stretches} stretches · ${pl.meter_points} points` : key === 'google' ? `no meter · cap after ${w.hours} h` : `meter ${from}% → ${to}% in ${w.hours} h`, priced_usd: pl ? pl.api_usd : w.measured.api_usd, fraction_of_week: pl ? +(pl.meter_points / 100).toFixed(2) : +((to - from) / 100).toFixed(2),
       other_machines_usd: pl && pl.other_machines_usd >= 1 ? Math.round(pl.other_machines_usd) : 0, usd_per_full_week_all_machines: pl && pl.other_machines_usd >= 1 ? pl.usd_per_full_week_all_machines : null,
       stretches: pl ? pl.stretches : 1, range_usd: report.this_week[key + '_range'] || null, resets_this_week: resets,
-      tokens: pl ? `${ft(pl.output_tokens)} out ${ft(pl.cached_input_tokens)} cached` : `${ft(w.measured.output_tokens)} out ${ft(w.measured.cached_input_tokens)} cached`, models: models(w.measured.model_mix_by_usd), history: [...past, v], weeks: [...Object.keys(byWeek).sort().slice(-11).map(k => ({ weeks_ago: 99 - +k, to: new Date(now - (99 - +k) * 7 * DAY).toISOString().slice(0, 10), usd: byWeek[k], ...ledgerProofAt(now - (99 - +k) * 7 * DAY) })), { weeks_ago: 0, to: new Date(now).toISOString().slice(0, 10), usd: v, proof: proofAt(now) }], change_vs_last_week_pct: change });
+      tokens: pl ? `${ft(pl.output_tokens)} out ${ft(pl.cached_input_tokens)} cached` : `${ft(w.measured.output_tokens)} out ${ft(w.measured.cached_input_tokens)} cached`, models: models(w.measured.model_mix_by_usd), history: [...past, v], weeks: [...Object.keys(byWeek).sort().slice(-11).map(k => ({ weeks_ago: 99 - +k, to: new Date(now - (99 - +k) * 7 * DAY).toISOString().slice(0, 10), usd: byWeek[k], ...(rootsPresent ? { proof: 'floor' } : ledgerProofAt(now - (99 - +k) * 7 * DAY)) })), { weeks_ago: 0, to: new Date(now).toISOString().slice(0, 10), usd: v, proof: proofAt(now) }], change_vs_last_week_pct: change, not_compared: [...(rootComparison ? ['roots_changed'] : []), ...(proofAt(now) !== 'measured' || previous?.proof === 'floor' ? ['floor'] : []), ...(!previous ? ['no_baseline'] : !(previous.usd_per_full_week > 0) ? ['invalid_baseline'] : [])].sort() });
   }
 
   // waste: account-weeks that closed in the last 7 days (and ones still open, shown as at risk, never as waste)
@@ -488,7 +536,7 @@ export function buildData(report, g, cfg, scanInfo) {
 
   const tools = ['claude', 'codex', 'antigravity', 'omp', 'dsh'].filter(p => p !== 'omp' && p !== 'dsh' || (report.other_tools || {})[p]).map(p => { const r = cur.filter(a => a.provider === p), ot = (report.other_tools || {})[p];
     return { tool: TOOL[p], key: p, found: ot ? true : (scanInfo.counts[p] || 0) > 0, files: scanInfo.counts[p] || 0, source: ot ? 'usagemeter store' : 'session logs', priced: ot ? (ot.usd_fitted ? 'cost reported by omp; dsh priced at the rates those costs imply' : 'cost reported by the tool') : 'API list price', unpriced_output_tokens: ot ? ot.unpriced_output_tokens : 0, sessions: (report.sessions_by_provider || {})[p] || 0, requests: sum(r, 'requests'), output: sum(r, 'output'), cached: sum(r, 'cache_read'), fresh: sum(r, 'input_uncached'), usd: Math.round(sum(r, 'usd')) }; });
-  const D = { generated_at: new Date(now).toISOString(), week: { from: new Date(w1).toISOString().slice(0, 10), to: new Date(now).toISOString().slice(0, 10) }, machines: 1 + (scanInfo.hosts || []).filter(x => x.ok).length, machines_missing: missing, machines_left_out: leftOut, machines_retained: scanInfo.retained || [], machines_retired: scanInfo.retired || [], retirement_conflicts: scanInfo.retirement_conflicts || [], days_scanned: cfg.days,
+  const D = { source_roots: sourceRoots, generated_at: new Date(now).toISOString(), week: { from: new Date(w1).toISOString().slice(0, 10), to: new Date(now).toISOString().slice(0, 10) }, machines: 1 + (scanInfo.hosts || []).filter(x => x.ok).length, machines_missing: missing, machines_left_out: leftOut, machines_retained: scanInfo.retained || [], machines_retired: scanInfo.retired || [], retirement_conflicts: scanInfo.retirement_conflicts || [], days_scanned: cfg.days,
     plans, events, months: [], tools, waste, waste_hidden: hidden, totals: { output_tokens: sum(cur, 'output'), output_tokens_change_pct: usageCompared ? pctChange(sum(cur, 'output'), sum(prev, 'output')) : null, api_value_usd: Math.round(sum(cur, 'usd')), api_value_change_pct: usageCompared ? pctChange(sum(cur, 'usd'), sum(prev, 'usd')) : null,
       tokens_per_day: perDay(act, 'output'), value_per_day: perDay(act, 'usd').map(Math.round) },
     heat: { days: names, rows: heat, note: pk[2] ? `peak ${names[pk[0]]} ${String(pk[1]).padStart(2, '0')}:00 · quiet ${names[quiet]}` : 'no activity' } };
@@ -549,15 +597,16 @@ export function buildData(report, g, cfg, scanInfo) {
       CREATE TABLE IF NOT EXISTS day (day TEXT PRIMARY KEY, prs INTEGER, commits INTEGER);
       CREATE TABLE IF NOT EXISTS plan_value (day TEXT, provider TEXT, plan TEXT, usd_per_full_week INTEGER, times_plan_price INTEGER, stretches INTEGER, proof TEXT, PRIMARY KEY (day, provider));
       CREATE VIEW IF NOT EXISTS month AS SELECT substr(day, 1, 7) AS month, provider, ROUND(SUM(api_usd)) AS api_usd, SUM(output_tokens) AS output_tokens, SUM(requests) AS requests, COUNT(DISTINCT day) AS days FROM day_provider GROUP BY 1, 2;`);
+    if (!db.prepare('PRAGMA table_info(plan_value)').all().some(c => c.name === 'source_roots')) db.exec('ALTER TABLE plan_value ADD COLUMN source_roots TEXT');
     const dp = {}; for (const a of act) { const k = dayKey(a.t) + '|' + (a.provider === 'antigravity' ? 'google' : a.provider), o = dp[k] = dp[k] || { usd: 0, out: 0, req: 0 }; o.usd += a.usd || 0; o.out += a.output || 0; o.req += a.requests || 0; }
     // Stored usage always keeps per-field maxima; Git has independent coverage.
     const upP = db.prepare('INSERT INTO day_provider VALUES (?, ?, ?, ?, ?) ON CONFLICT (day, provider) DO UPDATE SET api_usd = MAX(api_usd, excluded.api_usd), output_tokens = MAX(output_tokens, excluded.output_tokens), requests = MAX(requests, excluded.requests)');
     const upD = db.prepare('INSERT INTO day VALUES (?, ?, ?) ON CONFLICT (day) DO UPDATE SET prs = CASE WHEN ? THEN excluded.prs ELSE MAX(prs, excluded.prs) END, commits = CASE WHEN ? THEN excluded.commits ELSE MAX(commits, excluded.commits) END');
-    const upV = db.prepare('INSERT OR REPLACE INTO plan_value VALUES (?, ?, ?, ?, ?, ?, ?)');
+    const upV = db.prepare('INSERT OR REPLACE INTO plan_value (day, provider, plan, usd_per_full_week, times_plan_price, stretches, proof, source_roots) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
     db.exec('BEGIN');
     for (const [k, o] of Object.entries(dp)) { const [day, provider] = k.split('|'); upP.run(day, provider, +o.usd.toFixed(2), Math.round(o.out), o.req); }
     for (const [k, o] of Object.entries(hist.days)) upD.run(k, o.prs || 0, o.commits || 0, +gitCovered(k, 'prs'), +gitCovered(k, 'commits'));
-    for (const p of plans) upV.run(dayKey(now), p.key, p.plan, p.usd_per_full_week, p.times_plan_price, p.stretches || 1, p.proof);
+    for (const p of plans) upV.run(dayKey(now), p.key, p.plan, p.usd_per_full_week, p.times_plan_price, p.stretches || 1, p.proof, JSON.stringify(sourceRoots));
     db.exec('COMMIT');
     const lim = {}; for (const r of db.prepare('SELECT substr(day, 1, 7) AS month, provider, ROUND(AVG(usd_per_full_week)) AS v, COUNT(*) AS n FROM plan_value GROUP BY 1, 2').all()) lim[r.month + '|' + r.provider] = r;
     const prd = {}; for (const r of db.prepare('SELECT substr(day, 1, 7) AS month, SUM(prs) AS prs, SUM(commits) AS commits FROM day GROUP BY 1').all()) prd[r.month] = r;
@@ -591,10 +640,13 @@ export function buildData(report, g, cfg, scanInfo) {
     db.close(); audit('write', tilde(dbf) + `  (SQLite: ${Object.keys(dp).length} day rows updated, ${months.length} month rows)`);
   } catch (e) { audit('note', 'worthit.db not updated: ' + e.message); }
   D.months = months;
+  if (rootsPresent && D.model_mix) {
+    for (const row of [...D.model_mix.series, D.model_mix.open, D.model_mix.closed]) row.change_pts = null;
+  }
   const keys = Object.keys(hist.days).sort(), xp = keys.reduce((s, k) => s + Math.round(hist.days[k].out / 1e5) + 25 * hist.days[k].prs + 2 * hist.days[k].commits, 0), level = Math.floor(Math.sqrt(xp / 2500)) + 1;
   let streak = 0; for (let t = d0.getTime(); (hist.days[dayKey(t)] || {}).out > 0; t -= DAY) streak++;
   const old = keys.filter(k => k < dayKey(days[0])).reverse(), blocks = []; for (let i = 0; i + 7 <= old.length; i += 7) { const b = old.slice(i, i + 7).map(k => hist.days[k]); blocks.push({ out: b.reduce((s, x) => s + x.out, 0), prs: b.reduce((s, x) => s + x.prs, 0), usd: b.reduce((s, x) => s + x.usd, 0) }); }
-  const bests = []; if (blocks.length) { if (D.totals.output_tokens > Math.max(...blocks.map(b => b.out))) bests.push('most tokens in a week');
+  const bests = []; if (!rootsPresent && blocks.length) { if (D.totals.output_tokens > Math.max(...blocks.map(b => b.out))) bests.push('most tokens in a week');
     if (D.git?.coverage?.prs && D.git.merged_prs > Math.max(...blocks.map(b => b.prs))) bests.push('PRs merged in a week');
     const pc = blocks.filter(b => b.prs).map(b => b.usd / b.prs); if (D.git?.coverage?.prs && D.git.usd_per_merged_pr != null && pc.length && D.git.usd_per_merged_pr < Math.min(...pc)) bests.push('lowest cost per PR'); }
   D.game = { level, title: TITLES[Math.min(level - 1, TITLES.length - 1)], xp, xp_next: 2500 * level * level, streak_days: streak, days_tracked: keys.length, personal_bests: bests };
