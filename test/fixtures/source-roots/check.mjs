@@ -15,9 +15,9 @@ if (option) assert.ok(selected.length, 'unknown future scenario id');
 assert.equal(new Set(future.map(row => row.id)).size, future.length, 'scenario ids are unique');
 assert.ok([...activated].every(id => future.some(row => row.id === id)), 'activation cannot name an absent assertion');
 assert.deepEqual(Object.fromEntries(['#144 part B', '#145 part C'].map(owner => [owner, future.filter(row => row.owner === owner).length])),
-  { '#144 part B': 20, '#145 part C': 64 }, 'future inventory changes only with an explicit pin edit');
+  { '#144 part B': 22, '#145 part C': 64 }, 'future inventory changes only with an explicit pin edit');
 assert.equal(future.filter(row => row.owner === '#144 part B' && !activated.has(row.id)).length, 0,
-  'delivery B activates every one of its 20 pinned assertion ids; none may remain pending');
+  'delivery B activates every one of its 22 pinned assertion ids; none may remain pending');
 assert.equal(future.filter(row => row.owner === '#145 part C' && !activated.has(row.id)).length, 64,
   'delivery B leaves all 64 reader assertions pending; C changes this explicit activation pin');
 let active = 0, failed = 0;

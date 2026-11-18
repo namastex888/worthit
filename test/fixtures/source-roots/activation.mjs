@@ -22,4 +22,6 @@ export const activated = new Set([
   'unsupported-update',
   'unsupported-unretire',
   'answered-retire-rejected',
+  'review-m1-unrelated-default-cwd',
+  'review-m3-probe-failed-shared-machine',
 ]);

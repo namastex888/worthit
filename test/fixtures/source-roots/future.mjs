@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { repository, readJSON, writeJSON, output } from '../../support/source-roots.mjs';
 import { withWal } from '../../support/source-root-wal.mjs';
 import { noFreshUsageReads, offlineRemoteIdentity, aliasAndMeterPolicy, legacyStoreMigration } from './registration.mjs';
+import { unrelatedDefaultCwd, failedProbeSharedMachine } from './review-regressions.mjs';
 
 export const future = [];
 const add = (id, owner, reference, assertion, run) => future.push({ id, owner, reference, assertion, run });
@@ -580,3 +581,9 @@ add('root-usage-cost-comparison-guards', C, '§6/7/8 usage, value and delivery-c
   assert.equal(result.delivery.features, 6); assert.equal(result.delivery.features_change_pct, 20);
   assert.ok(!result.game.personal_bests.includes('lowest cost per PR'));
 });
+
+// Explicit PR 153 repair inventory addition: B 20 -> 22, C remains 64 pending.
+add('review-m1-unrelated-default-cwd', B, 'PR153 M1; default-only machines unchanged',
+  'a declared root path prefix never rewrites an unrelated default-only cwd or saved scan bytes', unrelatedDefaultCwd);
+add('review-m3-probe-failed-shared-machine', B, 'PR153 M3; established shared-machine saved-only rule',
+  'a failed legacy-alias identity probe followed by an answering shared-host scan admits no fresh usage', failedProbeSharedMachine);
