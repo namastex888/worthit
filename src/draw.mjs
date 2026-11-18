@@ -79,9 +79,12 @@ export const blocks = {
   LevelCard(D) {
     const g = D.game; const l = [bold(fg(C.gold, 'LEVEL ' + g.level)) + '  ' + bold(w(g.title.toUpperCase())), bar(g.xp, g.xp_next, 16, C.gold, C.go) + ' ' + m(g.xp.toLocaleString('en-US')) + d(' / ' + g.xp_next.toLocaleString('en-US') + ' XP'), '',
       fg(C.go, '◆') + ' ' + w(g.streak_days + '-day streak') + d('  ' + g.days_tracked + ' days tracked')];
-    for (const b of g.personal_bests || []) l.push(fg(C.gold, '★') + ' ' + w('personal best') + d('  ' + b));
+    for (const b of g.personal_bests || []) l.push(...wrap(b, 20).map((line, i) =>
+      (i ? '  ' : fg(C.gold, '★') + ' ' + w('personal best') + '  ') + d(line)));
     const un = (D.waste || []).reduce((s, x) => s + x.unused_usd, 0), risk = (D.waste || []).reduce((s, x) => s + (x.at_risk_usd || 0), 0);
-    l.push('', !(D.waste || []).length ? d('badges unlock as weeks close') : un ? fg(C.track, '■') + d(' Zero Waste badge  (' + usd(un) + ' away)') : risk ? fg(C.track, '■') + d(' Zero Waste badge  (' + usd(risk) + ' still open)') : fg(C.cx, '■') + m(' Zero Waste badge earned'));
+    const badge = un ? 'Zero Waste badge  (' + usd(un) + ' away)' : risk ? 'Zero Waste badge  (' + usd(risk) + ' still open)' : 'Zero Waste badge earned';
+    l.push('', ...(!(D.waste || []).length ? [d('badges unlock as weeks close')] : wrap(badge, 35).map((line, i) =>
+      (i ? '  ' : fg(un || risk ? C.track : C.cx, '■') + ' ') + (un || risk ? d(line) : m(line)))));
     while (l.length < 9) l.splice(l.length - 1, 0, '');
     return box('YOU', l, 41, C.gold);
   },
