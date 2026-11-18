@@ -79,6 +79,7 @@ function savedLeftOut(keepDir, selected, retired, freshHosts) {
 export async function scan(cfg, on) {
   // Validate before creating run results. B never sends a spec or HMAC key to a reader.
   const rootPolicy = cfg.rootPolicy || sourceRootPolicy(HOME, cfg.hosts || []);
+  for (const probe of rootPolicy.probes) audit('run', `source-root identity preflight: ${probe.machine === 'local' ? 'local python3 -' : `ssh ${probe.machine} "python3 -"`} (hostname, platform, euid/egid; no path, spec or key; ${probe.ok ? 'answered' : 'failed'})`);
   const rootsStore = rootPolicy.store;
   cleanSavedTemps(HOME);
   const startedAt = Date.now(), retirement = readHosts(HOME).retired;
@@ -89,7 +90,7 @@ export async function scan(cfg, on) {
   }
   const py = ['python3', 'python'].find(has);
   if (!py) throw new Error('Python 3 is needed for the log scanner. macOS: xcode-select --install · Linux: install python3 with your package manager.');
-  const { declared, identity, withheld, unknown } = rootPolicy;
+  const { declared, identity, withheld, unknown, established, declaredIds } = rootPolicy;
   const runs = path.join(HOME, 'run'), runDir = path.join(runs, String(process.pid)); fs.mkdirSync(runs, { recursive: true });
   for (const x of fs.readdirSync(runs)) { let alive = false; try { process.kill(+x, 0); alive = /^\d+$/.test(x); } catch { /* gone */ } if (!alive || +x === process.pid) fs.rmSync(path.join(runs, x), { recursive: true, force: true }); }
   fs.mkdirSync(runDir, { recursive: true });
@@ -123,7 +124,7 @@ export async function scan(cfg, on) {
     saveRootCoverage(HOME, machine, roots);
     return { alias: machine, ok: !!previous, files: 0, ...(previous ? { saved_at: previous.generated_at || null } : {}) };
   };
-  const localState = withheld.has('local') ? savedOnly('local') : null;
+  let localState = withheld.has('local') ? savedOnly('local') : null;
   const local = localState ? Promise.resolve() : new Promise((res, rej) => {
     const p = spawn(py, [script, String(cfg.days)], { env: { ...process.env, WORTHIT_HOME: HOME, WORTHIT_PROGRESS: '1', PYTHONDONTWRITEBYTECODE: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
     const out = fs.createWriteStream(path.join(runDir, 'local.json')), written = new Promise(r => { out.on('finish', r); out.on('error', r); }); p.stdout.pipe(out);
@@ -151,25 +152,42 @@ export async function scan(cfg, on) {
   // a machine that gave no answer keeps its last saved scan, and the run says so: a week never shrinks because one machine was asleep
   for (const x of hosts) { const k = path.join(keepDir, x.alias + '.json'); if (withheld.has(x.alias) || x.ok || !fs.existsSync(k)) continue;
     fs.copyFileSync(k, path.join(runDir, x.alias + '.json')); x.ok = true; x.saved_at = savedAt(k) || fs.statSync(k).mtime.toISOString(); audit('note', `${x.alias} gave no answer: its last saved scan (${x.saved_at}) is used`); }
+  // A failed preflight may be followed by an answering legacy alias. Classify
+  // its actual host before deduplication can let fresh usage replace a root floor.
+  for (const machine of ['local', ...hosts.filter(x => x.ok && !x.saved_at).map(x => x.alias)]) {
+    if (withheld.has(machine)) continue;
+    const file = path.join(runDir, machine + '.json'), data = readScan(file);
+    if (!data?.host) continue;
+    const machineId = rootHash(rootsStore.key, 'machine-v1', [data.host]);
+    if (declaredIds.has(machineId)) {
+      withheld.add(machine); unknown.add(machine);
+      const state = { ...savedOnly(machine), identity_unknown: true };
+      if (machine === 'local') localState = state;
+      else Object.assign(hosts.find(x => x.alias === machine), state);
+      for (const owner of declared.keys()) if (established.get(owner) === machineId) {
+        unknown.add(owner);
+        if (coverageByMachine.has(owner)) savedOnly(owner);
+      }
+      audit('note', `${machine}: fresh answer discarded (identity_unknown); declared physical machine uses saved data only`);
+    } else {
+      data.machine_id = machineId; data.source_roots = [];
+      writeFileAtomic(file, JSON.stringify(data));
+    }
+  }
   // two ssh aliases can point at one machine: keep the first answer, drop the repeat so nothing is counted twice
   const hostOf = f => (/"host"\s*:\s*"([^"]*)"/.exec(head(f)) || [])[1] || null;
   const seenHost = new Map([[hostOf(path.join(runDir, 'local.json')), 'this machine']]);
   for (const x of [...hosts].sort((a, b) => !!a.saved_at - !!b.saved_at)) { if (!x.ok) continue; const f = path.join(runDir, x.alias + '.json'), hn = hostOf(f);   // fresh answers first: a saved copy never wins over one
     if (hn && seenHost.has(hn)) { x.same_as = seenHost.get(hn); x.ok = false; delete x.saved_at; fs.rmSync(f, { force: true }); audit('note', `${x.alias} is the same machine as ${x.same_as} (${hn}): its copy is dropped`); } else if (hn) seenHost.set(hn, x.alias); }
-  for (const machine of ['local', ...hosts.filter(x => x.ok && !x.saved_at).map(x => x.alias)]) {
-    if (withheld.has(machine)) continue;
-    const file = path.join(runDir, machine + '.json'), data = readScan(file);
-    if (data?.host) { data.machine_id = rootHash(rootsStore.key, 'machine-v1', [data.host]); data.source_roots = []; writeFileAtomic(file, JSON.stringify(data)); }
-  }
-  const freshHosts = new Set([...(localState ? [] : ['local']), ...hosts.filter(x => x.ok && !x.saved_at).map(x => x.alias)]
+  const freshHosts = new Set([...(localState ? [] : ['local']), ...hosts.filter(x => x.ok && !x.saved_at && !x.identity_unknown).map(x => x.alias)]
     .map(alias => readScan(path.join(runDir, alias + '.json'))?.host).filter(h => typeof h === 'string' && h));
   // Merge only the deduplicated machines (including local), before pricing and persisting run-keep.
-  const mergeArgs = [path.join(ROOT, 'core', 'merge_scans.py'), runDir, keepDir, HOSTS_FILE, String(startedAt), String(cfg.days), JSON.stringify([...(localState ? [] : ['local.json']), ...hosts.filter(x => x.ok && !x.saved_at).map(x => x.alias + '.json')])];
+  const mergeArgs = [path.join(ROOT, 'core', 'merge_scans.py'), runDir, keepDir, HOSTS_FILE, String(startedAt), String(cfg.days), JSON.stringify([...(localState ? [] : ['local.json']), ...hosts.filter(x => x.ok && !x.saved_at && !x.identity_unknown).map(x => x.alias + '.json')])];
   audit('run', `${py} core/merge_scans.py ${mergeArgs.slice(1).map((a, i) => i < 3 ? tilde(a) : i === 5 ? "'" + a + "'" : a).join(' ')}   (merges saved scans into this run: kept days, retirements, conflicts)`);
   const merged = spawnSync(py, mergeArgs, { env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' }, encoding: 'utf8', maxBuffer: 64 << 20 });
   if (merged.status) throw new Error('keeping saved scan days failed: ' + String(merged.stderr).trim().split('\n').pop());
   const { retained, retired, conflicts } = JSON.parse(merged.stdout);
-  if (declared.size) for (const file of fs.readdirSync(runDir).filter(name => name.endsWith('.json'))) {
+  if (declared.size) for (const file of fs.readdirSync(runDir).filter(name => name.endsWith('.json') && withheld.has(name.slice(0, -5)))) {
     const target = path.join(runDir, file), data = readScan(target);
     if (data) writeFileAtomic(target, JSON.stringify(sanitizeSaved(data)));
   }
@@ -188,7 +206,9 @@ export async function scan(cfg, on) {
   const sourceRoots = [];
   for (const machine of declared.keys()) {
     const data = readScan(path.join(runDir, machine + '.json'));
-    sourceRoots.push(...(coverageByMachine.get(machine) || data?.source_roots || unreadCoverage(HOME, rootsStore, machine, null, null, true, true).map(root => ({ ...root, status: root.lifecycle === 'retired' ? 'retired' : 'left_out', reasons: root.lifecycle === 'retired' ? [] : ['not_selected'], attempted_at: null }))));
+    const roots = coverageByMachine.get(machine) || data?.source_roots || unreadCoverage(HOME, rootsStore, machine, null, null, true, true).map(root => ({ ...root, status: root.lifecycle === 'retired' ? 'retired' : 'left_out', reasons: root.lifecycle === 'retired' ? [] : ['not_selected'], attempted_at: null }));
+    if (unknown.has(machine)) for (const root of roots) root.reasons = [...new Set([...root.reasons, 'identity_unknown'])].sort();
+    sourceRoots.push(...roots);
   }
   for (const root of sourceRoots) audit('source_root', JSON.stringify(Object.fromEntries(['id', 'machine_id', 'attempted_at', 'status', 'reasons', 'revision'].map(k => [k === 'id' ? 'root_id' : k, root[k]]))));
   return { runDir, counts, hosts, cached, left_out: leftOut, retained, retired, retirement, retirement_conflicts: conflicts, started_at: startedAt,
@@ -466,7 +486,7 @@ export function buildData(report, g, cfg, scanInfo) {
 
   // plans: this week's measured value of one full weekly limit
   // measured needs every machine's answer from this run: one that gave no answer (even with a saved scan standing in) or a saved machine with usage left out means use elsewhere may be missing
-  const hs = scanInfo.hosts || [], missing = hs.filter(x => x.saved_at || !(x.ok || x.same_as)).map(x => ({ machine: x.alias, saved_scan_at: x.saved_at || null })), leftOut = scanInfo.left_out || [];
+  const hs = scanInfo.hosts || [], missing = hs.filter(x => x.identity_unknown || x.saved_at || !(x.ok || x.same_as)).map(x => ({ machine: x.alias, saved_scan_at: x.saved_at || null })), leftOut = scanInfo.left_out || [];
   if (scanInfo.local_saved_only) missing.push({ machine: 'local', saved_scan_at: scanInfo.local_saved_scan_at || null });
   const retired = scanInfo.retirement || [], retained = scanInfo.retained || [];
   const sourceRoots = scanInfo.source_roots || [];

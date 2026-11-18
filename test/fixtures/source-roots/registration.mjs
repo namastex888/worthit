@@ -69,6 +69,8 @@ export function offlineRemoteIdentity() {
 
     const normal = h.collect(['synthetic-remote']);
     assert.equal(output(normal.scans['local.json']), 10, 'default-only local behavior is unchanged');
+    assert.ok(!fs.readFileSync(path.join(h.store, 'fixture-audit.log'), 'utf8').includes('source-root identity preflight:'), 'M2 default-only scans perform no identity probes');
+    assert.ok(transport(h).trim().split('\n').map(JSON.parse).every(call => !call.identity_probe));
     const saved = readJSON(savedFile);
     assert.match(saved.machine_id, /^[a-f0-9]{64}$/, 'only an ordinary answering scan establishes remote identity');
     const before = transport(h);
@@ -117,11 +119,13 @@ export function aliasAndMeterPolicy() {
     h.clearTrace();
     const result = h.evaluate(`
       import {sourceRootPolicy} from ${JSON.stringify(pathToFileURL(path.join(repository, 'src/source-roots.mjs')).href)};
-      import {git,AUDIT} from ${JSON.stringify(pathToFileURL(path.join(repository, 'src/collect.mjs')).href)};
+      import {git,scan,AUDIT} from ${JSON.stringify(pathToFileURL(path.join(repository, 'src/collect.mjs')).href)};
       const hosts=['synthetic-remote','synthetic-alias'];
       const rootPolicy=sourceRootPolicy(process.env.WORTHIT_HOME,hosts);
-      const answer=await git({hosts,rootPolicy},()=>{});
-      console.log(JSON.stringify({withheld:[...rootPolicy.withheld],unknown:[...rootPolicy.unknown],answer,audit:AUDIT}));
+      const pending=git({hosts,rootPolicy},()=>{});
+      await scan({days:21,hosts,fresh:true,rootPolicy},()=>{});
+      const answer=await pending;
+      console.log(JSON.stringify({withheld:[...rootPolicy.withheld],unknown:[...rootPolicy.unknown],probes:rootPolicy.probes,answer,audit:AUDIT}));
     `);
     assert.ok(result.withheld.includes('local'), 'a declaration through another alias suppresses the matching local meter lane');
     assert.ok(result.withheld.includes('synthetic-remote'));
@@ -130,6 +134,15 @@ export function aliasAndMeterPolicy() {
     assert.equal(fs.existsSync(path.join(h.base, 'meter-called')), false, 'fresh meter sync never starts before/alongside the policy');
     assert.ok(!result.audit.some(line => /GET .*meter-lane|sync --no-publish|git -C /.test(line)));
     assert.ok(result.answer.coverage.sources.some(source => source.source === 'usagemeter' && source.answered === false), 'withheld meter lane retains truthful existing source coverage');
+    const audited = result.audit.filter(line => line.includes('source-root identity preflight:'));
+    assert.deepEqual(result.probes.map(probe => probe.machine), ['local', 'synthetic-remote', 'synthetic-alias'], 'M2 probes only local plus selected aliases');
+    assert.equal(audited.length, 3, 'M2 one audit entry per actual probe, shared git/scan policy never duplicates lines');
+    for (const target of ['local python3 -', 'ssh synthetic-remote "python3 -"', 'ssh synthetic-alias "python3 -"']) {
+      assert.equal(audited.filter(line => line.includes('source-root identity preflight: ' + target + ' (')).length, 1);
+    }
+    const actual = transport(h).trim().split('\n').map(JSON.parse);
+    assert.equal(actual.length, 2, 'M2 sharing the policy launches each selected SSH probe once');
+    assert.ok(actual.every(call => call.identity_probe));
     noFreshUsageReads(h);
   });
 }

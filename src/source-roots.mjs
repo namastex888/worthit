@@ -356,28 +356,30 @@ export function sourceRootPolicy(home, aliases = []) {
   const store = readSourceRoots(home);
   initializeRootStore(home, store);
   const machines = new Set(['local', ...aliases, ...Object.keys(store.state.machines), ...storedRootCoverage(home).map(r => r.machine).filter(Boolean)]);
-  const declared = new Map(), identity = new Map(), withheld = new Set(), unknown = new Set();
+  const declared = new Map(), identity = new Map(), withheld = new Set(), unknown = new Set(), probes = [];
   const established = new Map();
+  const declaredIds = new Set();
   for (const machine of machines) {
     const roots = sourceRootsFor(home, store, machine);
     if (roots.length) { declared.set(machine, roots); withheld.add(machine); }
   }
   // Default-only stores retain their existing saved-scan error/reuse behavior.
-  if (!declared.size) return { store, declared, identity, withheld, unknown };
+  if (!declared.size) return { store, declared, identity, withheld, unknown, probes, established, declaredIds };
   for (const machine of machines) {
     const id = store.state.machines[machine]?.machine_id || storedRootCoverage(home).find(r => r.machine === machine)?.machine_id || savedMachineId(home, store, machine);
     if (id) established.set(machine, id);
   }
-  const rootIds = new Set([...declared.keys()].map(machine => established.get(machine)).filter(Boolean));
+  for (const machine of declared.keys()) if (established.has(machine)) declaredIds.add(established.get(machine));
   if (declared.size) {
     const py = ['python3', 'python'].find(name => spawnSync('which', [name], { stdio: 'ignore' }).status === 0);
     if (!py) throw new RootError('Python 3 is needed for source-root identity preflight');
     for (const machine of new Set(['local', ...aliases])) {
       const current = probeIdentity(machine, py);
+      probes.push({ machine, ok: !!current });
       if (current) identity.set(machine, current);
       const id = current ? rootHash(store.key, 'machine-v1', [current.host]) : null;
       const prior = established.get(machine);
-      if (declared.has(machine) || rootIds.has(id) || rootIds.has(prior)) withheld.add(machine);
+      if (declared.has(machine) || declaredIds.has(id) || declaredIds.has(prior)) withheld.add(machine);
       if (withheld.has(machine) && (!id || (prior && id !== prior))) unknown.add(machine);
     }
     // A declared alias may now answer under a changed identity. Its selected
@@ -388,5 +390,5 @@ export function sourceRootPolicy(home, aliases = []) {
       withheld.add(machine); unknown.add(machine);
     }
   }
-  return { store, declared, identity, withheld, unknown };
+  return { store, declared, identity, withheld, unknown, probes, established, declaredIds };
 }
