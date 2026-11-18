@@ -158,5 +158,5 @@ body{display:flex;flex-direction:column;padding:60px 76px 56px}
 <div class="eyebrow">${esc(s.eyebrow)}</div>
 <div class="hero"><div class="num">${esc(s.hero)}</div><div><div class="cap">${esc(s.cap)}</div>${s.sub ? `<div class="sub">${esc(s.sub)}</div>` : ''}</div></div>
 <div class="rows">${rows}</div>
-<div class="foot"><div class="src">${s.plain ? 'measured from my own local logs' : 'priced at API list rates, from my own local logs'}${s.foot ? '<br>' + esc(s.foot) : ''}</div><div class="cmd">measure yours<b>npx worthit</b></div></div>`;
+<div class="foot"><div class="src">priced at API list rates, from my own local logs${s.foot ? '<br>' + esc(s.foot) : ''}</div><div class="cmd">measure yours<b>npx worthit</b></div></div>`;
 }

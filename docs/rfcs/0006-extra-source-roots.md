@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Queued |
+| Status | Accepted |
 | Created | 2026-11-16 |
 | Issue | #125 |
 | Depends on | RFC 0002 snapshot/proof rules; RFC 0004 project resolution; RFC 0005 basis semantics (delivery 1a does not depend on its implementation) |
@@ -604,8 +604,8 @@ contract, `worthit schema`, `skills/worthit/SKILL.md` and synthetic demo fields 
 
 ## 8. Staged deliveries and fixtures
 
-These are proposed delivery scopes, not claims of implementation or new issue acceptance checklists.
-Each gets its own issue and PR after owner scheduling. No delivery enables an unguarded partial root
+These are accepted delivery scopes, not claims of implementation or new issue acceptance checklists.
+Each gets its own issue and PR before implementation. No delivery enables an unguarded partial root
 feature; default-home scanning remains usable on its own.
 
 | # | Independently usable outcome | State |
@@ -685,34 +685,37 @@ Fixture plan (synthetic identities, isolated HOME/WORTHIT_HOME/config/cache; no 
   stores still work. Update public schema/skill together. Run `make check`; any drawing change also supplies a
   rendered image actually inspected. RFC-only delivery runs no private proof or feature experiment.
 
-## Open questions (for the owner)
+## Questions (owner answers recorded)
 
-Each answer is one word. `yes` alone takes every recommendation below; it does not assert delivery has
-shipped. Questions 1, 2 and 4 block delivery 1a (and therefore 1b); question 3 blocks 1a's declaration
-and 1b's lifecycle interface; questions 5-6 block delivery 2; question 7 blocks delivery 3.
-Status remains Queued until the owner schedules and answers the blocking decisions.
+The owner's `yes` accepted every recommended answer below. The RFC is Accepted; none of its
+deliveries has shipped. Answers 1, 2 and 4 settle delivery 1a (and therefore 1b); answer 3 settles
+1a's declaration and 1b's lifecycle interface; answers 5-6 settle delivery 2; answer 7 settles delivery 3.
 
 1. **Patterns.** `bindings` (recommended): exact vendor homes, including nested agent homes, with
    section 2's narrow patterns. `discover`: design a separate enumerated agent-home layout first;
-   delivery 1a waits for that contract rather than recursively guessing.
+   delivery 1a waits for that contract rather than recursively guessing. **Answer: `bindings`.**
 2. **A failed usage root.** `machine` (recommended): whole relevant machine usage is a floor, no plan
    proof or usage comparison. `scoped`: deliver only root-level observations until a separate plan
    partition/proof contract can establish which aggregate is complete; delivery 1a waits for it.
+   **Answer: `machine`.**
 3. **Declaration and retirement.** `commands` (recommended): section 1 commands and RFC 0002 frozen
    snapshots/proof, with private settings: declaration/boundary and never-answered empty retirement in
    1a, full lifecycle in 1b. Answered roots stay one-way until 1b. The 1a comparison guard survives even
    empty retirement; default-only stores also blank comparisons with `roots_changed` while eligible
    old baselines have unknown root coverage. `settings`:
    edit the same validated local file only; define equivalent explicit transitions before 1a's empty
-   retirement and 1b's full lifecycle. No deletion-as-retirement.
+   retirement and 1b's full lifecycle. No deletion-as-retirement. **Answer: `commands`.**
 4. **Coverage location.** `roots` (recommended): new `source_roots`, preserving machine fields.
    `machines`: design a versioned combined machine/root schema first; delivery 1a waits for it.
+   **Answer: `roots`.**
 5. **Account attribution.** `derived` (recommended): producer exposes account/organization ids, plan,
    seat and tiers **only**, under section 3's schema. `unattributed`: no derived account reads;
    keep tokens/API value and the per-plan incompleteness disclosure. Raw `.claude.json` stays denied.
+   **Answer: `derived`.**
 6. **Model attribution.** `derived` (recommended): model **only** file, with per-record evidence first.
    `unknown`: no derived model reads; absent reliable recorded model stays model unknown with unpriced
    coverage. Raw Gemini/Antigravity `settings.json` stays denied under either answer.
+   **Answer: `derived`.**
 7. **Project paths.** `mapped` (recommended): explicit prefix mappings plus read-only bounded metadata
    and token-URL refusal. `unresolved`: no mounted metadata reads; usage remains in RFC 0004's
-   no-repository bucket when safe transcript evidence cannot name its project.
+   no-repository bucket when safe transcript evidence cannot name its project. **Answer: `mapped`.**
