@@ -11,7 +11,7 @@ const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');
 
 export const allowanceText = data => {
   const lines = data.plans.map(p => `${p.plan.toLowerCase()} ${usd(p.usd_per_full_week)}${p.proof !== 'measured' ? ' (at least)' : p.change_vs_last_week_pct == null ? '' : ` (${p.change_vs_last_week_pct === 0 ? '' : p.change_vs_last_week_pct > 0 ? '▲' : '▼'}${Math.abs(p.change_vs_last_week_pct)}% vs the week before)`}${p.proof === 'measured' && p.retirement_note ? ` · ${p.retirement_note}` : ''}`);
-  return `weekly ai allowance check, week to ${data.week.to}.. what one full weekly limit was worth at api prices:\n${lines.join('\n')}\nmeasured from my local logs: npx worthit`;
+  return `weekly ai allowance check, week to ${data.week.to}.. what one full weekly limit was worth at api prices:\n${lines.join('\n')}\npriced at API list rates, from my local logs: npx worthit`;
 };
 
 export function openWeekly(home) {
