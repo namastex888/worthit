@@ -6,7 +6,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { repository, readJSON, writeJSON, output } from '../../support/source-roots.mjs';
 import { withWal } from '../../support/source-root-wal.mjs';
-import { noFreshUsageReads, offlineRemoteIdentity, aliasAndMeterPolicy } from './registration.mjs';
+import { noFreshUsageReads, offlineRemoteIdentity, aliasAndMeterPolicy, legacyStoreMigration } from './registration.mjs';
 
 export const future = [];
 const add = (id, owner, reference, assertion, run) => future.push({ id, owner, reference, assertion, run });
@@ -58,6 +58,7 @@ add('registration-preflight-unread', B, '#144 acceptance 2/3; §2/6', 'a declare
   assert.equal(h.rows().filter(row => row.actor === 'scanner' && row.op === 'open' && row.path.startsWith(h.manifest.root)).length, 0);
 });
 add('registration-machine-floor-and-guard', B, '#144 acceptance 3; §6/7', 'pre-reader registration floors the machine and withholds plain/weekly comparisons', h => {
+  legacyStoreMigration(h); // First B collector/build invocation: no warmup store.
   const first = h.collect(), saved = fs.readFileSync(path.join(h.store, 'run-keep/local.json'));
   assert.equal(output(scanOf(first)), 10, 'default-only scans retain the positive usage control');
   assert.match(scanOf(first).machine_id, /^[a-f0-9]{64}$/, 'ordinary scans persist physical identity for later offline registration');

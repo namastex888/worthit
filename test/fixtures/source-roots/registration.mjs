@@ -24,6 +24,37 @@ const withHarness = (name, run) => {
   try { run(h); } finally { h.cleanup(); }
 };
 
+export function legacyStoreMigration(h) {
+  const result = h.evaluate(`
+    import path from 'node:path';
+    import {DatabaseSync} from 'node:sqlite';
+    const file=path.join(process.env.WORTHIT_HOME,'worthit.db');
+    let db=new DatabaseSync(file);
+    db.exec('CREATE TABLE plan_value(day TEXT,provider TEXT,plan TEXT,usd_per_full_week INTEGER,times_plan_price INTEGER,stretches INTEGER,proof TEXT,PRIMARY KEY(day,provider))');
+    db.prepare('INSERT INTO plan_value VALUES(?,?,?,?,?,?,?)').run('2026-11-07','claude','Claude Ultra',10,2,3,'measured');
+    const beforeColumns=db.prepare('PRAGMA table_info(plan_value)').all().map(row=>row.name);
+    const before=db.prepare('SELECT * FROM plan_value').get();
+    db.close();
+    const {buildData}=await import(${JSON.stringify(pathToFileURL(path.join(repository, 'src/collect.mjs')).href)});
+    const w={usd_per_full_week:20,meter_start_pct:0,meter_end_pct:100,hours:1,measured:{api_usd:20,output_tokens:10,cached_input_tokens:0,model_mix_by_usd:{}}};
+    const report={activity:[],this_week:{claude:w},prices:{plan_usd_per_week:{claude:5}},claude_stints:[],codex_weeks:[],google_weeks:[]};
+    const data=buildData(report,null,{days:21,hosts:[]},{counts:{claude:1},hosts:[{alias:'synthetic-remote',ok:true}],source_roots:[]});
+    db=new DatabaseSync(file,{readOnly:true});
+    const afterColumns=db.prepare('PRAGMA table_info(plan_value)').all().map(row=>row.name);
+    const oldRow=db.prepare('SELECT * FROM plan_value WHERE day=?').get('2026-11-07');
+    const newRow=db.prepare('SELECT * FROM plan_value WHERE day=?').get('2026-11-14');
+    db.close();
+    console.log(JSON.stringify({beforeColumns,before,afterColumns,oldRow,newRow,source_roots:data.source_roots}));
+  `);
+  const oldColumns = ['day', 'provider', 'plan', 'usd_per_full_week', 'times_plan_price', 'stretches', 'proof'];
+  assert.deepEqual(result.beforeColumns, oldColumns, 'an actual unmigrated seven-column store exists before the first B invocation');
+  assert.deepEqual(result.afterColumns, [...oldColumns, 'source_roots'], 'B adds the nullable coverage column');
+  assert.deepEqual(result.oldRow, { ...result.before, source_roots: null }, 'all old values survive; old coverage remains NULL/unknown, never []');
+  assert.equal(result.newRow.day, '2026-11-14');
+  assert.equal(result.newRow.source_roots, '[]', 'new default-only observation persists an explicit empty array');
+  assert.deepEqual(result.source_roots, []);
+}
+
 export function offlineRemoteIdentity() {
   withHarness('b-offline-remote-identity', h => {
     const file = specFile(h), savedFile = path.join(h.store, 'run-keep/synthetic-remote.json');
