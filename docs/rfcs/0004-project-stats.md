@@ -2,9 +2,9 @@
 
 | Field | Value |
 |---|---|
-| Status | In delivery, 2026-11-16 (delivery 1: #115, #117; delivery 2 open) |
+| Status | In delivery, 2026-11-16 (delivery 1 shipped: #117; delivery 2 shipped: #127; history not scheduled) |
 | Created | 2026-11-16 |
-| Issue | #115: delivery 1 |
+| Issue | #115: delivery 1; #119, #123: delivery 2 |
 | Depends on | nothing for delivery 1; delivery 2 needs delivery 1's `project` in the scan |
 
 ## Summary
@@ -289,7 +289,8 @@ keeps its existing precision.
   be inferred. `cost_floor` is boolean and its separate `cost_reasons` list is always preserved.
 
 Lookup: `worthit projects` / `worthit get projects.delivery.daily` reads the last saved result with
-no network. No persistent project-history table and no `days --by project` until delivery 3.
+no network. No persistent project-history table yet: RFC 0005 builds `day_project`; this RFC's
+delivery 3 keeps `days --by project` and week-over-week history.
 Repository identifiers remain excluded from all agent and share paths, including this new block.
 
 **Four first-pass states.** `first_try`, `not_first_try`, `unknown`, `not_measured`.
@@ -390,21 +391,21 @@ Fixture cases for delivery 1:
 
 | # | Delivery | State |
 |---|---|---|
-| 1 | One PR: `project` in the scan, the remembered map, `project_activity`, the `projects` block, `worthit projects`, schema, skill, README, the fixture cases | #115, #117 |
-| 2 | The PR-to-model link, `prs_led`, the first-pass signal and its coverage; a host for Gitea PR keys | open |
-| 3 | Project history: a daily table, `worthit days --by project`, week-over-week | not scheduled |
+| 1 | One PR: `project` in the scan, the remembered map, `project_activity`, the `projects` block, `worthit projects`, schema, skill, README, the fixture cases | shipped: #117 (closes #115) |
+| 2 | The PR-to-model link, `prs_led`, the first-pass signal and its coverage; a host for Gitea PR keys | shipped: #127 (closes #119, #123) |
+| 3 | Project history: `worthit days --by project`, week-over-week; the daily `day_project` table is built once in RFC 0005 | not scheduled |
 
 ## Owner decisions, 2026-11-16
 
 Accepted answers, exactly: 1 `command`; 2 `enough`; 3 `no`; 4 `bucket`;
 5 `opened`; 7 `lead`. Question 6 is not required: delivery 2 uses the accepted opened date proxy, never review verdicts.
-Delivery 1 is #115 and #117; delivery 2 and project history are out of scope.
-The status becomes In delivery with this first delivery merge; delivery 2 remains open.
+Deliveries 1 (#117, closing #115) and 2 (#127, closing #119 and #123) have shipped.
+The status remains In delivery: project history is not scheduled, and RFC 0005 owns the daily table.
 
 ## Questions (owner answers recorded above)
 
-Answers 1, 3 and 4 settle delivery 1. Question 2 blocks nothing. Questions 5 to 7 concern only
-delivery 2; question 6 alone remains unanswered. Each answer is one word.
+Answers 1, 3 and 4 settled delivery 1. Question 2 blocks nothing. Questions 5 to 7 concerned
+delivery 2; question 6 remains unanswered and is not required by the accepted opened-date proxy.
 
 1. **Where is it shown?** `command`: `worthit projects` (recommended). `dashboard`: a block in the
    dashboard.
@@ -415,6 +416,6 @@ delivery 2; question 6 alone remains unanswered. Each answer is one word.
 4. **A repository with no remote?** `bucket`: it stays in "no repository" as `no_origin`
    (recommended). `row`: its own row, named by its folder on that machine.
 5. **The first-pass source.** `opened`: the date proxy, always shown as a proxy (recommended, because
-   the forge has no reviews today). `review`: the forge's review event.
+   the forge has no reviews today). `review`: the forge's review event. **Answer: `opened`.**
 6. **Will squads post their verdict on the forge**, as a PR review on the head commit? `yes` or `no`.
 7. **Credit for a PR.** `lead`: one lead model per PR (recommended). `shares`: a share per model.
