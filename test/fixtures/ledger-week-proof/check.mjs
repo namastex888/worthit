@@ -129,7 +129,7 @@ console.log(JSON.stringify({change:data.plans[0].change_vs_last_week_pct,audit:A
     { ...env, FIXTURE_ACCOUNTS: '[]', WORTHIT_HOME: path.join(tmp, store), ...overrides }));
   for (const test of expected.get('dst')) {
     copy(test.name);
-    sql(test.name, `INSERT OR REPLACE INTO plan_value VALUES
+    sql(test.name, `INSERT OR REPLACE INTO plan_value (day, provider, plan, usd_per_full_week, times_plan_price, stretches, proof) VALUES
       ('${test.day}', 'claude', 'Claude Ultra', 6, 1, 1, 'measured'),
       ('${test.elapsed_day}', 'claude', 'Claude Ultra', 99, 1, 1, 'floor');`);
     assert.equal(shape(test.name, { FIXTURE_NOW: test.now, TZ: 'America/New_York' }).change,

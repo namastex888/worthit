@@ -28,13 +28,22 @@ assert.ok(tokens[0] === '-' || (tokens[0] === '-c' && tokens.length >= 2), 'only
 let input = Buffer.alloc(0);
 for await (const chunk of process.stdin) input = Buffer.concat([input, chunk]);
 const mode = env.SOURCE_ROOT_TRANSPORT || 'success';
+const identityProbe = tokens.length === 1 && tokens[0] === '-';
+const recordExit = (code, details = {}) => {
+  if (mode === 'legacy-probe-fails') fs.appendFileSync(path.join(env.SOURCE_ROOT_BASE, 'transport-results.jsonl'),
+    JSON.stringify({ alias, identity_probe: identityProbe, code, ...details }) + '\n');
+};
 fs.appendFileSync(path.join(env.SOURCE_ROOT_BASE, 'transport.jsonl'), JSON.stringify({ args, mode, bytes: input.length,
+  identity_probe: identityProbe,
   // Private fixture receipts retain stdin so future framing assertions inspect actual bytes.
   input: input.toString('base64'), keyInEnvironment: Object.keys(env).some(key => /source.roots.key/i.test(key)) }) + '\n');
 if (mode === 'offline') process.exit(255);
 if (mode === 'truncated') { process.stdout.write('{"host":"synthetic-remote"'); process.exit(74); }
 if (mode === 'interrupted') { process.stderr.write('synthetic interrupted enumeration\n'); process.exit(75); }
-assert.equal(mode, 'success', 'unscripted transport failure');
+if (mode === 'legacy-probe-fails' && alias === 'synthetic-alias' && identityProbe) {
+  recordExit(77); process.stderr.write('synthetic identity probe failed\n'); process.exit(77);
+}
+assert.ok(['success', 'legacy-probe-fails'].includes(mode), 'unscripted transport failure');
 const home = path.join(env.SOURCE_ROOT_BASE, 'remote-home'), remoteStore = path.join(env.SOURCE_ROOT_BASE, 'remote-store');
 fs.mkdirSync(home, { recursive: true }); fs.mkdirSync(remoteStore, { recursive: true });
 const result = spawnSync(env.SOURCE_ROOT_PYTHON, tokens, {
@@ -45,4 +54,10 @@ const result = spawnSync(env.SOURCE_ROOT_PYTHON, tokens, {
 });
 if (result.stdout) process.stdout.write(result.stdout);
 if (result.stderr) process.stderr.write(result.stderr);
+if (mode === 'legacy-probe-fails') {
+  let response = {};
+  try { const scan = JSON.parse(result.stdout); response = { host: scan.host,
+    output: Array.isArray(scan.buckets) ? scan.buckets.reduce((sum, row) => sum + (row.output || 0) + (row.lc_output || 0), 0) : null }; } catch { /* failed response is explicit */ }
+  recordExit(result.status ?? 76, response);
+}
 process.exit(result.status ?? 76);

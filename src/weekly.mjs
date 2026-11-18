@@ -28,7 +28,8 @@ export function weeklyBaseline(db, data) {
   if (!row) return null;
   const previous = JSON.parse(row.json);
   return { generated_at: previous.generated_at, week_to: previous.week.to,
-    plans: previous.plans.map(({ plan, usd_per_full_week, proof }) => ({ plan, usd_per_full_week,
+    source_roots: previous.source_roots,
+    plans: previous.plans.map(({ plan, usd_per_full_week, proof, not_compared }) => ({ plan, usd_per_full_week, not_compared: not_compared || [],
       proof: retirementBlocks(data.machines_retired || [], Date.parse(previous.generated_at)).length ? 'floor' : proof })) };
 }
 
@@ -37,15 +38,25 @@ export function weeklyBaseline(db, data) {
 export function prepareWeekly(data, comparedWith) {
   data.machines_missing ||= []; data.machines_left_out ||= []; data.machines_retained ||= [];
   const moved = [];
+  const roots = data.source_roots || [];
+  // Stage B preserves default-only behavior; C owns legacy unknown-baseline guards.
+  const rootsPresent = roots.length > 0 || !!comparedWith?.source_roots?.length;
   for (const plan of data.plans) {
+    if (roots.length) plan.proof = 'floor';
     const previous = comparedWith?.plans.find(p => p.plan === plan.plan);
-    const pct = plan.proof === 'measured' && previous?.proof === 'measured' && previous.usd_per_full_week > 0
+    plan.not_compared = [...new Set([...(rootsPresent ? ['roots_changed'] : []),
+      ...(plan.proof !== 'measured' || previous?.proof === 'floor' ? ['floor'] : []),
+      ...(!comparedWith ? ['no_baseline'] : !previous || !(previous.usd_per_full_week > 0) ? ['invalid_baseline'] : [])])].sort();
+    const pct = !rootsPresent && plan.proof === 'measured' && previous?.proof === 'measured' && previous.usd_per_full_week > 0
       ? 100 * (plan.usd_per_full_week - previous.usd_per_full_week) / previous.usd_per_full_week : null;
     plan.change_vs_last_week_pct = pct == null ? null : roundPercent(pct);
     if (plan.change_vs_last_week_pct != null && Math.abs(plan.change_vs_last_week_pct) > 5) moved.push({ plan: plan.plan, from: previous.usd_per_full_week,
       to: plan.usd_per_full_week, pct: plan.change_vs_last_week_pct });
   }
   const reasons = [];
+  for (const root of roots) {
+    for (const reason of root.reasons?.length ? root.reasons : ['legacy_coverage_unknown']) reasons.push(`${root.id}: ${reason}${root.lifecycle === 'retired' && !root.last_scan_at ? ' (retired with no saved scan, as stated by you)' : ''}`);
+  }
   for (const row of data.machines_missing) reasons.push(`${row.machine}: no fresh answer${row.saved_scan_at ? ' (saved scan used)' : ''}`);
   for (const machine of data.machines_left_out) reasons.push(`${machine}: saved machine with usage left out`);
   const end = Date.parse(data.generated_at);
@@ -53,8 +64,9 @@ export function prepareWeekly(data, comparedWith) {
     if (retainedUnitOverlapsWeek(unit, end)) reasons.push(`${row.machine}: retained ${unit.day} ${unit.provider} (lost logs inside this week)`);
   }
   return { week: data.week, generated_at: data.generated_at, text: '', image: null,
-    plans: data.plans.map(({ plan, usd_per_full_week, times_plan_price, proof, change_vs_last_week_pct, retirement_note }) =>
-      ({ plan, usd_per_full_week, times_plan_price, proof, change_vs_last_week_pct, ...(retirement_note ? { retirement_note } : {}) })),
+    source_roots: roots,
+    plans: data.plans.map(({ plan, usd_per_full_week, times_plan_price, proof, change_vs_last_week_pct, not_compared, retirement_note }) =>
+      ({ plan, usd_per_full_week, times_plan_price, proof, change_vs_last_week_pct, not_compared, ...(retirement_note ? { retirement_note } : {}) })),
     machines_read: data.machines, machines_missing: data.machines_missing, machines_left_out: data.machines_left_out,
     machines_retired: data.machines_retired || [], machines_retained: data.machines_retained, compared_with: comparedWith,
     moved, safe_to_post: !reasons.length, reasons };

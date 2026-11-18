@@ -6,6 +6,8 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { repository, readJSON, writeJSON, output } from '../../support/source-roots.mjs';
 import { withWal } from '../../support/source-root-wal.mjs';
+import { noFreshUsageReads, offlineRemoteIdentity, aliasAndMeterPolicy, legacyStoreMigration } from './registration.mjs';
+import { unrelatedDefaultCwd, failedProbeSharedMachine } from './review-regressions.mjs';
 
 export const future = [];
 const add = (id, owner, reference, assertion, run) => future.push({ id, owner, reference, assertion, run });
@@ -39,15 +41,36 @@ const listedId = h => {
 };
 
 add('registration-preflight-unread', B, '#144 acceptance 2/3; §2/6', 'a declared unverified root is shown unread, contributes nothing, and is never silently ignored', h => {
+  // Approved B interim pin edit: fresh default output 10 becomes withheld/saved.
+  // Even default symlink/hardlink aliases must not admit a declared root's usage.
+  fs.symlinkSync(h.manifest.native, path.join(h.home, '.claude/projects/root-alias.jsonl'));
+  fs.linkSync(h.manifest.native, path.join(h.home, '.claude/projects/root-hardlink.jsonl'));
   register(h); h.clearTrace(); const result = h.collect(), root = coverage(h, result)[0];
   assert.equal(root.status, 'unreadable'); assert.equal(root.boundary, 'unverified');
   assert.ok(root.reasons.includes('boundary_unverified'));
   assert.match(root.reader_id, /^[a-f0-9]{64}$/);
-  assert.equal(output(scanOf(result)), 10);
+  assert.equal(output(scanOf(result)), 0, 'no saved answer: no fresh default or root contribution');
+  assert.equal(result.info.local_saved_only, true);
+  assert.equal(scanOf(result).since, null, 'absence of saved evidence is unknown, never observed historical zero');
+  assert.equal(scanOf(result).generated_at, null, 'preflight is not a usage answer');
+  assert.equal(fs.existsSync(path.join(h.store, 'run-keep/local.json')), false, 'never persist an empty withheld envelope as an answered machine');
+  assert.equal(root.window.complete, false);
+  noFreshUsageReads(h);
   assert.equal(h.rows().filter(row => row.actor === 'scanner' && row.op === 'open' && row.path.startsWith(h.manifest.root)).length, 0);
 });
 add('registration-machine-floor-and-guard', B, '#144 acceptance 3; §6/7', 'pre-reader registration floors the machine and withholds plain/weekly comparisons', h => {
-  register(h); const collected = h.collect(), roots = coverage(h, collected);
+  legacyStoreMigration(h); // First B collector/build invocation: no warmup store.
+  const first = h.collect(), saved = fs.readFileSync(path.join(h.store, 'run-keep/local.json'));
+  assert.equal(output(scanOf(first)), 10, 'default-only scans retain the positive usage control');
+  assert.match(scanOf(first).machine_id, /^[a-f0-9]{64}$/, 'ordinary scans persist physical identity for later offline registration');
+  register(h);
+  fs.appendFileSync(path.join(h.home, '.claude/projects/default/usage.jsonl'), '{"unexpected":"new usage must remain unopened"}\n');
+  h.clearTrace();
+  const collected = h.collect(), roots = coverage(h, collected);
+  assert.equal(output(scanOf(collected)), 10, 'saved default evidence survives without fresh usage');
+  assert.equal(scanOf(collected).generated_at, scanOf(first).generated_at);
+  assert.deepEqual(fs.readFileSync(path.join(h.store, 'run-keep/local.json')), saved, 'saved-only collection preserves the saved machine answer byte for byte');
+  noFreshUsageReads(h);
   const result = weeklyGuard(h, roots, []);
   assert.equal(result.safe_to_post, false); assert.equal(result.plans[0].proof, 'floor');
   assert.equal(result.plans[0].change_vs_last_week_pct, null); assert.ok(result.plans[0].not_compared.includes('roots_changed'));
@@ -71,15 +94,33 @@ add('commands-add-list', B, '§1; §8 1a declaration', 'add is selected, stable,
   assert.equal(fs.statSync(path.join(h.store, 'source-roots.json')).mode & 0o077, 0);
   assert.ok(!fs.existsSync(path.join(h.base, 'transport.jsonl')));
   assert.equal(h.rows().filter(r => r.actor === 'scanner' && r.path.startsWith(h.manifest.root)).length, 0);
+  offlineRemoteIdentity();
+  aliasAndMeterPolicy();
 });
 add('commands-selection', B, '§1; §8 1a', 'selection preserves registration and revisions; no deletion-as-retirement', h => {
+  h.collect();
   const before = register(h), id = listedId(h);
   command(h, ['select', 'local', id, 'off']);
   let record = readJSON(path.join(h.store, 'source-roots.json')).machines.local.roots[0];
   assert.equal(record.selected, false); assert.equal(record.key, before.key); assert.ok(record.revision > before.revision);
   assert.equal(record.retired_at, null);
+  h.clearTrace();
+  const off = h.collect();
+  assert.equal(coverage(h, off)[0].status, 'left_out');
+  assert.ok(coverage(h, off)[0].reasons.includes('not_selected'));
+  assert.equal(output(scanOf(off)), 10, 'deselection preserves saved evidence and cannot restore fresh defaults');
+  noFreshUsageReads(h);
   command(h, ['select', 'local', id, 'on']);
   record = readJSON(path.join(h.store, 'source-roots.json')).machines.local.roots[0]; assert.equal(record.selected, true);
+  const state = readJSON(path.join(h.store, 'source-roots.json'));
+  state.machines.local.roots = []; writeJSON(path.join(h.store, 'source-roots.json'), state);
+  h.clearTrace();
+  const removed = h.collect(), tombstone = coverage(h, removed)[0];
+  assert.equal(tombstone.id, id); assert.equal(tombstone.status, 'left_out');
+  assert.ok(tombstone.reasons.includes('removed_setting'));
+  assert.equal(output(scanOf(removed)), 10, 'manual deletion cannot admit new default/root usage');
+  assert.equal(command(h, ['local'])[0].id, id, 'listing retains the tombstone');
+  noFreshUsageReads(h);
 });
 add('commands-boundary', B, '§2; §8 OS boundary', 'strict boundary attestation is stored without advancing the revision', h => {
   const record = register(h), id = listedId(h), file = path.join(h.base, 'proof.json');
@@ -540,3 +581,9 @@ add('root-usage-cost-comparison-guards', C, '§6/7/8 usage, value and delivery-c
   assert.equal(result.delivery.features, 6); assert.equal(result.delivery.features_change_pct, 20);
   assert.ok(!result.game.personal_bests.includes('lowest cost per PR'));
 });
+
+// Explicit PR 153 repair inventory addition: B 20 -> 22, C remains 64 pending.
+add('review-m1-unrelated-default-cwd', B, 'PR153 M1; default-only machines unchanged',
+  'a declared root path prefix never rewrites an unrelated default-only cwd or saved scan bytes', unrelatedDefaultCwd);
+add('review-m3-probe-failed-shared-machine', B, 'PR153 M3; established shared-machine saved-only rule',
+  'a failed legacy-alias identity probe followed by an answering shared-host scan admits no fresh usage', failedProbeSharedMachine);

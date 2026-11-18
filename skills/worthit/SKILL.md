@@ -166,6 +166,73 @@ worthit sql "SELECT day, SUM(api_usd) usd FROM day_provider GROUP BY day ORDER B
 worthit sql "SELECT day, provider, usd_per_full_week FROM plan_value ORDER BY day"
 ```
 
+
+## Extra roots: registration only (RFC 0006 delivery 1a part B)
+
+A machine with a declared root is read from saved data only until the next delivery.
+Roots are recorded and shown, but **not read yet**. This applies to active, deselected,
+retired and removed-setting roots, and to selected SSH aliases whose established physical
+machine identity matches a declaration. Fresh default-home scanning, raw-config fallback,
+and the local meter sync/store/repository-discovery lane are withheld on that machine.
+Existing saved usage remains a floor; without saved data, usage is unknown, not historical
+zero. Other machines keep their default-home behavior. Independent forge PR reads retain
+their own coverage checks.
+
+```sh
+worthit hosts roots local
+worthit hosts roots add local --file spec.json
+worthit hosts roots select local <root-id> off
+worthit hosts roots boundary local <root-id> --file proof.json
+worthit hosts roots retire local <root-id> [--since YYYY-MM-DD]
+```
+
+For an SSH machine, replace `local` with an existing saved alias. An ordinary scan must
+already have saved its salted `machine_id`; older scans containing only a host name do
+not qualify. Otherwise add exits 2 with `scan <machine> once before adding a root`.
+Run a normal scan once before registering that alias. Commands never connect, scan,
+inspect a mount, probe permissions or open root content. The scan's separate metadata-only
+preflight establishes physical-machine and effective OS-reader identity, with bounded
+private pipes; no root path, spec or HMAC key travels to SSH. Changed or ambiguous matched
+identities remain scoped floors with `identity_unknown`; they do not freeze other machines.
+Registration cannot confer OS permissions. `boundary` records an operator attestation;
+even a verified attestation does not enable usage reads in B.
+
+The private spec is exactly `{path,sources,mappings?}`: `path` is absolute on that machine;
+`sources` is a nonempty array of `{kind,home}` bindings, with kind `claude`, `codex` or
+`meter` and a relative home (`.` allowed). `mappings` is absent or `[]`. Unknown keys,
+duplicate JSON keys/bindings, control characters, traversal, shell expansions and URLs
+are rejected. Antigravity, account/model files, nonempty mappings, update/unretire and
+answered-root retirement fail explicitly as unsupported. All mutations return path-free
+records; terminal output shows ids, selection, lifecycle, coverage and reader hash, while
+redirected output is JSON. Exit 0 means success, 2 invalid/conflicting/unsupported input,
+and 1 private-store I/O failure. Errors never echo paths or spec contents.
+
+`WORTHIT_HOME/source-roots.json` keeps versioned private declarations and revisions;
+`source-roots.key` is a stable 32-byte collector-local HMAC key. Both are owner-only and
+settings are replaced atomically. Ordinary scans initialize these identity files even
+without extra roots and save the physical `machine_id` for later offline registration.
+Missing or malformed initialized settings/key fail closed. Coverage-only records under
+`run-keep/roots/` retain tombstones when a setting is removed. A never-answered root can
+retire into an empty version-1 snapshot under `run-keep/roots/retired/<root-id>.json`:
+“retired with no saved scan, as stated by you”. Its `since` is the registration instant;
+an optional retirement date cannot precede registration or be in the future. This is an
+attestation, never observed zero usage. No root usage is added from that snapshot.
+
+Run and weekly JSON expose every declaration in `source_roots`, using RFC 0006 statuses
+and reasons and salted ids, never raw paths/specs. Selected roots remain `unreadable`;
+unselected/tombstoned roots are `left_out`; retired roots remain `retired` with incomplete
+coverage. `reader_id` identifies the OS reader separately from physical `machine_id`.
+Every plan is a floor, changes are null with `not_compared` including `roots_changed`,
+and root reasons make a weekly checkpoint unsafe. Usage/value/model-share/delivery-cost
+comparisons and usage improvement claims are withheld; physical PR counts keep their
+independent checks. Exact endpoint arrays are saved in nullable `plan_value.source_roots`
+and weekly checkpoints. B preserves default-only proof/comparison behavior; part C owns
+usage readers and final 1a guards for unknown legacy comparison baselines.
+
+Audit `source_root` events contain only root/machine hashes, revision, attempted time,
+status and reason codes, including preflight failures. Saved-only `get`, `projects`,
+`days` and `sql` never refresh roots or connect. The demo has explicit empty roots.
+
 ## Retire a machine: `worthit hosts`
 
 `worthit hosts` lists selected, not selected and retired SSH aliases; redirected stdout

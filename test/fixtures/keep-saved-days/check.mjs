@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { createHmac } from 'node:crypto';
 import { machineNotes, blocks, strip, len } from '../../../src/draw.mjs';
 import { isolatedEnvironment } from '../../support/environment.mjs';
 import { expectedData } from '../../support/expected-data.mjs';
@@ -24,6 +25,9 @@ const run = (cmd, args, extra = {}) => {
 const saved = read(path.join(fixture, 'saved.json')), fresh = read(path.join(fixture, 'fresh.json'));
 const expected = expectedData(path.join(fixture, 'expected-data.json'));
 const copy = v => structuredClone(v);
+// RFC 0006 machine-v1: compute the expected tag independently of the collector.
+const withRootIdentity = (scan, store) => ({ ...scan, source_roots: [], machine_id: createHmac('sha256',
+  fs.readFileSync(path.join(store, 'source-roots.key'))).update(JSON.stringify(['machine-v1', [scan.host]])).digest('hex') });
 const empty = host => ({ ...copy(saved), host, buckets: [], sessions: [] });
 let serial = 0;
 const merge = (old, next, options = {}) => {
@@ -211,7 +215,7 @@ else {const r=spawnSync(${JSON.stringify(python)},args,{stdio:'inherit'});proces
   fs.copyFileSync(path.join(fixture, 'truncated-saved.json'), path.join(corruptStore, 'run-keep/local.json'));
   const recovered = JSON.parse(run(process.execPath, ['bin/worthit.mjs', '--json', '--git', 'no', '--hosts', 'none'], { env: { ...env, WORTHIT_HOME: corruptStore, FIXTURE_SCAN_DIR: localDir } }));
   assert.deepEqual(recovered.machines_retained, [], 'truncated saved file does not abort the real run');
-  assert.deepEqual(read(path.join(corruptStore, 'run-keep/local.json')), read(path.join(localDir, 'local.json')), 'fresh replaces truncated saved file');
+  assert.deepEqual(read(path.join(corruptStore, 'run-keep/local.json')), withRootIdentity(read(path.join(localDir, 'local.json')), corruptStore), 'fresh replaces truncated saved file with exact root identity metadata');
 
   const sevenStore = path.join(tmp, 'seven-store'), sevenDir = path.join(tmp, 'seven-fresh');
   const cut = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 19);
@@ -220,7 +224,7 @@ else {const r=spawnSync(${JSON.stringify(python)},args,{stdio:'inherit'});proces
   write(path.join(sevenStore, 'run-keep/local.json'), sevenSaved); write(path.join(sevenDir, 'local.json'), sevenFresh);
   const seven = JSON.parse(run(process.execPath, ['bin/worthit.mjs', '--json', '--git', 'no', '--hosts', 'none', '--days', '7'], { env: { ...env, WORTHIT_HOME: sevenStore, FIXTURE_SCAN_DIR: sevenDir } }));
   assert.deepEqual(seven.machines_retained, [], '--days 7 intact window is not falsely retained');
-  assert.deepEqual(read(path.join(sevenStore, 'run-keep/local.json')), sevenFresh, '--days 7 persists fresh window unchanged');
+  assert.deepEqual(read(path.join(sevenStore, 'run-keep/local.json')), withRootIdentity(sevenFresh, sevenStore), '--days 7 persists fresh window with exact root identity metadata');
 
   // Give buildData clean meter-derived plans: current retained units must force EVERY plan to floor.
   const proofScript = `import fs from 'node:fs';import {buildData} from './src/collect.mjs';
@@ -236,7 +240,7 @@ console.log(JSON.stringify(buildData(report,null,cfg,{counts:{},hosts:[{alias:'b
   // Restore the positive control: an intact sliding window must keep a saved measured comparison.
   run(python, ['-c', `import sqlite3,sys
 d=sqlite3.connect(sys.argv[1])
-d.execute("INSERT OR REPLACE INTO plan_value VALUES (?, 'claude', 'Claude Ultra', 10, 1, 1, 'measured')", ('2026-11-07',))
+d.execute("INSERT OR REPLACE INTO plan_value (day, provider, plan, usd_per_full_week, times_plan_price, stretches, proof) VALUES (?, 'claude', 'Claude Ultra', 10, 1, 1, 'measured')", ('2026-11-07',))
 d.commit(); d.close()`, path.join(env.WORTHIT_HOME, 'worthit.db')]);
   assert.equal(proof([]).plans[0].change_vs_last_week_pct, 100, 'saved measured baseline permits a change');
   const sevenProof = proof(seven.machines_retained, 7).plans[0];

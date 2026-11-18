@@ -2,6 +2,7 @@
 // worthit — what your AI coding subscription is really worth. One command, everything local.
 //   npx worthit                 three questions, live scan, dashboard, then a question bar (ctrl+c exits)
 //   npx worthit --json          no UI: prints the week's data as JSON (for agents and scripts)
+//   worthit hosts roots help   private registration only; declared-root machines use saved data only
 //   worthit hosts · worthit hosts retire <machine> [--since YYYY-MM-DD] · worthit hosts unretire <machine>
 //   worthit projects              saved project/model usage and project PR costs; no scan or network
 //   worthit get [section] · worthit days [--since D --until D --group day|week|month --by total|tool|model] · worthit sql "SELECT …" · worthit schema · worthit --skill
@@ -26,6 +27,7 @@ import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'
 import { blocks, C, W, bar, fg, bold, d, m, w, pad, lpad, len, strip, grad, fmtTok, usd, machineNotes, usageCostWithheld } from '../src/draw.mjs';
 import { scan, analyse, git, buildData, audit, writeAudit, has, tilde, ROOT, HOME, sshHosts, savedHosts, saveHosts } from '../src/collect.mjs';
 import { activeHosts, readHosts, hostsCommand } from '../src/hosts.mjs';
+import { rootsCommand, sourceRootPolicy } from '../src/source-roots.mjs';
 import { query, runForAgent, QUERY_COMMANDS, normalizeDemoArgs } from '../src/query.mjs';
 import { projectsResult, projectsText } from '../src/projects.mjs';
 import { dataForAgent, redactProjects } from '../src/project-privacy.mjs';
@@ -54,10 +56,11 @@ if (!flag('--demo')) {
 if (flag('--version') || flag('-v')) { console.log(VERSION); await finish(); }
 if (argv[0] && !argv[0].startsWith('-') && !['get', 'days', 'sql', 'schema', 'install-skill', 'share', 'weekly', 'hosts', 'projects'].includes(argv[0])) { console.error(`worthit: unknown command "${argv[0]}". Try: worthit --help`); process.exit(2); }
 if (argv[0] === 'hosts') {
-  try { const result = hostsCommand(HOME, sshHosts(), argv.slice(1));
-    if (process.stdout.isTTY) console.log(Array.isArray(result) ? result.map(r => `${r.machine}: ${r.status}`).join('\n') || 'No saved SSH machines. Choose machines on your next run.' : `${result.machine}: ${result.status}`);
+  const roots = argv[1] === 'roots';
+  try { const result = roots ? rootsCommand(HOME, sshHosts(), argv.slice(2)) : hostsCommand(HOME, sshHosts(), argv.slice(1));
+    if (process.stdout.isTTY) console.log(roots ? result.help || (Array.isArray(result) ? result : [result]).map(r => `${r.id}: ${r.selected ? 'selected' : 'left out'} · ${r.lifecycle} · ${r.status} · reader ${r.reader_id || 'unknown'}${r.lifecycle === 'retired' && !r.last_scan_at ? ' · retired with no saved scan, as stated by you' : ''}`).join('\n') || 'No declared roots.' : Array.isArray(result) ? result.map(r => `${r.machine}: ${r.status}`).join('\n') || 'No saved SSH machines. Choose machines on your next run.' : `${result.machine}: ${result.status}`);
     else console.log(JSON.stringify(result, null, 1));
-  } catch (e) { console.error('worthit hosts: ' + e.message); process.exit(2); }
+  } catch (e) { console.error('worthit hosts: ' + (roots && !e.exitCode ? 'private source-root operation failed' : e.message)); process.exit(e.exitCode || 2); }
   await finish();
 }
 if (argv[0] === 'projects') {
@@ -71,7 +74,7 @@ if (await query(argv)) await finish();        // get / days / sql / schema / --s
 // from here on a scan would start: never from inside another worthit run (lookups above stay allowed)
 if (process.env.WORTHIT_RUNNING) { console.error('worthit: started from inside another worthit run; stopping.'); process.exit(2); }
 process.env.WORTHIT_RUNNING = '1';        // inherited by every program this run starts
-if (flag('--help') || flag('-h')) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 12).map(l => l.replace(/^\/\/ ?/, '')).join('\n')); await finish(); }
+if (flag('--help') || flag('-h')) { console.log(fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 13).map(l => l.replace(/^\/\/ ?/, '')).join('\n')); await finish(); }
 const WEEKLY = argv[0] === 'weekly';
 const JSON_MODE = WEEKLY || flag('--json'), ASK = arg('--ask'), F_GIT = arg('--git'), F_AI = arg('--ai'), DAYS = +arg('--days', 21), F_HOSTS = arg('--hosts', WEEKLY ? 'all' : undefined), DEMO = flag('--demo'), NO_FILES = flag('--no-files') || DEMO, FRESH = flag('--fresh');
 // the agent skill (skills/worthit/SKILL.md in this package and in the repo): installed into the person's coding agents with the skills CLI
@@ -110,6 +113,7 @@ if (JSON_MODE && !SHARE && !WEEKLY) {
   const auditFile = NO_FILES ? null : path.resolve(`${STAMP}-worthit-audit.log`);
   const tick = (label, p) => { if (process.stderr.isTTY) process.stderr.write(`\r\x1b[K${label} ${p.pct == null ? '' : Math.round(p.pct * 100) + '%'} ${String(p.detail || '').slice(0, 90)}`); };
   try {
+    cfg.rootPolicy = sourceRootPolicy(HOME, HOSTS);
     const gP = cfg.git ? git(cfg, () => {}) : null, s = await scan(cfg, p => tick('scanning', p)), report = await analyse(s.runDir), g = gP ? await gP : null;
     if (process.stderr.isTTY) process.stderr.write('\r\x1b[K');
     const data = buildData(report, g, cfg, s);
@@ -418,8 +422,9 @@ function Main({ cfg }) {
     const live = i => p => { const now = Date.now(); if (now - last.current < 80 && p.pct !== 1) return; last.current = now; S(i, { pct: p.pct, detail: p.detail }); };
     const fin = (i, t0, lines) => S(i, { state: 'done', secs: ((Date.now() - t0) / 1000).toFixed(0), lines });
     (async () => { try {
-      const gT = Date.now(); let gSecs = '0'; const gP = cfg.git ? (DEMO ? demoGit(live(2)) : git(cfg, live(2))).then(x => { gSecs = ((Date.now() - gT) / 1000).toFixed(0); return x; }) : null; if (gP) S(2, { state: 'run', t0: gT });   // git runs while the logs are scanned
-      let t0 = Date.now(); S(0, { state: 'run', t0 }); const info = DEMO ? await demoScan(HOSTS, live(0)) : await scan({ days: DAYS, hosts: HOSTS }, live(0));
+      const scanCfg = { days: DAYS, hosts: HOSTS, ...(!DEMO ? { rootPolicy: sourceRootPolicy(HOME, HOSTS) } : {}) };
+      const gT = Date.now(); let gSecs = '0'; const gP = cfg.git ? (DEMO ? demoGit(live(2)) : git({ ...cfg, ...scanCfg }, live(2))).then(x => { gSecs = ((Date.now() - gT) / 1000).toFixed(0); return x; }) : null; if (gP) S(2, { state: 'run', t0: gT });   // git runs while the logs are scanned
+      let t0 = Date.now(); S(0, { state: 'run', t0 }); const info = DEMO ? await demoScan(HOSTS, live(0)) : await scan(scanCfg, live(0));
       const scanned = `${Object.values(info.counts).reduce((a, b) => a + b, 0).toLocaleString('en-US')} files on this machine` + (info.cached ? ` (${info.cached.toLocaleString('en-US')} unchanged, from cache)` : '') + (info.hosts.length ? ` · ${info.hosts.filter(x => x.ok).length} other machine${info.hosts.filter(x => x.ok).length === 1 ? '' : 's'} read in parallel` : '') + ` · last ${DAYS} days`;
       const hl = info.hosts.map(x => x.saved_at ? fg(C.gold, '~ ') + w(x.alias) + d(' no answer · saved scan used') : x.ok ? fg(C.cx, '✓ ') + w(x.alias) + d(' ' + x.files.toLocaleString('en-US') + ' files' + (x.cached ? ', ' + x.cached.toLocaleString('en-US') + ' cached' : '')) : x.same_as ? d('= ' + x.alias + ' same as ' + x.same_as) : fg(C.bad || C.go, '✗ ') + m(x.alias) + d(' no answer')), hrows = []; for (let k = 0; k < hl.length; k += 4) hrows.push('  ' + hl.slice(k, k + 4).join(d('  ·  ')));
       const scanSecs = ((Date.now() - t0) / 1000).toFixed(0); fin(0, t0, [m(scanned), ...hrows]);
