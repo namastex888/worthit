@@ -380,6 +380,13 @@ export function sourceRootPolicy(home, aliases = []) {
       if (declared.has(machine) || rootIds.has(id) || rootIds.has(prior)) withheld.add(machine);
       if (withheld.has(machine) && (!id || (prior && id !== prior))) unknown.add(machine);
     }
+    // A declared alias may now answer under a changed identity. Its selected
+    // peers must also fail closed before any default/meter lane starts.
+    const changedIds = new Set([...unknown].filter(machine => identity.has(machine))
+      .map(machine => rootHash(store.key, 'machine-v1', [identity.get(machine).host])));
+    for (const [machine, current] of identity) if (changedIds.has(rootHash(store.key, 'machine-v1', [current.host]))) {
+      withheld.add(machine); unknown.add(machine);
+    }
   }
   return { store, declared, identity, withheld, unknown };
 }
